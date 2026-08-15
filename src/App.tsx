@@ -1,16 +1,16 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { VillageGrid } from './villageGrid';
 import { VoxelScene } from './components/VoxelScene';
-import { ControlPanel } from './components/ControlPanel';
+import { TweakpanePanel } from './components/TweakpanePanel';
+import { useControlStore } from './store/controlStore';
+import { useGridControllerStore } from './store/gridControllerStore';
 
 const GRID_HEIGHT = 10;
 
 export function App() {
   const [renderTick, setRenderTick] = useState(0);
   const [previewCell, setPreviewCell] = useState<{ x: number; z: number } | null>(null);
-  const [gridSize, setGridSize] = useState(2);
-  const [showPerfMonitor, setShowPerfMonitor] = useState(false);
-  const [isGenerating, setIsGenerating] = useState(false);
+  const gridSize = useControlStore((state) => state.gridSize);
 
   // Create VillageGrid with dynamic size based on gridSize
   const [grid, setGrid] = useState(() => new VillageGrid(gridSize, GRID_HEIGHT, gridSize));
@@ -20,10 +20,24 @@ export function App() {
     setGrid(new VillageGrid(gridSize, GRID_HEIGHT, gridSize));
   }, [gridSize]);
 
-  // Note: Terrain generation is now manual only via the "Generate Terrain" button
-  // This prevents performance issues from automatic regeneration
+  const refreshScene = useCallback(() => setRenderTick((tick) => tick + 1), []);
 
-  const refreshScene = () => setRenderTick((tick) => tick + 1);
+  // Bridge the imperative grid instance + refresh callback to the Tweakpane Actions module.
+  useEffect(() => {
+    useGridControllerStore.getState().setGrid(grid);
+    useGridControllerStore.getState().setOnMutate(refreshScene);
+  }, [grid, refreshScene]);
+
+  // Global shortcut to show/hide the control panel (backtick).
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === '`') {
+        useControlStore.getState().togglePanel();
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, []);
 
   const handleCellAction = (action: 'add' | 'remove', x: number, y: number, z: number) => {
     if (action === 'add') {
@@ -47,39 +61,7 @@ export function App() {
   return (
     <div className="app-shell compact-shell">
       <div className="canvas-frame">
-        <div className="floating-buttons">
-          <button
-            type="button"
-            className="floating-clear-button"
-            onClick={() => {
-              grid.clear();
-              refreshScene();
-            }}
-          >
-            Clear
-          </button>
-          <button
-            type="button"
-            className="floating-generate-button"
-            onClick={async () => {
-              if (isGenerating) return;
-              setIsGenerating(true);
-
-              // Use setTimeout to yield to browser for UI update
-              await new Promise(resolve => setTimeout(resolve, 50));
-
-              // Generate terrain in chunks to prevent UI freezing
-              grid.generateTerrain(42, 2, gridSize);
-              refreshScene();
-
-              setIsGenerating(false);
-            }}
-            disabled={isGenerating}
-          >
-            {isGenerating ? 'Generating...' : 'Generate Terrain'}
-          </button>
-        </div>
-          <VoxelScene
+        <VoxelScene
           cells={cells}
           gridWidth={gridSize}
           gridDepth={gridSize}
@@ -97,16 +79,9 @@ export function App() {
           toWorldPosition={toWorldPosition}
           getNextPlacementY={(x, z, minimumY) => grid.getNextPlacementY(x, z, minimumY)}
           getTopOccupiedY={(x, z) => grid.getTopOccupiedY(x, z)}
-          gridSize={gridSize}
-          showPerfMonitor={showPerfMonitor}
         />
       </div>
-      <ControlPanel
-        gridSize={gridSize}
-        onGridSizeChange={setGridSize}
-        showPerfMonitor={showPerfMonitor}
-        onTogglePerfMonitor={setShowPerfMonitor}
-      />
+      <TweakpanePanel />
     </div>
   );
 }

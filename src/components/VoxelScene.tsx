@@ -1,10 +1,12 @@
 import { OrbitControls, Sky } from '@react-three/drei';
 import { Canvas, type ThreeEvent } from '@react-three/fiber';
+import { useShallow } from 'zustand/react/shallow';
 import type { GridCell } from '../types';
 import { VillageMeshes } from './VillageMeshes';
 import { PlacementPreview } from './PlacementPreview';
 import { Bloom, EffectComposer, Noise, Vignette } from '@react-three/postprocessing'
 import { Perf } from 'r3f-perf';
+import { useControlStore, type ControlState } from '../store/controlStore';
 
 interface VoxelSceneProps {
   cells: GridCell[];
@@ -17,9 +19,51 @@ interface VoxelSceneProps {
   toWorldPosition: (x: number, y: number, z: number) => [number, number, number];
   getNextPlacementY: (x: number, z: number, minimumY: number) => number | null;
   getTopOccupiedY: (x: number, z: number) => number | null;
-  gridSize?: number;
-  showPerfMonitor?: boolean;
 }
+
+const selectLighting = (state: ControlState) => ({
+  ambientIntensity: state.ambientIntensity,
+  ambientColor: state.ambientColor,
+  directionalIntensity: state.directionalIntensity,
+  directionalColor: state.directionalColor,
+  directionalPosition: state.directionalPosition,
+  shadowMapSize: state.shadowMapSize,
+  shadowRadius: state.shadowRadius,
+  shadowBias: state.shadowBias,
+});
+
+const selectSkyFog = (state: ControlState) => ({
+  backgroundColor: state.backgroundColor,
+  fogColor: state.fogColor,
+  fogNear: state.fogNear,
+  fogFar: state.fogFar,
+  skyDistance: state.skyDistance,
+  skySunPosition: state.skySunPosition,
+  skyInclination: state.skyInclination,
+  skyAzimuth: state.skyAzimuth,
+  skyTurbidity: state.skyTurbidity,
+  skyRayleigh: state.skyRayleigh,
+  groundColor: state.groundColor,
+  groundOpacity: state.groundOpacity,
+  groundRoughness: state.groundRoughness,
+});
+
+const selectCamera = (state: ControlState) => ({
+  dampingFactor: state.dampingFactor,
+  maxPolarAngle: state.maxPolarAngle,
+  minDistance: state.minDistance,
+  maxDistance: state.maxDistance,
+});
+
+const selectPostFx = (state: ControlState) => ({
+  bloomEnabled: state.bloomEnabled,
+  bloomLuminanceThreshold: state.bloomLuminanceThreshold,
+  bloomLuminanceSmoothing: state.bloomLuminanceSmoothing,
+  bloomHeight: state.bloomHeight,
+  noiseOpacity: state.noiseOpacity,
+  vignetteOffset: state.vignetteOffset,
+  vignetteDarkness: state.vignetteDarkness,
+});
 
 export function VoxelScene({
   cells,
@@ -32,9 +76,47 @@ export function VoxelScene({
   toWorldPosition,
   getNextPlacementY,
   getTopOccupiedY,
-  gridSize = 2,
-  showPerfMonitor = false,
 }: VoxelSceneProps) {
+  const gridSize = useControlStore((state) => state.gridSize);
+  const showPerfMonitor = useControlStore((state) => state.showPerfMonitor);
+  const {
+    ambientIntensity,
+    ambientColor,
+    directionalIntensity,
+    directionalColor,
+    directionalPosition,
+    shadowMapSize,
+    shadowRadius,
+    shadowBias,
+  } = useControlStore(useShallow(selectLighting));
+  const {
+    backgroundColor,
+    fogColor,
+    fogNear,
+    fogFar,
+    skyDistance,
+    skySunPosition,
+    skyInclination,
+    skyAzimuth,
+    skyTurbidity,
+    skyRayleigh,
+    groundColor,
+    groundOpacity,
+    groundRoughness,
+  } = useControlStore(useShallow(selectSkyFog));
+  const { dampingFactor, maxPolarAngle, minDistance, maxDistance } = useControlStore(
+    useShallow(selectCamera),
+  );
+  const {
+    bloomEnabled,
+    bloomLuminanceThreshold,
+    bloomLuminanceSmoothing,
+    bloomHeight,
+    noiseOpacity,
+    vignetteOffset,
+    vignetteDarkness,
+  } = useControlStore(useShallow(selectPostFx));
+
   const handlePointer = (event: ThreeEvent<PointerEvent>) => {
     event.stopPropagation();
     const gridX = Math.floor(event.point.x + gridWidth / 2);
@@ -62,25 +144,32 @@ export function VoxelScene({
       gl={{ antialias: true }}
       onContextMenu={(event) => event.preventDefault()}
     >
-      <color attach="background" args={['#b8d4f1']} />
-      <fog attach="fog" args={['#d0e5f5', 30, 60]} />
+      <color attach="background" args={[backgroundColor]} />
+      <fog attach="fog" args={[fogColor, fogNear, fogFar]} />
       {showPerfMonitor && <Perf position="top-left" />}
-      <ambientLight intensity={1.3} color="#fffaed" />
-      <directionalLight 
-        position={[12, 16, 10]} 
-        intensity={1.8} 
-        color="#fffaed"
-        castShadow 
-        shadow-mapSize-width={2048} 
-        shadow-mapSize-height={2048}
-        shadow-radius={4}
-        shadow-bias={-0.0001}
+      <ambientLight intensity={ambientIntensity} color={ambientColor} />
+      <directionalLight
+        position={directionalPosition}
+        intensity={directionalIntensity}
+        color={directionalColor}
+        castShadow
+        shadow-mapSize-width={shadowMapSize}
+        shadow-mapSize-height={shadowMapSize}
+        shadow-radius={shadowRadius}
+        shadow-bias={shadowBias}
       />
-      <Sky distance={450000} sunPosition={[100, 20, 100]} inclination={0.6} azimuth={0.25} turbidity={8} rayleigh={1.2} />
+      <Sky
+        distance={skyDistance}
+        sunPosition={skySunPosition}
+        inclination={skyInclination}
+        azimuth={skyAzimuth}
+        turbidity={skyTurbidity}
+        rayleigh={skyRayleigh}
+      />
         <gridHelper args={[Math.max(gridWidth, gridDepth), Math.max(gridWidth, gridDepth), '#d4c4a8', '#e8dcc8']} />
         <mesh rotation={[-Math.PI / 2, 0, 0]} onPointerMove={handlePointer} onPointerDown={handlePointer} receiveShadow>
           <planeGeometry args={[gridWidth, gridDepth]} />
-        <meshStandardMaterial color="#f5e6d3" transparent opacity={0.95} roughness={0.95} />
+        <meshStandardMaterial color={groundColor} transparent opacity={groundOpacity} roughness={groundRoughness} />
       </mesh>
       <VillageMeshes cells={cells} toWorldPosition={toWorldPosition} />
       <PlacementPreview
@@ -88,11 +177,26 @@ export function VoxelScene({
         toWorldPosition={toWorldPosition}
         getNextPlacementY={getNextPlacementY}
       />
-      <OrbitControls enableDamping dampingFactor={0.08} maxPolarAngle={Math.PI / 2.08} minDistance={6} maxDistance={36} />
+      <OrbitControls
+        enableDamping
+        dampingFactor={dampingFactor}
+        maxPolarAngle={maxPolarAngle}
+        minDistance={minDistance}
+        maxDistance={maxDistance}
+      />
       <EffectComposer>
-        <Bloom mipmapBlur  luminanceThreshold={0.3} luminanceSmoothing={0.9} height={300} />
-        <Noise opacity={0.02} />
-        <Vignette eskil={false} offset={0.1} darkness={0.5} />
+        {bloomEnabled ? (
+          <Bloom
+            mipmapBlur
+            luminanceThreshold={bloomLuminanceThreshold}
+            luminanceSmoothing={bloomLuminanceSmoothing}
+            height={bloomHeight}
+          />
+        ) : (
+          <></>
+        )}
+        <Noise opacity={noiseOpacity} />
+        <Vignette eskil={false} offset={vignetteOffset} darkness={vignetteDarkness} />
       </EffectComposer>
     </Canvas>
   );
