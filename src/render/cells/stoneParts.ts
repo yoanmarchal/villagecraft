@@ -9,7 +9,7 @@
  */
 
 import type { CellFace, CornerRadii } from '../../utils/cellUtils';
-import { projectOnFace } from '../../utils/cellUtils';
+import { getFaceCorners, projectOnFace } from '../../utils/cellUtils';
 import { roundedBoxGeo } from '../geometryCache';
 import { part, xform, type Part } from '../parts';
 
@@ -98,21 +98,6 @@ function defaultComputeSize(_h1: number, h2: number, h3: number, base: StoneSize
 
 function defaultStonesPerFace(cell: { x: number; z: number }): number {
   return 3 + (Math.abs(cell.x * 3 + cell.z * 7) % 3);
-}
-
-function getFaceCorners(face: CellFace, radii: CornerRadii, cornerMode: 'numeric' | 'boolean'): [number, number] {
-  // En mode 'boolean', on écrase le radius en 0/EDGE-like flag numérique
-  const toVal = (r: number) => (cornerMode === 'boolean' ? (r > 0.01 ? r : 0) : r);
-  switch (face) {
-    case 'front':
-      return [toVal(radii.frontLeft), toVal(radii.frontRight)];
-    case 'back':
-      return [toVal(radii.backLeft), toVal(radii.backRight)];
-    case 'left':
-      return [toVal(radii.backLeft), toVal(radii.frontLeft)];
-    case 'right':
-      return [toVal(radii.backRight), toVal(radii.frontRight)];
-  }
 }
 
 /**

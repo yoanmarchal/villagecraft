@@ -189,6 +189,26 @@ export function isCornerExposed(lookup: CellLookup, cell: GridCell, dx: number, 
   return !(adj1 && adj2 && diag);
 }
 
+/**
+ * Retourne les deux rayons de coin qui bordent `face` (côté négatif puis
+ * positif de son axe latéral). Mutualisé entre les pierres apparentes et le
+ * dimensionnement des fenêtres/portes (elles étaient dupliquées avant).
+ */
+export function getFaceCorners(face: CellFace, radii: CornerRadii, cornerMode: 'numeric' | 'boolean'): [number, number] {
+  // En mode 'boolean', on écrase le radius en 0/EDGE-like flag numérique
+  const toVal = (r: number) => (cornerMode === 'boolean' ? (r > 0.01 ? r : 0) : r);
+  switch (face) {
+    case 'front':
+      return [toVal(radii.frontLeft), toVal(radii.frontRight)];
+    case 'back':
+      return [toVal(radii.backLeft), toVal(radii.backRight)];
+    case 'left':
+      return [toVal(radii.backLeft), toVal(radii.frontLeft)];
+    case 'right':
+      return [toVal(radii.backRight), toVal(radii.frontRight)];
+  }
+}
+
 /** Les 4 coins d'une cellule, avec leur nom canonique. */
 export const CELL_CORNERS: ReadonlyArray<{ dx: -1 | 1; dz: -1 | 1; corner: 'backLeft' | 'backRight' | 'frontLeft' | 'frontRight' }> = [
   { dx: -1, dz: -1, corner: 'backLeft' },

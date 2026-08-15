@@ -7,7 +7,7 @@
  */
 
 import type { CellFace } from '../../utils/cellUtils';
-import { FACE_ROTATION_Y } from '../../utils/cellUtils';
+import { FACE_ROTATION_Y, getFaceCorners } from '../../utils/cellUtils';
 import { varyColorBrightness, shades } from '../../colorPalettes';
 import { WINDOW_PROTECTED_AREAS, isInProtectedArea } from '../../config/protectedAreasConfig';
 import { boxGeo, cylinderGeo, frameWithHoleGeo, roundedBoxGeo } from '../geometryCache';
@@ -39,6 +39,23 @@ export function wallWindowCellParts(ctx: CellContext): Part[] {
   const doorFace = isGroundFloor && exposedFaces.length > 0 ? exposedFaces[doorFaceHash] : null;
 
   const hasBands = exposedFaces.length > 0;
+
+  // Le corps de cellule est un bloc SOLIDE (pas de coque creuse) : sa face
+  // n'est plate à z=0.5 que sur la portion non couverte par l'arrondi des
+  // coins (largeur `1 - 2*radius`). Une ouverture plus large que cette
+  // portion plate déborderait dans la zone où le mur recule — la garder à
+  // profondeur fixe la fait flotter devant le mur (reculer l'ouverture ne
+  // marche pas non plus : son centre est toujours sur la portion plate, la
+  // reculer la fait disparaître à l'intérieur du solide). Seule option avec
+  // une géométrie plate : la rétrécir pour qu'elle tienne entièrement dans
+  // la portion plate. `MIN_OPENING_SCALE` évite qu'elle devienne minuscule
+  // à rayon extrême, au prix d'un léger débord résiduel dans ce cas limite.
+  const MIN_OPENING_SCALE = 0.75;
+  const openingScale = (face: CellFace, nominalWidth: number): number => {
+    const [crNeg, crPos] = getFaceCorners(face, radii, 'numeric');
+    const flatWidth = 1 - 2 * Math.max(crNeg, crPos);
+    return Math.min(1, Math.max(MIN_OPENING_SCALE, flatWidth / nominalWidth));
+  };
 
   const parts: Part[] = shellParts(ctx, baseColor);
 
@@ -98,49 +115,49 @@ export function wallWindowCellParts(ctx: CellContext): Part[] {
   }
 
   // ── Fenêtre ────────────────────────────────────────────────────────────
-  const windowParts = (rotation: number): Part[] => {
+  const windowParts = (rotation: number, scale: number): Part[] => {
     const faceRot = xform([0, 0, 0], [0, rotation, 0]);
     return [
       // Cadre percé (ex-CSG Base − Subtraction)
-      part(frameWithHoleGeo(0.6, 0.5, windowRadius, 0.54, 0.44, glassRadius, 0.02),
+      part(frameWithHoleGeo(0.6 * scale, 0.5, windowRadius, 0.54 * scale, 0.44, glassRadius, 0.02),
         windowFrameColor, { roughness: 0.85 }, mul(faceRot, xform([0, 0, 0.50]))),
       // Vitre transparente
-      part(roundedBoxGeo(0.54, 0.44, 0.03, glassRadius, 4), windowGlassColor,
+      part(roundedBoxGeo(0.54 * scale, 0.44, 0.03, glassRadius, 4), windowGlassColor,
         { roughness: 0.1, metalness: 0.15, transparent: true, opacity: 0.85 },
         mul(faceRot, xform([0, 0, 0.51]))),
       // Séparateurs horizontal et vertical
-      part(boxGeo(0.54, 0.05, 0.019), separatorColor, { roughness: 1 }, mul(faceRot, xform([0, 0, 0.52]))),
+      part(boxGeo(0.54 * scale, 0.05, 0.019), separatorColor, { roughness: 1 }, mul(faceRot, xform([0, 0, 0.52]))),
       part(boxGeo(0.03, 0.44, 0.019), separatorColor, { roughness: 1 }, mul(faceRot, xform([0, 0, 0.52]))),
     ];
   };
 
   // ── Porte ──────────────────────────────────────────────────────────────
-  const doorParts = (rotation: number): Part[] => {
+  const doorParts = (rotation: number, scale: number): Part[] => {
     const doorFrameRadius = Math.min(0.015, avgRadius * 0.8);
     const doorPanelRadius = Math.min(0.012, avgRadius * 0.7);
     const thresholdRadius = Math.min(0.01, avgRadius * 0.6);
     const faceRot = xform([0, 0, 0], [0, rotation, 0]);
     return [
-      part(roundedBoxGeo(0.48, 0.8, 0.03, doorFrameRadius, 4), doorFrameColor, { roughness: 0.88 },
+      part(roundedBoxGeo(0.48 * scale, 0.8, 0.03, doorFrameRadius, 4), doorFrameColor, { roughness: 0.88 },
         mul(faceRot, xform([0, -0.06, 0.502]))),
-      part(roundedBoxGeo(0.4, 0.7, 0.04, doorPanelRadius, 6), doorColor, { roughness: 0.92 },
+      part(roundedBoxGeo(0.4 * scale, 0.7, 0.04, doorPanelRadius, 6), doorColor, { roughness: 0.92 },
         mul(faceRot, xform([0, -0.10, 0.5]))),
       part(cylinderGeo(0.01, 0.01, 0.04, 8), '#8a6a3a', { metalness: 0.55, roughness: 0.35 },
-        mul(faceRot, xform([0.16, -0.14, 0.502], [Math.PI / 2, 0, 0]))),
-      part(roundedBoxGeo(0.5, 0.04, 0.03, thresholdRadius, 4), varyColorBrightness(baseColor, -0.18),
+        mul(faceRot, xform([0.16 * scale, -0.14, 0.502], [Math.PI / 2, 0, 0]))),
+      part(roundedBoxGeo(0.5 * scale, 0.04, 0.03, thresholdRadius, 4), varyColorBrightness(baseColor, -0.18),
         { roughness: 0.94 }, mul(faceRot, xform([0, -0.49, 0.501]))),
     ];
   };
 
   // ── Meurtrière (tours) ─────────────────────────────────────────────────
-  const arrowSlitParts = (rotation: number): Part[] => {
+  const arrowSlitParts = (rotation: number, scale: number): Part[] => {
     const arrowSlitRadius = Math.min(0.02, avgRadius * 0.9);
     const arrowSlitInnerRadius = Math.min(0.015, avgRadius * 0.7);
     const faceRot = xform([0, 0, 0], [0, rotation, 0]);
     return [
-      part(roundedBoxGeo(0.14, 0.4, 0.02, arrowSlitRadius, 4), '#3a2a1a', { roughness: 0.95 },
+      part(roundedBoxGeo(0.14 * scale, 0.4, 0.02, arrowSlitRadius, 4), '#3a2a1a', { roughness: 0.95 },
         mul(faceRot, xform([0, 0, 0.505]))),
-      part(roundedBoxGeo(0.08, 0.32, 0.04, arrowSlitInnerRadius, 4), '#0a0a0a', { roughness: 0.98 },
+      part(roundedBoxGeo(0.08 * scale, 0.32, 0.04, arrowSlitInnerRadius, 4), '#0a0a0a', { roughness: 0.98 },
         mul(faceRot, xform([0, 0, 0.49]))),
     ];
   };
@@ -148,9 +165,9 @@ export function wallWindowCellParts(ctx: CellContext): Part[] {
   // ── Rendu par face exposée ─────────────────────────────────────────────
   const faceParts = (face: CellFace): Part[] => {
     const rot = FACE_ROTATION_Y[face];
-    if (face === doorFace) return doorParts(rot);
-    if (isIsolated) return arrowSlitParts(rot);
-    return windowParts(rot);
+    if (face === doorFace) return doorParts(rot, openingScale(face, 0.48));
+    if (isIsolated) return arrowSlitParts(rot, openingScale(face, 0.14));
+    return windowParts(rot, openingScale(face, 0.6));
   };
 
   for (const face of exposedFaces) parts.push(...faceParts(face));
