@@ -11,6 +11,7 @@ import { varyColorBrightness } from '../../colorPalettes';
 import { roundedBoxGeo } from '../geometryCache';
 import { part, xform, type Part } from '../parts';
 import type { CellContext } from './context';
+import { useControlStore } from '../../store/controlStore';
 
 /**
  * True si une pierre placée en (x ± w/2) sur `face` empiéterait sur un quoin.
@@ -26,7 +27,7 @@ export function isQuoinProtected(
 ): boolean {
   if (isIsolated) return false;
 
-  const margin = 0.20;
+  const { quoinMargin: margin } = useControlStore.getState();
   const isNearLeft = x - w / 2 < -0.5 + margin;
   const isNearRight = x + w / 2 > 0.5 - margin;
   if (!isNearLeft && !isNearRight) return false;
@@ -60,8 +61,9 @@ export function quoinParts(ctx: CellContext, baseColor: string): Part[] {
   const flags = cell.propertyBundle?.mergeFlags.suppressQuoin;
   if (flags && flags.backLeft && flags.backRight && flags.frontLeft && flags.frontRight) return [];
 
+  const { quoinRoughness } = useControlStore.getState();
   const quoinColor = varyColorBrightness(baseColor, -0.12);
-  const mat = { roughness: 0.9 };
+  const mat = { roughness: quoinRoughness };
   const parts: Part[] = [];
 
   // Niveaux 0 et 2 : longs le long de X ; niveau 1 : long le long de Z

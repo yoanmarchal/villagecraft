@@ -12,14 +12,11 @@ import { shellParts } from './shellParts';
 import { stoneParts } from './stoneParts';
 import { isQuoinProtected } from './decorations';
 import type { CellContext } from './context';
-
-// 🔢 Pour changer le nombre de pierres par face : remplacer par un nombre
-// fixe ou une fonction (cell, faceIdx) => n. `undefined` = comportement
-// d'origine (3 à 5 pierres selon seed).
-const STONES_PER_FACE: number | undefined = 10;
+import { useControlStore } from '../../store/controlStore';
 
 export function standardCellParts(ctx: CellContext): Part[] {
   const { cell, lookup, exposedFaces, radii, isIsolated } = ctx;
+  const { standardStonesPerFace, standardStoneRoughness } = useControlStore.getState();
 
   const isFoundation = cell.type === BlockType.Foundation;
   const baseColor = cell.color ?? (isFoundation ? '#8d8a80' : '#c0b0a0');
@@ -37,14 +34,14 @@ export function standardCellParts(ctx: CellContext): Part[] {
         radii,
         cornerMode: 'numeric',
         wallSurfaceOffset: 0.003,
-        stonesPerFace: STONES_PER_FACE,
+        stonesPerFace: standardStonesPerFace,
         baseSize: { width: 0.14, height: 0.09 },
         visual: {
           thickness: 0.012,
           cornerRadius: 0.004,
           smoothness: 2,
           color: patchColor,
-          roughness: 0.95,
+          roughness: standardStoneRoughness,
         },
         // 🔒 Zone protégée propre à StandardCell (quoins, base trim, etc.)
         isInProtectedZone: (face, x, y, w, h) => {

@@ -16,11 +16,11 @@ import { shellParts } from './shellParts';
 import { stoneParts } from './stoneParts';
 import { isQuoinProtected } from './decorations';
 import type { CellContext } from './context';
-
-const STONES_PER_FACE = 25;
+import { useControlStore } from '../../store/controlStore';
 
 export function wallWindowCellParts(ctx: CellContext): Part[] {
   const { cell, lookup, exposedFaces, radii, isIsolated } = ctx;
+  const { windowStonesPerFace, windowStoneRoughness } = useControlStore.getState();
 
   const baseColor = cell.color ?? '#e0c996';
   const windowGlassColor = '#2a3a4a';
@@ -56,7 +56,7 @@ export function wallWindowCellParts(ctx: CellContext): Part[] {
         radii,
         cornerMode: 'numeric',
         wallSurfaceOffset: 0.015,
-        stonesPerFace: STONES_PER_FACE,
+        stonesPerFace: windowStonesPerFace,
         seedSalt: { x: 7, y: 11, z: 13, face: 23, stone: 17 },
         baseSize: { width: baseStoneW, height: baseStoneH },
         computeSize: (h1, h2, _h3, base) => ({
@@ -69,7 +69,7 @@ export function wallWindowCellParts(ctx: CellContext): Part[] {
           cornerRadius: 0.012,
           smoothness: 4,
           color: stoneColor,
-          roughness: 0.85,
+          roughness: windowStoneRoughness,
           metalness: 0.1,
           metalnessIsolated: 0.05,
         },

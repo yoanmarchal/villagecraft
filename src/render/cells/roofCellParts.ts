@@ -14,26 +14,25 @@ import { shades } from '../../colorPalettes';
 import { boxGeo, cylinderGeo, gableGeo, shapedBoxGeo, sphereGeo } from '../geometryCache';
 import { mul, part, xform, type Part } from '../parts';
 import type { CellContext } from './context';
+import { useControlStore } from '../../store/controlStore';
 
 // ── Constantes géométriques (espace local cellule : Y=0 centre, ±0.5 bords) ──
-const EAVE_Y = -0.50;                                 // bas de pente au ras du bas de cellule
-const RIDGE_Y = 0.22;                                 // haut de pente (faîtage)
-const RISE = RIDGE_Y - EAVE_Y;                        // 0.72
 const RUN = 0.5;                                      // course horizontale = demi-cellule
-const SLOPE_LEN = Math.sqrt(RISE * RISE + RUN * RUN); // ≈ 0.872
-const SLOPE_ANG = Math.atan2(RISE, RUN);
-const CENTER_Y = (EAVE_Y + RIDGE_Y) / 2;
 const PANEL_LEN = 1.08;                               // longueur de pan le long du faîtage
 const PANEL_T = 0.055;                                // épaisseur de pan
-
-// Rayon de tour = corps du cylindre (r = 0.5 = demi-cellule)
-const TOWER_R = 0.50;
 
 // Décalages Z des liteaux (4 rangées de tuiles le long du faîtage)
 const RIB_OFFSETS = [-0.40, -0.13, 0.13, 0.40];
 
 export function roofCellParts(ctx: CellContext): Part[] {
   const { cell, lookup, radii, isIsolated } = ctx;
+
+  // ── Constantes géométriques pilotées par le store (avant-toit/faîtage/tour) ──
+  const { eaveY: EAVE_Y, ridgeY: RIDGE_Y, towerR: TOWER_R } = useControlStore.getState();
+  const RISE = RIDGE_Y - EAVE_Y;
+  const SLOPE_LEN = Math.sqrt(RISE * RISE + RUN * RUN);
+  const SLOPE_ANG = Math.atan2(RISE, RUN);
+  const CENTER_Y = (EAVE_Y + RIDGE_Y) / 2;
 
   const roofColor = cell.color ?? '#c85a3f';
   const { colorDark, colorLight } = shades(roofColor, { colorDark: -0.18, colorLight: 0.07 });
@@ -54,9 +53,7 @@ export function roofCellParts(ctx: CellContext): Part[] {
       { roughness: 0.88 }, xform([0, BASE_Y + 0.02, 0])));
 
     // ── Merlons répartis sur le contour réel du mur ──
-    const MERLON_COUNT = 6;
-    const MERLON_R = 0.10;
-    const MERLON_H = 0.28;
+    const { merlonCount: MERLON_COUNT, merlonR: MERLON_R, merlonH: MERLON_H } = useControlStore.getState();
     const merlonY = BASE_Y + MERLON_H / 2;
     const merlonContour = getRoundedRectContourPoints(TOWER_R, TOWER_R, radii);
     const merlonGeo = cylinderGeo(MERLON_R, MERLON_R * 1.1, MERLON_H, 10);
@@ -67,7 +64,7 @@ export function roofCellParts(ctx: CellContext): Part[] {
 
     // ── Bague de base de flèche ──
     const SPIRE_BASE_R = TOWER_R - 0.06;
-    const SPIRE_H = 1.10;
+    const { spireH: SPIRE_H } = useControlStore.getState();
     const SPIRE_RING_R = SPIRE_BASE_R + 0.08;
     const spireRingRadii = scaleCornerRadii(radii, SPIRE_RING_R / TOWER_R);
     parts.push(part(shapedBoxGeo(SPIRE_RING_R * 2, 0.10, SPIRE_RING_R * 2, spireRingRadii), colorDark,

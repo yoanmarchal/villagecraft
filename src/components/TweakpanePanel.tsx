@@ -6,6 +6,9 @@ import { registerLightingControls } from '../controls/lightingControls';
 import { registerSkyFogControls } from '../controls/skyFogControls';
 import { registerCameraControls } from '../controls/cameraControls';
 import { registerPostFxControls } from '../controls/postFxControls';
+import { registerMaterialsControls } from '../controls/materialsControls';
+import { registerDecorationsControls } from '../controls/decorationsControls';
+import { registerRoofShapeControls } from '../controls/roofShapeControls';
 import { registerDebugControls } from '../controls/debugControls';
 import { registerActionsControls } from '../controls/actionsControls';
 import type { Disposer } from '../controls/types';
@@ -26,6 +29,9 @@ export function TweakpanePanel() {
       registerSkyFogControls(pane),
       registerCameraControls(pane),
       registerPostFxControls(pane),
+      registerMaterialsControls(pane),
+      registerDecorationsControls(pane),
+      registerRoofShapeControls(pane),
       registerDebugControls(pane),
       registerActionsControls(pane),
     ];

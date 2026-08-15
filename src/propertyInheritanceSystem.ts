@@ -1,5 +1,6 @@
 import { type GridCell, type CellCoordinate, DecorationStyle, type MergeFlags, type PropertyBundle } from './types';
 import { getBuildingId, getPaletteByIndex, type ColorPalette } from './colorPalettes';
+import { useControlStore } from './store/controlStore';
 
 export class PropertyInheritanceSystem {
   private readonly grid: GridCell[][][];
@@ -89,9 +90,10 @@ export class PropertyInheritanceSystem {
   }
 
   private seedToVariation(seed: number): number {
-    // Convertir la graine en une variation entre -0.05 et 0.05
+    // Convertir la graine en une variation entre -colorJitterIntensity et +colorJitterIntensity
     const normalized = (seed & 0xFFFFFF) / 0xFFFFFF; // 0-1
-    return (normalized - 0.5) * 0.1; // -0.05 à 0.05
+    const { colorJitterIntensity } = useControlStore.getState();
+    return (normalized - 0.5) * 2 * colorJitterIntensity;
   }
 
   private applyColorVariation(baseColor: string, variation: number): string {

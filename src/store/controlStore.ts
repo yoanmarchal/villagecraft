@@ -57,6 +57,30 @@ export interface UiState {
   panelVisible: boolean;
 }
 
+export interface CellMaterialsState {
+  wallRoughness: number;
+  colorJitterIntensity: number;
+}
+
+export interface CellDecorationsState {
+  standardStonesPerFace: number;
+  windowStonesPerFace: number;
+  standardStoneRoughness: number;
+  windowStoneRoughness: number;
+  quoinMargin: number;
+  quoinRoughness: number;
+}
+
+export interface CellRoofState {
+  eaveY: number;
+  ridgeY: number;
+  towerR: number;
+  merlonCount: number;
+  merlonR: number;
+  merlonH: number;
+  spireH: number;
+}
+
 export interface ControlState
   extends GridState,
     LightingState,
@@ -64,7 +88,10 @@ export interface ControlState
     CameraState,
     PostFxState,
     DebugState,
-    UiState {
+    UiState,
+    CellMaterialsState,
+    CellDecorationsState,
+    CellRoofState {
   setGridSize: (gridSize: number) => void;
   setLighting: (patch: Partial<LightingState>) => void;
   setSkyFog: (patch: Partial<SkyFogState>) => void;
@@ -72,9 +99,21 @@ export interface ControlState
   setPostFx: (patch: Partial<PostFxState>) => void;
   setDebug: (patch: Partial<DebugState>) => void;
   togglePanel: () => void;
+  setCellMaterials: (patch: Partial<CellMaterialsState>) => void;
+  setCellDecorations: (patch: Partial<CellDecorationsState>) => void;
+  setCellRoof: (patch: Partial<CellRoofState>) => void;
 }
 
-const DEFAULT_STATE: GridState & LightingState & SkyFogState & CameraState & PostFxState & DebugState & UiState = {
+const DEFAULT_STATE: GridState &
+  LightingState &
+  SkyFogState &
+  CameraState &
+  PostFxState &
+  DebugState &
+  UiState &
+  CellMaterialsState &
+  CellDecorationsState &
+  CellRoofState = {
   gridSize: 2,
 
   ambientIntensity: 1.3,
@@ -116,6 +155,24 @@ const DEFAULT_STATE: GridState & LightingState & SkyFogState & CameraState & Pos
   showPerfMonitor: false,
 
   panelVisible: true,
+
+  wallRoughness: 0.94,
+  colorJitterIntensity: 0.05,
+
+  standardStonesPerFace: 10,
+  windowStonesPerFace: 25,
+  standardStoneRoughness: 0.95,
+  windowStoneRoughness: 0.85,
+  quoinMargin: 0.2,
+  quoinRoughness: 0.9,
+
+  eaveY: -0.5,
+  ridgeY: 0.22,
+  towerR: 0.5,
+  merlonCount: 6,
+  merlonR: 0.1,
+  merlonH: 0.28,
+  spireH: 1.1,
 };
 
 export const useControlStore = create<ControlState>()(
@@ -130,6 +187,9 @@ export const useControlStore = create<ControlState>()(
       setPostFx: (patch) => set(patch),
       setDebug: (patch) => set(patch),
       togglePanel: () => set((state) => ({ panelVisible: !state.panelVisible })),
+      setCellMaterials: (patch) => set(patch),
+      setCellDecorations: (patch) => set(patch),
+      setCellRoof: (patch) => set(patch),
     }),
     {
       name: 'voxel-control-panel',

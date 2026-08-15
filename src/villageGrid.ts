@@ -190,6 +190,11 @@ export class VillageGrid {
     return targetY;
   }
 
+  /** Recompute per-cell colors/types from current occupancy without changing which cells are occupied. */
+  public recolor(): void {
+    this.recomputeProceduralLogic();
+  }
+
   public clear(): void {
     this.nextPlacementOrder = 0;
     for (let x = 0; x < this.sizeX; x += 1) {
