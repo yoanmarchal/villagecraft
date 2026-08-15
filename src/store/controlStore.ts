@@ -81,6 +81,12 @@ export interface CellRoofState {
   spireH: number;
 }
 
+export interface CellShapeState {
+  isolatedWallRadius: number;
+  connectedWallExposedRadius: number;
+  connectedWallInteriorRadius: number;
+}
+
 export interface ControlState
   extends GridState,
     LightingState,
@@ -91,7 +97,8 @@ export interface ControlState
     UiState,
     CellMaterialsState,
     CellDecorationsState,
-    CellRoofState {
+    CellRoofState,
+    CellShapeState {
   setGridSize: (gridSize: number) => void;
   setLighting: (patch: Partial<LightingState>) => void;
   setSkyFog: (patch: Partial<SkyFogState>) => void;
@@ -102,6 +109,7 @@ export interface ControlState
   setCellMaterials: (patch: Partial<CellMaterialsState>) => void;
   setCellDecorations: (patch: Partial<CellDecorationsState>) => void;
   setCellRoof: (patch: Partial<CellRoofState>) => void;
+  setCellShape: (patch: Partial<CellShapeState>) => void;
 }
 
 const DEFAULT_STATE: GridState &
@@ -113,7 +121,8 @@ const DEFAULT_STATE: GridState &
   UiState &
   CellMaterialsState &
   CellDecorationsState &
-  CellRoofState = {
+  CellRoofState &
+  CellShapeState = {
   gridSize: 2,
 
   ambientIntensity: 1.3,
@@ -173,6 +182,10 @@ const DEFAULT_STATE: GridState &
   merlonR: 0.1,
   merlonH: 0.28,
   spireH: 1.1,
+
+  isolatedWallRadius: 0.22,
+  connectedWallExposedRadius: 0.1,
+  connectedWallInteriorRadius: 0.0,
 };
 
 export const useControlStore = create<ControlState>()(
@@ -190,6 +203,7 @@ export const useControlStore = create<ControlState>()(
       setCellMaterials: (patch) => set(patch),
       setCellDecorations: (patch) => set(patch),
       setCellRoof: (patch) => set(patch),
+      setCellShape: (patch) => set(patch),
     }),
     {
       name: 'voxel-control-panel',

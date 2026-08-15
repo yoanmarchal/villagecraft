@@ -13,6 +13,7 @@ import {
   type CellMaterialsState,
   type CellDecorationsState,
   type CellRoofState,
+  type CellShapeState,
 } from '../store/controlStore';
 
 interface VillageMeshesProps {
@@ -44,6 +45,12 @@ const selectCellRoof = (state: CellRoofState) => ({
   spireH: state.spireH,
 });
 
+const selectCellShape = (state: CellShapeState) => ({
+  isolatedWallRadius: state.isolatedWallRadius,
+  connectedWallExposedRadius: state.connectedWallExposedRadius,
+  connectedWallInteriorRadius: state.connectedWallInteriorRadius,
+});
+
 export function VillageMeshes({ cells, toWorldPosition }: VillageMeshesProps) {
   // Ces valeurs ne sont pas passées à buildVillage() : les builders de cells
   // les lisent eux-mêmes via useControlStore.getState(). Elles ne servent ici
@@ -51,10 +58,11 @@ export function VillageMeshes({ cells, toWorldPosition }: VillageMeshesProps) {
   const cellMaterials = useControlStore(useShallow(selectCellMaterials));
   const cellDecorations = useControlStore(useShallow(selectCellDecorations));
   const cellRoof = useControlStore(useShallow(selectCellRoof));
+  const cellShape = useControlStore(useShallow(selectCellShape));
 
   const groups = useMemo(
     () => buildVillage(cells, toWorldPosition),
-    [cells, toWorldPosition, cellMaterials, cellDecorations, cellRoof],
+    [cells, toWorldPosition, cellMaterials, cellDecorations, cellRoof, cellShape],
   );
 
   // Libère les géométries fusionnées quand elles sont remplacées

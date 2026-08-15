@@ -1,5 +1,6 @@
 import type { GridCell } from '../types';
 import { EDGE_R, FLAT_LIMIT } from '../config/protectedAreasConfig';
+import { useControlStore } from '../store/controlStore';
 
 export type CellLookup = Record<string, GridCell>;
 
@@ -28,13 +29,6 @@ export interface CornerRadii {
   uniform: boolean;
 }
 
-// Constantes d'ajustement pour les radius des murs
-// 🔢 C'est LE paramètre à modifier pour ajuster la rondeur des tours : plus
-// la valeur est basse, plus les pans plats sont visibles (moins "cylindre").
-export const ISOLATED_WALL_RADIUS = 0.22;             // Murs sans aucun voisin (tours) - arrondi mais jamais circulaire
-export const CONNECTED_WALL_EXPOSED_RADIUS = 0.1;     // Coins exposés des murs avec 1+ voisins - parfaitement carré
-export const CONNECTED_WALL_INTERIOR_RADIUS = 0.0;    // Coins connectés - parfaitement carré
-
 /**
  * Returns per-corner radii for a cell based on its horizontal neighbours.
  * Isolated cells get fully rounded corners (tower / pillar look).
@@ -42,6 +36,8 @@ export const CONNECTED_WALL_INTERIOR_RADIUS = 0.0;    // Coins connectés - parf
  * slightly rounded (almost right angle) corners on their exposed extremities.
  */
 export function getCornerRadii(lookup: CellLookup, cell: GridCell): CornerRadii {
+  const { isolatedWallRadius, connectedWallExposedRadius, connectedWallInteriorRadius } = useControlStore.getState();
+
   const hasL = hasOccupiedCell(lookup, cell.x - 1, cell.y, cell.z);
   const hasR = hasOccupiedCell(lookup, cell.x + 1, cell.y, cell.z);
   const hasF = hasOccupiedCell(lookup, cell.x, cell.y, cell.z + 1);
@@ -52,20 +48,20 @@ export function getCornerRadii(lookup: CellLookup, cell: GridCell): CornerRadii 
   // Les murs qui n'ont aucun mur adjacent doivent être très arrondis (ex: tours)
   if (numAdjacent === 0) {
     return {
-      backLeft: ISOLATED_WALL_RADIUS,
-      backRight: ISOLATED_WALL_RADIUS,
-      frontLeft: ISOLATED_WALL_RADIUS,
-      frontRight: ISOLATED_WALL_RADIUS,
-      max: ISOLATED_WALL_RADIUS,
+      backLeft: isolatedWallRadius,
+      backRight: isolatedWallRadius,
+      frontLeft: isolatedWallRadius,
+      frontRight: isolatedWallRadius,
+      max: isolatedWallRadius,
       uniform: true
     };
   }
 
   // Les murs qui ont 1 ou plusieurs murs adjacents doivent être "presque un angle droit" sur leurs parties exposées
-  const backLeft = (!hasL && !hasB) ? CONNECTED_WALL_EXPOSED_RADIUS : CONNECTED_WALL_INTERIOR_RADIUS;
-  const backRight = (!hasR && !hasB) ? CONNECTED_WALL_EXPOSED_RADIUS : CONNECTED_WALL_INTERIOR_RADIUS;
-  const frontLeft = (!hasL && !hasF) ? CONNECTED_WALL_EXPOSED_RADIUS : CONNECTED_WALL_INTERIOR_RADIUS;
-  const frontRight = (!hasR && !hasF) ? CONNECTED_WALL_EXPOSED_RADIUS : CONNECTED_WALL_INTERIOR_RADIUS;
+  const backLeft = (!hasL && !hasB) ? connectedWallExposedRadius : connectedWallInteriorRadius;
+  const backRight = (!hasR && !hasB) ? connectedWallExposedRadius : connectedWallInteriorRadius;
+  const frontLeft = (!hasL && !hasF) ? connectedWallExposedRadius : connectedWallInteriorRadius;
+  const frontRight = (!hasR && !hasF) ? connectedWallExposedRadius : connectedWallInteriorRadius;
 
   const max = Math.max(backLeft, backRight, frontLeft, frontRight);
   const uniform = backLeft === backRight && backRight === frontLeft && frontLeft === frontRight;
