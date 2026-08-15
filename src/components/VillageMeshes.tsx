@@ -23,13 +23,12 @@ interface VillageMeshesProps {
 
 const selectCellMaterials = (state: CellMaterialsState) => ({
   wallRoughness: state.wallRoughness,
-  colorJitterIntensity: state.colorJitterIntensity,
+  wallBaseColor: state.wallBaseColor,
+  roofBaseColor: state.roofBaseColor,
 });
 
 const selectCellDecorations = (state: CellDecorationsState) => ({
-  standardStonesPerFace: state.standardStonesPerFace,
   windowStonesPerFace: state.windowStonesPerFace,
-  standardStoneRoughness: state.standardStoneRoughness,
   windowStoneRoughness: state.windowStoneRoughness,
   quoinMargin: state.quoinMargin,
   quoinRoughness: state.quoinRoughness,

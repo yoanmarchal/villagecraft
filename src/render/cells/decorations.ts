@@ -35,14 +35,12 @@ export function isQuoinProtected(
   const checkEdge = (isLeftEdge: boolean): boolean => {
     let dx = 0;
     let dz = 0;
-    let cornerName: 'backLeft' | 'backRight' | 'frontLeft' | 'frontRight' = 'frontLeft';
 
-    if (face === 'front') { dz = 1; dx = isLeftEdge ? -1 : 1; cornerName = isLeftEdge ? 'frontLeft' : 'frontRight'; }
-    else if (face === 'back') { dz = -1; dx = isLeftEdge ? -1 : 1; cornerName = isLeftEdge ? 'backLeft' : 'backRight'; }
-    else if (face === 'left') { dx = -1; dz = isLeftEdge ? -1 : 1; cornerName = isLeftEdge ? 'backLeft' : 'frontLeft'; }
-    else if (face === 'right') { dx = 1; dz = isLeftEdge ? -1 : 1; cornerName = isLeftEdge ? 'backRight' : 'frontRight'; }
+    if (face === 'front') { dz = 1; dx = isLeftEdge ? -1 : 1; }
+    else if (face === 'back') { dz = -1; dx = isLeftEdge ? -1 : 1; }
+    else if (face === 'left') { dx = -1; dz = isLeftEdge ? -1 : 1; }
+    else if (face === 'right') { dx = 1; dz = isLeftEdge ? -1 : 1; }
 
-    if (cell.propertyBundle?.mergeFlags.suppressQuoin[cornerName]) return false;
     return isCornerExposed(lookup, cell, dx, dz);
   };
 
@@ -58,9 +56,6 @@ export function quoinParts(ctx: CellContext, baseColor: string): Part[] {
   // Les tours n'ont pas de quoins
   if (isIsolated) return [];
 
-  const flags = cell.propertyBundle?.mergeFlags.suppressQuoin;
-  if (flags && flags.backLeft && flags.backRight && flags.frontLeft && flags.frontRight) return [];
-
   const { quoinRoughness } = useControlStore.getState();
   const quoinColor = varyColorBrightness(baseColor, -0.12);
   const mat = { roughness: quoinRoughness };
@@ -75,8 +70,7 @@ export function quoinParts(ctx: CellContext, baseColor: string): Part[] {
   const geoA = roundedBoxGeo(w1x, 0.18, w1z, 0.01, 2);
   const geoB = roundedBoxGeo(w2x, 0.18, w2z, 0.01, 2);
 
-  for (const { dx, dz, corner } of CELL_CORNERS) {
-    if (cell.propertyBundle?.mergeFlags.suppressQuoin[corner]) continue;
+  for (const { dx, dz } of CELL_CORNERS) {
     if (!isCornerExposed(lookup, cell, dx, dz)) continue;
 
     const posX1 = dx * (0.5 + protrusion - w1x / 2);

@@ -1,89 +1,18 @@
-import { BlockType, type CellCoordinate, type GridCell, type PropertyBundle } from './types';
-import { type ColorPalette, getBuildingId, getPaletteByIndex, randomColorVariation } from './colorPalettes';
-import { PropertyInheritanceSystem } from './propertyInheritanceSystem';
-
-// Simple 2D Perlin noise implementation for terrain generation
-class PerlinNoise {
-  private seed: number;
-  private permutation: number[];
-
-  constructor(seed: number) {
-    this.seed = seed;
-    this.permutation = this.generatePermutation();
-  }
-
-  private generatePermutation(): number[] {
-    const permutation = [];
-    for (let i = 0; i < 256; i++) {
-      permutation[i] = i;
-    }
-
-    // Shuffle the permutation array using the seed
-    for (let i = 0; i < 256; i++) {
-      const j = Math.floor(this.random() * 256);
-      [permutation[i], permutation[j]] = [permutation[j], permutation[i]];
-    }
-
-    return permutation;
-  }
-
-  private random(): number {
-    // Simple pseudo-random number generator
-    const x = Math.sin(this.seed++) * 10000;
-    return x - Math.floor(x);
-  }
-
-  private fade(t: number): number {
-    return t * t * t * (t * (t * 6 - 15) + 10);
-  }
-
-  private lerp(t: number, a: number, b: number): number {
-    return a + t * (b - a);
-  }
-
-  private grad(hash: number, x: number, y: number): number {
-    const h = hash & 15;
-    const u = h < 8 ? x : y;
-    const v = h < 4 ? y : h === 12 || h === 14 ? x : 0;
-    return ((h & 1) === 0 ? u : -u) + ((h & 2) === 0 ? v : -v);
-  }
-
-  public noise(x: number, y: number): number {
-    const X = Math.floor(x) & 255;
-    const Y = Math.floor(y) & 255;
-    const xf = x - Math.floor(x);
-    const yf = y - Math.floor(y);
-
-    const u = this.fade(xf);
-    const v = this.fade(yf);
-
-    const a = this.permutation[X] + Y;
-    const aa = this.permutation[a];
-    const ab = this.permutation[a + 1];
-    const b = this.permutation[X + 1] + Y;
-    const ba = this.permutation[b];
-    const bb = this.permutation[b + 1];
-
-    return this.lerp(v, this.lerp(u, this.grad(this.permutation[aa], xf, yf), this.grad(this.permutation[ba], xf - 1, yf)),
-                           this.lerp(u, this.grad(this.permutation[ab], xf, yf - 1), this.grad(this.permutation[bb], xf - 1, yf - 1)));
-  }
-}
+import { BlockType, type CellCoordinate, type GridCell } from './types';
+import { computePropertyBundle } from './propertyInheritanceSystem';
 
 export class VillageGrid {
   private readonly sizeX: number;
   private readonly sizeY: number;
   private readonly sizeZ: number;
   private readonly grid: GridCell[][][];
-  private readonly buildingPalettes: Map<number, ColorPalette> = new Map();
   private nextPlacementOrder: number = 0;
-  private noiseGenerator: PerlinNoise;
 
   constructor(sizeX: number, sizeY: number, sizeZ: number) {
     this.sizeX = sizeX;
     this.sizeY = sizeY;
     this.sizeZ = sizeZ;
     this.grid = this.createEmptyGrid();
-    this.noiseGenerator = new PerlinNoise(42); // Default seed
   }
 
   public addBlock(x: number, y: number, z: number): void {
@@ -210,28 +139,16 @@ export class VillageGrid {
     }
   }
 
-  public generateTerrain(seed: number, heightScale: number = 3, gridSize: number = 2): void {
+  public generateTerrain(gridSize: number = 2): void {
     this.clear();
-    this.noiseGenerator = new PerlinNoise(seed);
 
     // Generate exactly gridSize x gridSize blocks (2x2 = 4 blocks, 3x3 = 9 blocks, etc.)
     // This creates a simple flat grid with exactly the specified number of blocks
-    const maxHeight = 1; // Always 1 block high for simple grid
-
-    // Generate exactly gridSize x gridSize blocks
     for (let x = 0; x < gridSize; x += 1) {
       for (let z = 0; z < gridSize; z += 1) {
-        // Add exactly 1 block per position (flat grid)
         this.addBlock(x, 0, z);
       }
     }
-  }
-
-  public updateNoiseParameters(seed: number, gridSize: number = 2): void {
-    this.noiseGenerator = new PerlinNoise(seed);
-
-    // Regenerate terrain with new parameters including grid size
-    this.generateTerrain(seed, 2, gridSize);
   }
 
   public getGrid(): GridCell[][][] {
@@ -263,23 +180,6 @@ export class VillageGrid {
     return cells;
   }
 
-  public getTypeCounts(): Record<BlockType, number> {
-    const counts: Record<BlockType, number> = {
-      [BlockType.Empty]: 0,
-      [BlockType.Foundation]: 0,
-      [BlockType.Wall]: 0,
-      [BlockType.WallWithWindow]: 0,
-      [BlockType.Roof]: 0,
-      [BlockType.Arch]: 0,
-    };
-
-    for (const cell of this.getOccupiedCells()) {
-      counts[cell.type] += 1;
-    }
-
-    return counts;
-  }
-
   public toWorldPosition(x: number, y: number, z: number): [number, number, number] {
     return [x - this.sizeX / 2 + 0.5, y + 0.5, z - this.sizeZ / 2 + 0.5];
   }
@@ -308,9 +208,6 @@ export class VillageGrid {
   }
 
   private recomputeProceduralLogic(): void {
-    // Créer le système d'héritage de propriétés simplifié
-    const inheritanceSystem = new PropertyInheritanceSystem(this.grid, this.sizeX, this.sizeZ);
-
     for (let x = 0; x < this.sizeX; x += 1) {
       for (let y = 0; y < this.sizeY; y += 1) {
         for (let z = 0; z < this.sizeZ; z += 1) {
@@ -323,7 +220,6 @@ export class VillageGrid {
             continue;
           }
 
-          const cellBelow = this.getNeighborCell(x, y - 1, z);
           const cellAbove = this.getNeighborCell(x, y + 1, z);
           const cellLeft = this.getNeighborCell(x - 1, y, z);
           const cellRight = this.getNeighborCell(x + 1, y, z);
@@ -339,7 +235,6 @@ export class VillageGrid {
             .filter(Boolean).length;
 
           const isTopMost = !cellAbove?.isOccupied;
-          const hasSupportBelow = cellBelow?.isOccupied ?? false;
 
           // Logique simplifiée pour les arches
           const isArch = this.isSimpleArch(x, y, z, hasLeftNeighbor, hasRightNeighbor, hasFrontNeighbor, hasBackNeighbor);
@@ -364,7 +259,7 @@ export class VillageGrid {
           }
 
           // Calculer le PropertyBundle simplifié
-          cell.propertyBundle = inheritanceSystem.computePropertyBundle(cell);
+          cell.propertyBundle = computePropertyBundle(cell);
           cell.color = cell.propertyBundle.color;
         }
       }
@@ -398,44 +293,6 @@ export class VillageGrid {
     }
 
     return false;
-  }
-
-  private getBuildingPalette(x: number, z: number): ColorPalette {
-    const buildingId = getBuildingId(x, z, this.sizeX);
-    
-    if (!this.buildingPalettes.has(buildingId)) {
-      this.buildingPalettes.set(buildingId, getPaletteByIndex(buildingId));
-    }
-    
-    return this.buildingPalettes.get(buildingId)!;
-  }
-
-  private getColorForCell(cell: GridCell): string {
-    const palette = this.getBuildingPalette(cell.x, cell.z);
-    let baseColor: string;
-
-    switch (cell.type) {
-      case BlockType.Foundation:
-        baseColor = palette.foundation;
-        break;
-      case BlockType.Wall:
-        baseColor = palette.primary;
-        break;
-      case BlockType.WallWithWindow:
-        baseColor = palette.accent;
-        break;
-      case BlockType.Roof:
-        baseColor = palette.roof;
-        break;
-      case BlockType.Arch:
-        baseColor = palette.primary;
-        break;
-      default:
-        baseColor = '#b8b8b8';
-    }
-
-    // Ajouter une légère variation aléatoire pour éviter l'uniformité
-    return randomColorVariation(baseColor, 0.06);
   }
 
   private getNeighborCell(x: number, y: number, z: number): GridCell | null {

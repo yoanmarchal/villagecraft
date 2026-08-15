@@ -8,17 +8,6 @@
 
 import type { ProtectedArea, ProtectedAreasConfig } from '../types';
 
-// Valeur du rayon des coins arrondis (utilisée dans ShapedBox)
-export const EDGE_R = 0.18;
-export const FLAT_LIMIT = 0.5 - EDGE_R; // 0.32
-
-// Rayon externe des éléments décoratifs sur les tours (cylindre principal = 0.5)
-// Tous les éléments décoratifs (decorative bands, stone patches) utilisent ce même rayon externe
-export const TOWER_EXTERNAL_RADIUS = 0.5125;
-
-// Rayon des decorative bands (légèrement inférieur au rayon externe pour qu'ils soient sous les pierres)
-export const DECO_BAND_RADIUS = 0.505;
-
 /**
  * Coordonnées des 4 coins d'une face (normalisées à -0.5..0.5)
  * Utilisées pour vérifier les superpositions avec les quoins
@@ -77,10 +66,6 @@ export function checkInProtectedZones(
   }
   return false;
 }
-
-// Rayon des corps principaux (tours et murs) pour les decorative bands
-export const TOWER_RADIUS = 0.5;
-export const WALL_RADIUS = 0.5;
 
 /**
  * Zones protégées pour WallWithWindowCell

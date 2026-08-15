@@ -1,5 +1,4 @@
 import type { GridCell } from '../types';
-import { EDGE_R, FLAT_LIMIT } from '../config/protectedAreasConfig';
 import { useControlStore } from '../store/controlStore';
 
 export type CellLookup = Record<string, GridCell>;
@@ -229,9 +228,6 @@ export function isTowerColumn(lookup: CellLookup, cell: GridCell): boolean {
 // =============================================================================
 // Utilitaires de géométrie pour la projection sur les faces arrondies
 // =============================================================================
-
-// Ré-exporter pour maintenir la compatibilité avec les imports existants
-export { EDGE_R, FLAT_LIMIT };
 
 /**
  * Projette un point latéral t sur la surface réelle d'une face,

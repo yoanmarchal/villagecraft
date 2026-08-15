@@ -59,13 +59,12 @@ export interface UiState {
 
 export interface CellMaterialsState {
   wallRoughness: number;
-  colorJitterIntensity: number;
+  wallBaseColor: string;
+  roofBaseColor: string;
 }
 
 export interface CellDecorationsState {
-  standardStonesPerFace: number;
   windowStonesPerFace: number;
-  standardStoneRoughness: number;
   windowStoneRoughness: number;
   quoinMargin: number;
   quoinRoughness: number;
@@ -166,11 +165,10 @@ const DEFAULT_STATE: GridState &
   panelVisible: true,
 
   wallRoughness: 0.94,
-  colorJitterIntensity: 0.05,
+  wallBaseColor: '#f5e6d3',
+  roofBaseColor: '#c85a3f',
 
-  standardStonesPerFace: 10,
   windowStonesPerFace: 25,
-  standardStoneRoughness: 0.95,
   windowStoneRoughness: 0.85,
   quoinMargin: 0.2,
   quoinRoughness: 0.9,

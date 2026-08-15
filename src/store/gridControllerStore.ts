@@ -37,7 +37,7 @@ export const useGridControllerStore = create<GridControllerState>()((set, get) =
     await new Promise((resolve) => setTimeout(resolve, 50));
 
     const gridSize = useControlStore.getState().gridSize;
-    grid.generateTerrain(42, 2, gridSize);
+    grid.generateTerrain(gridSize);
     onMutate?.();
 
     set({ isGenerating: false });

@@ -7,35 +7,8 @@ export enum BlockType {
   Arch = 'ARCH',
 }
 
-export enum DecorationStyle {
-  Standard = 'STANDARD',
-  Stone = 'STONE',
-}
-
-export type Corner = 'backLeft' | 'backRight' | 'frontLeft' | 'frontRight';
-export type Face = 'front' | 'back' | 'left' | 'right';
-
-export interface MergeFlags {
-  mergeWithNeighbors: boolean;
-  suppressQuoin: {
-    backLeft: boolean;
-    backRight: boolean;
-    frontLeft: boolean;
-    frontRight: boolean;
-  };
-  suppressBaseTrim: {
-    front: boolean;
-    back: boolean;
-    left: boolean;
-    right: boolean;
-  };
-  suppressCornice: boolean;
-}
-
 export interface PropertyBundle {
   color: string;
-  decorationStyle: DecorationStyle;
-  mergeFlags: MergeFlags;
 }
 
 export interface GridCell {

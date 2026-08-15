@@ -5,8 +5,9 @@ import type { Disposer } from './types';
 
 function toModel(state: CellMaterialsState) {
   return {
+    wallBaseColor: state.wallBaseColor,
+    roofBaseColor: state.roofBaseColor,
     wallRoughness: state.wallRoughness,
-    colorJitterIntensity: state.colorJitterIntensity,
   };
 }
 
@@ -23,16 +24,17 @@ export function registerMaterialsControls(pane: Pane): Disposer {
   };
 
   const bindings = [
+    folder.addBinding(model, 'wallBaseColor', { label: 'wall color' }),
+    folder.addBinding(model, 'roofBaseColor', { label: 'roof color' }),
     folder.addBinding(model, 'wallRoughness', { min: 0, max: 1, step: 0.01 }),
-    folder.addBinding(model, 'colorJitterIntensity', { min: 0, max: 0.3, step: 0.005 }),
   ];
 
   bindings.forEach((binding) => binding.on('change', applyPatch));
 
   const unsubscribe = useControlStore.subscribe((state, prevState) => {
-    // Le jitter de couleur est appliqué à la mutation de la grille, pas au rendu :
-    // il faut re-teindre explicitement les cellules déjà posées.
-    if (state.colorJitterIntensity !== prevState.colorJitterIntensity) {
+    // La couleur de base est appliquée à la mutation de la grille, pas au
+    // rendu : il faut re-teindre explicitement les cellules déjà posées.
+    if (state.wallBaseColor !== prevState.wallBaseColor || state.roofBaseColor !== prevState.roofBaseColor) {
       const { grid, onMutate } = useGridControllerStore.getState();
       grid?.recolor();
       onMutate?.();
