@@ -5,9 +5,11 @@
  */
 
 import { useEffect, useMemo } from 'react';
+import { useFrame } from '@react-three/fiber';
 import { useShallow } from 'zustand/react/shallow';
 import type { GridCell } from '../types';
 import { buildVillage } from '../render/buildVillage';
+import { createGrowMaterialSet, disposeGrowMaterialSet, updateGrowTime } from '../render/growMaterial';
 import {
   useControlStore,
   type CellMaterialsState,
@@ -35,7 +37,6 @@ const selectCellDecorations = (state: CellDecorationsState) => ({
 });
 
 const selectCellRoof = (state: CellRoofState) => ({
-  eaveY: state.eaveY,
   ridgeY: state.ridgeY,
   towerR: state.towerR,
   merlonCount: state.merlonCount,
@@ -58,6 +59,7 @@ export function VillageMeshes({ cells, toWorldPosition }: VillageMeshesProps) {
   const cellDecorations = useControlStore(useShallow(selectCellDecorations));
   const cellRoof = useControlStore(useShallow(selectCellRoof));
   const cellShape = useControlStore(useShallow(selectCellShape));
+  const blockTransitionEnabled = useControlStore((state) => state.blockTransitionEnabled);
 
   const groups = useMemo(
     () => buildVillage(cells, toWorldPosition),
@@ -71,19 +73,48 @@ export function VillageMeshes({ cells, toWorldPosition }: VillageMeshesProps) {
     };
   }, [groups]);
 
+  // Un jeu de matériaux "grow" par groupe (voir growMaterial.ts), reconstruit
+  // seulement quand les groupes le sont — la transition qu'ils pilotent
+  // avance ensuite uniquement via l'uniform de temps, à chaque frame.
+  const materialSets = useMemo(
+    () =>
+      groups.map(({ mat }) =>
+        createGrowMaterialSet({
+          vertexColors: true,
+          roughness: mat.roughness,
+          metalness: mat.metalness ?? 0,
+          transparent: mat.transparent ?? false,
+          opacity: mat.opacity ?? 1,
+          depthWrite: !mat.transparent,
+        }),
+      ),
+    [groups],
+  );
+
+  useEffect(() => {
+    return () => {
+      for (const set of materialSets) disposeGrowMaterialSet(set);
+    };
+  }, [materialSets]);
+
+  useFrame(() => {
+    // Même horloge que `cell.spawnedAt` (villageGrid.ts), pas celle du canvas.
+    const time = performance.now() / 1000;
+    for (const set of materialSets) updateGrowTime(set, time, blockTransitionEnabled);
+  });
+
   return (
     <>
-      {groups.map(({ key, mat, geometry }) => (
-        <mesh key={key} name={`village-${key}`} geometry={geometry} castShadow receiveShadow>
-          <meshStandardMaterial
-            vertexColors
-            roughness={mat.roughness}
-            metalness={mat.metalness ?? 0}
-            transparent={mat.transparent ?? false}
-            opacity={mat.opacity ?? 1}
-            depthWrite={!mat.transparent}
-          />
-        </mesh>
+      {groups.map(({ key, geometry }, i) => (
+        <mesh
+          key={key}
+          name={`village-${key}`}
+          geometry={geometry}
+          material={materialSets[i].material}
+          customDepthMaterial={materialSets[i].depthMaterial}
+          castShadow
+          receiveShadow
+        />
       ))}
     </>
   );

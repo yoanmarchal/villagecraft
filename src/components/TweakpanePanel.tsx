@@ -10,6 +10,7 @@ import { registerShapeControls } from '../controls/shapeControls';
 import { registerMaterialsControls } from '../controls/materialsControls';
 import { registerDecorationsControls } from '../controls/decorationsControls';
 import { registerRoofShapeControls } from '../controls/roofShapeControls';
+import { registerTransitionControls } from '../controls/transitionControls';
 import { registerDebugControls } from '../controls/debugControls';
 import { registerActionsControls } from '../controls/actionsControls';
 import type { Disposer } from '../controls/types';
@@ -34,6 +35,7 @@ export function TweakpanePanel() {
       registerMaterialsControls(pane),
       registerDecorationsControls(pane),
       registerRoofShapeControls(pane),
+      registerTransitionControls(pane),
       registerDebugControls(pane),
       registerActionsControls(pane),
     ];

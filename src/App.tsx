@@ -39,13 +39,13 @@ export function App() {
     return () => window.removeEventListener('keydown', onKeyDown);
   }, []);
 
-  const handleCellAction = (action: 'add' | 'remove', x: number, y: number, z: number) => {
-    if (action === 'add') {
-      grid.addBlock(x, y, z);
-    } else {
-      grid.removeBlock(x, y, z);
-    }
+  const handleAddBlock = (x: number, y: number, z: number) => {
+    grid.addBlock(x, y, z);
+    refreshScene();
+  };
 
+  const handleRemoveColumn = (x: number, z: number) => {
+    grid.removeTopBlockInColumn(x, z);
     refreshScene();
   };
 
@@ -66,7 +66,8 @@ export function App() {
           gridWidth={gridSize}
           gridDepth={gridSize}
           selectedHeight={0}
-          onCellAction={handleCellAction}
+          onAddBlock={handleAddBlock}
+          onRemoveColumn={handleRemoveColumn}
           onPreviewMove={(x, z) => {
             // Only allow preview within the selected grid size
             if (x < gridSize && z < gridSize) {
@@ -78,7 +79,6 @@ export function App() {
           previewCell={previewCell}
           toWorldPosition={toWorldPosition}
           getNextPlacementY={(x, z, minimumY) => grid.getNextPlacementY(x, z, minimumY)}
-          getTopRealOccupiedY={(x, z) => grid.getTopRealOccupiedY(x, z)}
         />
       </div>
       <TweakpanePanel />

@@ -4,7 +4,6 @@ import type { Disposer } from './types';
 
 function toModel(state: CellRoofState) {
   return {
-    eaveY: state.eaveY,
     ridgeY: state.ridgeY,
     towerR: state.towerR,
     merlonCount: state.merlonCount,
@@ -27,8 +26,10 @@ export function registerRoofShapeControls(pane: Pane): Disposer {
   };
 
   const bindings = [
-    folder.addBinding(model, 'eaveY', { min: -1, max: 0, step: 0.01 }),
-    folder.addBinding(model, 'ridgeY', { min: 0, max: 1, step: 0.01 }),
+    // L'avant-toit est fixe, toujours collé au bloc du dessous (voir
+    // roofCellParts.ts) — seule la hauteur du faîtage (donc la taille du
+    // toit) reste réglable.
+    folder.addBinding(model, 'ridgeY', { label: 'roof height', min: 0, max: 1, step: 0.01 }),
     folder.addBinding(model, 'towerR', { min: 0.2, max: 0.8, step: 0.01 }),
     folder.addBinding(model, 'merlonCount', { min: 3, max: 12, step: 1 }),
     folder.addBinding(model, 'merlonR', { min: 0.03, max: 0.2, step: 0.005 }),

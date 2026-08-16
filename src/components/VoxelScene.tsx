@@ -13,12 +13,12 @@ interface VoxelSceneProps {
   gridWidth: number;
   gridDepth: number;
   selectedHeight: number;
-  onCellAction: (action: 'add' | 'remove', x: number, y: number, z: number) => void;
+  onAddBlock: (x: number, y: number, z: number) => void;
+  onRemoveColumn: (x: number, z: number) => void;
   onPreviewMove: (x: number, z: number) => void;
   previewCell: { x: number; z: number } | null;
   toWorldPosition: (x: number, y: number, z: number) => [number, number, number];
   getNextPlacementY: (x: number, z: number, minimumY: number) => number | null;
-  getTopRealOccupiedY: (x: number, z: number) => number | null;
 }
 
 const selectLighting = (state: ControlState) => ({
@@ -70,12 +70,12 @@ export function VoxelScene({
   gridWidth,
   gridDepth,
   selectedHeight,
-  onCellAction,
+  onAddBlock,
+  onRemoveColumn,
   onPreviewMove,
   previewCell,
   toWorldPosition,
   getNextPlacementY,
-  getTopRealOccupiedY,
 }: VoxelSceneProps) {
   const gridSize = useControlStore((state) => state.gridSize);
   const showPerfMonitor = useControlStore((state) => state.showPerfMonitor);
@@ -122,18 +122,17 @@ export function VoxelScene({
     const gridX = Math.floor(event.point.x + gridWidth / 2);
     const gridZ = Math.floor(event.point.z + gridDepth / 2);
     onPreviewMove(gridX, gridZ);
-    const placementY = getNextPlacementY(gridX, gridZ, selectedHeight);
-    const removalY = getTopRealOccupiedY(gridX, gridZ);
 
     if (event.button === 2) {
-      if (removalY !== null) {
-        onCellAction('remove', gridX, removalY, gridZ);
-      }
+      onRemoveColumn(gridX, gridZ);
       return;
     }
 
-    if (event.button === 0 && placementY !== null) {
-      onCellAction('add', gridX, placementY, gridZ);
+    if (event.button === 0) {
+      const placementY = getNextPlacementY(gridX, gridZ, selectedHeight);
+      if (placementY !== null) {
+        onAddBlock(gridX, placementY, gridZ);
+      }
     }
   };
 

@@ -71,7 +71,6 @@ export interface CellDecorationsState {
 }
 
 export interface CellRoofState {
-  eaveY: number;
   ridgeY: number;
   towerR: number;
   merlonCount: number;
@@ -86,6 +85,10 @@ export interface CellShapeState {
   connectedWallInteriorRadius: number;
 }
 
+export interface CellTransitionState {
+  blockTransitionEnabled: boolean;
+}
+
 export interface ControlState
   extends GridState,
     LightingState,
@@ -97,7 +100,8 @@ export interface ControlState
     CellMaterialsState,
     CellDecorationsState,
     CellRoofState,
-    CellShapeState {
+    CellShapeState,
+    CellTransitionState {
   setGridSize: (gridSize: number) => void;
   setLighting: (patch: Partial<LightingState>) => void;
   setSkyFog: (patch: Partial<SkyFogState>) => void;
@@ -109,6 +113,7 @@ export interface ControlState
   setCellDecorations: (patch: Partial<CellDecorationsState>) => void;
   setCellRoof: (patch: Partial<CellRoofState>) => void;
   setCellShape: (patch: Partial<CellShapeState>) => void;
+  setCellTransition: (patch: Partial<CellTransitionState>) => void;
 }
 
 const DEFAULT_STATE: GridState &
@@ -121,7 +126,8 @@ const DEFAULT_STATE: GridState &
   CellMaterialsState &
   CellDecorationsState &
   CellRoofState &
-  CellShapeState = {
+  CellShapeState &
+  CellTransitionState = {
   gridSize: 2,
 
   ambientIntensity: 1.3,
@@ -173,7 +179,6 @@ const DEFAULT_STATE: GridState &
   quoinMargin: 0.2,
   quoinRoughness: 0.9,
 
-  eaveY: -0.5,
   ridgeY: 0.22,
   towerR: 0.5,
   merlonCount: 6,
@@ -184,6 +189,8 @@ const DEFAULT_STATE: GridState &
   isolatedWallRadius: 0.22,
   connectedWallExposedRadius: 0.1,
   connectedWallInteriorRadius: 0.0,
+
+  blockTransitionEnabled: true,
 };
 
 export const useControlStore = create<ControlState>()(
@@ -202,6 +209,7 @@ export const useControlStore = create<ControlState>()(
       setCellDecorations: (patch) => set(patch),
       setCellRoof: (patch) => set(patch),
       setCellShape: (patch) => set(patch),
+      setCellTransition: (patch) => set(patch),
     }),
     {
       name: 'voxel-control-panel',

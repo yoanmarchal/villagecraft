@@ -28,6 +28,18 @@ export interface Part {
   mat: MaterialSpec;
 }
 
+/**
+ * Part positionné dans le monde par le collecteur (buildVillage.ts), avec le
+ * pivot et l'horodatage de sa cellule — sert à rejouer l'animation
+ * d'apparition/transition par cellule dans le vertex shader (growMaterial.ts).
+ */
+export interface PositionedPart extends Part {
+  cellCenter: THREE.Vector3;
+  spawn: number;
+  /** > 0 pour les toits : tombe de cette hauteur au lieu de "gonfler" depuis le pivot. */
+  fallHeight: number;
+}
+
 export type Vec3 = [number, number, number];
 
 /**

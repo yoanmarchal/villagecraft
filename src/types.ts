@@ -27,6 +27,11 @@ export interface GridCell {
    * claim/clear it transparently rather than treating it as a real block.
    */
   isAutoRoof?: boolean;
+  /**
+   * `performance.now()/1000` au dernier changement visuel (type ou couleur) —
+   * pilote l'animation d'apparition/transition du bloc (voir growMaterial.ts).
+   */
+  spawnedAt?: number;
 }
 
 export interface CellCoordinate {

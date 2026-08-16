@@ -22,7 +22,8 @@ import {
   isTowerColumn,
   makeCellLookup,
 } from '../utils/cellUtils';
-import { matKey, type MaterialSpec, type Part } from './parts';
+import { matKey, type MaterialSpec, type Part, type PositionedPart } from './parts';
+import { ROOF_DROP_HEIGHT } from './growMaterial';
 import type { CellContext } from './cells/context';
 import { standardCellParts } from './cells/standardCellParts';
 import { wallWindowCellParts } from './cells/wallWindowCellParts';
@@ -40,7 +41,7 @@ export function buildVillage(
   toWorldPosition: (x: number, y: number, z: number) => [number, number, number],
 ): MergedGroup[] {
   const lookup = makeCellLookup(cells);
-  const groups = new Map<string, { mat: MaterialSpec; parts: Part[] }>();
+  const groups = new Map<string, { mat: MaterialSpec; parts: PositionedPart[] }>();
 
   const translation = new THREE.Matrix4();
 
@@ -73,6 +74,9 @@ export function buildVillage(
 
     const [wx, wy, wz] = toWorldPosition(cell.x, cell.y, cell.z);
     translation.makeTranslation(wx, wy, wz);
+    const cellCenter = new THREE.Vector3(wx, wy, wz);
+    const spawn = cell.spawnedAt ?? 0;
+    const fallHeight = cell.type === BlockType.Roof ? ROOF_DROP_HEIGHT : 0;
 
     for (const p of cellParts) {
       p.matrix.premultiply(translation);
@@ -82,7 +86,7 @@ export function buildVillage(
         group = { mat: p.mat, parts: [] };
         groups.set(key, group);
       }
-      group.parts.push(p);
+      group.parts.push({ ...p, cellCenter, spawn, fallHeight });
     }
   }
 
@@ -107,7 +111,7 @@ function isFinitePart(p: Part): boolean {
   return true;
 }
 
-function mergeParts(allParts: Part[]): THREE.BufferGeometry {
+function mergeParts(allParts: PositionedPart[]): THREE.BufferGeometry {
   const parts = allParts.filter(isFinitePart);
   if (parts.length !== allParts.length) {
     console.warn(`buildVillage: ${allParts.length - parts.length} part(s) ignoré(s) (matrice non-finie)`);
@@ -119,6 +123,9 @@ function mergeParts(allParts: Part[]): THREE.BufferGeometry {
   const positions = new Float32Array(total * 3);
   const normals = new Float32Array(total * 3);
   const colors = new Float32Array(total * 3);
+  const cellCenters = new Float32Array(total * 3);
+  const spawns = new Float32Array(total);
+  const fallHeights = new Float32Array(total);
 
   const v = new THREE.Vector3();
   const n = new THREE.Vector3();
@@ -150,6 +157,13 @@ function mergeParts(allParts: Part[]): THREE.BufferGeometry {
       colors[o] = color.r;
       colors[o + 1] = color.g;
       colors[o + 2] = color.b;
+
+      cellCenters[o] = p.cellCenter.x;
+      cellCenters[o + 1] = p.cellCenter.y;
+      cellCenters[o + 2] = p.cellCenter.z;
+
+      spawns[offset + i] = p.spawn;
+      fallHeights[offset + i] = p.fallHeight;
     }
     offset += count;
   }
@@ -158,5 +172,8 @@ function mergeParts(allParts: Part[]): THREE.BufferGeometry {
   geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
   geometry.setAttribute('normal', new THREE.BufferAttribute(normals, 3));
   geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+  geometry.setAttribute('aCellCenter', new THREE.BufferAttribute(cellCenters, 3));
+  geometry.setAttribute('aSpawn', new THREE.BufferAttribute(spawns, 1));
+  geometry.setAttribute('aFallHeight', new THREE.BufferAttribute(fallHeights, 1));
   return geometry;
 }

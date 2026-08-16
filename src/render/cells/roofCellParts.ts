@@ -27,8 +27,12 @@ const RIB_OFFSETS = [-0.40, -0.13, 0.13, 0.40];
 export function roofCellParts(ctx: CellContext): Part[] {
   const { cell, lookup, radii, isIsolated } = ctx;
 
-  // ── Constantes géométriques pilotées par le store (avant-toit/faîtage/tour) ──
-  const { eaveY: EAVE_Y, ridgeY: RIDGE_Y, towerR: TOWER_R } = useControlStore.getState();
+  // ── Constantes géométriques pilotées par le store (faîtage/tour) ──
+  const { ridgeY: RIDGE_Y, towerR: TOWER_R } = useControlStore.getState();
+  // Toujours collé au plancher de la cellule de toit (= haut du bloc du
+  // dessous), pas réglable : un toit ne doit jamais flotter au-dessus de son
+  // mur ni s'enfoncer dedans. Seule sa taille (RIDGE_Y) reste modifiable.
+  const EAVE_Y = -0.5;
   const RISE = RIDGE_Y - EAVE_Y;
   const SLOPE_LEN = Math.sqrt(RISE * RISE + RUN * RUN);
   const SLOPE_ANG = Math.atan2(RISE, RUN);

@@ -73,25 +73,36 @@ export class VillageGrid {
     this.recomputeProceduralLogic();
   }
 
+  /**
+   * Retire le bloc réel visible en haut de la colonne (jamais un cap de toit
+   * auto-généré — il disparaît de lui-même au recalcul si plus rien ne le
+   * justifie).
+   *
+   * Cas piégeux : si la colonne n'a que 2 étages réels, retirer le sommet la
+   * laisse à 1 seul étage réel — ce qui fait *immédiatement* regénérer un cap
+   * auto au même Y (règle "une colonne à 1 étage est toujours coiffée",
+   * voir syncAutoRoofs). Le rendu est alors pixel-identique à avant le
+   * retrait (les deux se dessinent en toit), donc le clic paraît n'avoir
+   * rien fait — et il fallait auparavant re-cliquer pour voir un changement.
+   * On détecte ce cas et on continue le retrait jusqu'à un changement
+   * visible (ou colonne vide), pour qu'un clic = un changement visible, toujours.
+   */
   public removeTopBlockInColumn(x: number, z: number): number | null {
-    if (!this.isValidCoordinate(x, 0, z)) {
+    const firstY = this.getTopRealOccupiedY(x, z);
+    if (firstY === null) {
       return null;
     }
 
-    for (let y = this.sizeY - 1; y >= 0; y -= 1) {
-      const cell = this.grid[x][y][z];
-      // On ignore les caps de toit auto-générés : "retirer le sommet" doit
-      // retirer le vrai bloc du dessus, le cap disparaîtra de lui-même au
-      // prochain recalcul (syncAutoRoofs).
-      if (!cell.isOccupied || cell.isAutoRoof) {
-        continue;
-      }
-
+    let y: number | null = firstY;
+    while (y !== null) {
       this.removeBlock(x, y, z);
-      return y;
+      if (!this.grid[x][y][z].isAutoRoof) {
+        break;
+      }
+      y = this.getTopRealOccupiedY(x, z);
     }
 
-    return null;
+    return firstY;
   }
 
   /**
@@ -337,6 +348,8 @@ export class VillageGrid {
   private recomputeProceduralLogic(): void {
     this.syncAutoRoofs();
 
+    const now = performance.now() / 1000;
+
     for (let x = 0; x < this.sizeX; x += 1) {
       for (let y = 0; y < this.sizeY; y += 1) {
         for (let z = 0; z < this.sizeZ; z += 1) {
@@ -348,6 +361,9 @@ export class VillageGrid {
             cell.propertyBundle = undefined;
             continue;
           }
+
+          const prevType = cell.type;
+          const prevColor = cell.color;
 
           const cellAbove = this.getNeighborCell(x, y + 1, z);
           const cellLeft = this.getNeighborCell(x - 1, y, z);
@@ -390,6 +406,13 @@ export class VillageGrid {
           // Calculer le PropertyBundle simplifié
           cell.propertyBundle = computePropertyBundle(cell);
           cell.color = cell.propertyBundle.color;
+
+          // Bloc neuf ou dont l'apparence a visiblement changé (type/couleur,
+          // ex: mur devenu toit après démolition du voisin) → rejoue la
+          // transition d'apparition.
+          if (cell.type !== prevType || cell.color !== prevColor) {
+            cell.spawnedAt = now;
+          }
         }
       }
     }
