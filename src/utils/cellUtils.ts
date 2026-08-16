@@ -30,37 +30,56 @@ export interface CornerRadii {
 
 /**
  * Returns per-corner radii for a cell based on its horizontal neighbours.
- * Isolated cells get fully rounded corners (tower / pillar look).
- * Cells in a group get sharp corners where they touch neighbours and
- * slightly rounded (almost right angle) corners on their exposed extremities.
+ * Tower columns (see `isTowerColumn`) are fully rounded on every side that
+ * is open at the base — uniformly across the whole column height. A side
+ * that *is* attached to a wall at the base instead inherits that wall's
+ * (near right-angle) corner treatment for the whole tower, even at floors
+ * above where the wall has already ended, so the corner doesn't flip
+ * abruptly from angular to round partway up.
+ * Non-tower cells in a group get sharp corners where they touch neighbours
+ * and slightly rounded (almost right angle) corners on their exposed
+ * extremities.
  */
 export function getCornerRadii(lookup: CellLookup, cell: GridCell): CornerRadii {
   const { isolatedWallRadius, connectedWallExposedRadius, connectedWallInteriorRadius } = useControlStore.getState();
+
+  if (isTowerColumn(lookup, cell)) {
+    // C'est la base de la tour qui décide, une fois pour toutes, quels côtés
+    // sont accolés à un mur : ce traitement "mur connecté" (presque angle
+    // droit) s'applique alors à toute la hauteur de la tour — même aux étages
+    // où le mur adjacent s'est arrêté plus bas — sinon le coin passerait
+    // brutalement d'anguleux à rond en cours de tour. Les côtés jamais
+    // accolés à la base restent pleinement arrondis sur toute la hauteur.
+    const base = getColumnBase(lookup, cell);
+    const hasL = hasOccupiedCell(lookup, base.x - 1, base.y, base.z);
+    const hasR = hasOccupiedCell(lookup, base.x + 1, base.y, base.z);
+    const hasF = hasOccupiedCell(lookup, base.x, base.y, base.z + 1);
+    const hasB = hasOccupiedCell(lookup, base.x, base.y, base.z - 1);
+
+    return buildCornerRadii(hasL, hasR, hasF, hasB, isolatedWallRadius, connectedWallInteriorRadius);
+  }
 
   const hasL = hasOccupiedCell(lookup, cell.x - 1, cell.y, cell.z);
   const hasR = hasOccupiedCell(lookup, cell.x + 1, cell.y, cell.z);
   const hasF = hasOccupiedCell(lookup, cell.x, cell.y, cell.z + 1);
   const hasB = hasOccupiedCell(lookup, cell.x, cell.y, cell.z - 1);
 
-  const numAdjacent = Number(hasL) + Number(hasR) + Number(hasF) + Number(hasB);
-
-  // Les murs qui n'ont aucun mur adjacent doivent être très arrondis (ex: tours)
-  if (numAdjacent === 0) {
-    return {
-      backLeft: isolatedWallRadius,
-      backRight: isolatedWallRadius,
-      frontLeft: isolatedWallRadius,
-      frontRight: isolatedWallRadius,
-      max: isolatedWallRadius,
-      uniform: true
-    };
-  }
-
   // Les murs qui ont 1 ou plusieurs murs adjacents doivent être "presque un angle droit" sur leurs parties exposées
-  const backLeft = (!hasL && !hasB) ? connectedWallExposedRadius : connectedWallInteriorRadius;
-  const backRight = (!hasR && !hasB) ? connectedWallExposedRadius : connectedWallInteriorRadius;
-  const frontLeft = (!hasL && !hasF) ? connectedWallExposedRadius : connectedWallInteriorRadius;
-  const frontRight = (!hasR && !hasF) ? connectedWallExposedRadius : connectedWallInteriorRadius;
+  return buildCornerRadii(hasL, hasR, hasF, hasB, connectedWallExposedRadius, connectedWallInteriorRadius);
+}
+
+function buildCornerRadii(
+  hasL: boolean,
+  hasR: boolean,
+  hasF: boolean,
+  hasB: boolean,
+  exposedRadius: number,
+  interiorRadius: number
+): CornerRadii {
+  const backLeft = (!hasL && !hasB) ? exposedRadius : interiorRadius;
+  const backRight = (!hasR && !hasB) ? exposedRadius : interiorRadius;
+  const frontLeft = (!hasL && !hasF) ? exposedRadius : interiorRadius;
+  const frontRight = (!hasR && !hasF) ? exposedRadius : interiorRadius;
 
   const max = Math.max(backLeft, backRight, frontLeft, frontRight);
   const uniform = backLeft === backRight && backRight === frontLeft && frontLeft === frontRight;
@@ -243,6 +262,22 @@ export function isTowerColumn(lookup: CellLookup, cell: GridCell): boolean {
     y += 1;
   }
   return false;
+}
+
+/**
+ * Retourne la cellule la plus basse de la colonne (x, z) contenant `cell`,
+ * en descendant tant que la colonne reste occupée.
+ */
+export function getColumnBase(lookup: CellLookup, cell: GridCell): GridCell {
+  let base = cell;
+  let y = cell.y - 1;
+  while (true) {
+    const below = getCell(lookup, cell.x, y, cell.z);
+    if (!below?.isOccupied) break;
+    base = below;
+    y -= 1;
+  }
+  return base;
 }
 
 // =============================================================================
