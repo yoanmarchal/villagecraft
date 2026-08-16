@@ -1,6 +1,6 @@
 # Project Guidelines
 
-WebGlade/WebScraper — a Vite + React + TypeScript app that procedurally generates a 3D voxel village using Three.js (`@react-three/fiber`, `@react-three/drei`, `@react-three/csg`). See [spec.md](spec.md) for the original functional spec (French).
+VillageCraft — a Vite + React + TypeScript app that procedurally generates a 3D voxel village using Three.js (`@react-three/fiber`, `@react-three/drei`, `@react-three/csg`). See [spec.md](spec.md) for the original functional spec (French).
 
 ## Build and Test
 
