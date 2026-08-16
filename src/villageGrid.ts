@@ -172,14 +172,40 @@ export class VillageGrid {
     }
   }
 
-  public generateTerrain(gridSize: number = 2): void {
+  public generateTerrain(
+    gridSize: number = 2,
+    options: { occupancyChance?: number; minHeight?: number; maxHeight?: number } = {},
+  ): void {
     this.clear();
 
-    // Generate exactly gridSize x gridSize blocks (2x2 = 4 blocks, 3x3 = 9 blocks, etc.)
-    // This creates a simple flat grid with exactly the specified number of blocks
+    const { occupancyChance = 0.7, minHeight = 1, maxHeight = 3 } = options;
+    const clampedMaxHeight = Math.max(1, Math.min(maxHeight, this.sizeY));
+    const clampedMinHeight = Math.max(1, Math.min(minHeight, clampedMaxHeight));
+
+    // Randomly skip some columns so the footprint isn't a solid gridSize x gridSize
+    // slab, and give each occupied column its own random height so the plot has
+    // some vertical variety instead of everything being a single story.
+    const occupiedColumns: Array<{ x: number; z: number }> = [];
     for (let x = 0; x < gridSize; x += 1) {
       for (let z = 0; z < gridSize; z += 1) {
-        this.addBlock(x, 0, z);
+        if (Math.random() < occupancyChance) {
+          occupiedColumns.push({ x, z });
+        }
+      }
+    }
+
+    // Never generate an empty plot: fall back to a single random column.
+    if (occupiedColumns.length === 0) {
+      occupiedColumns.push({
+        x: Math.floor(Math.random() * gridSize),
+        z: Math.floor(Math.random() * gridSize),
+      });
+    }
+
+    for (const { x, z } of occupiedColumns) {
+      const height = clampedMinHeight + Math.floor(Math.random() * (clampedMaxHeight - clampedMinHeight + 1));
+      for (let y = 0; y < height; y += 1) {
+        this.addBlock(x, y, z);
       }
     }
   }
