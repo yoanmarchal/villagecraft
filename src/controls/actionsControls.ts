@@ -1,4 +1,5 @@
 import type { Pane } from 'tweakpane';
+import { useControlStore } from '../store/controlStore';
 import { useGridControllerStore } from '../store/gridControllerStore';
 import type { Disposer } from './types';
 
@@ -12,6 +13,9 @@ export function registerActionsControls(pane: Pane): Disposer {
   generateButton.on('click', () => {
     void useGridControllerStore.getState().generateTerrain();
   });
+
+  const resetButton = folder.addButton({ title: 'Reset to Defaults' });
+  resetButton.on('click', () => useControlStore.getState().resetToDefaults());
 
   const unsubscribe = useGridControllerStore.subscribe((state) => {
     generateButton.disabled = state.isGenerating;

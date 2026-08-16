@@ -114,6 +114,7 @@ export interface ControlState
   setCellRoof: (patch: Partial<CellRoofState>) => void;
   setCellShape: (patch: Partial<CellShapeState>) => void;
   setCellTransition: (patch: Partial<CellTransitionState>) => void;
+  resetToDefaults: () => void;
 }
 
 const DEFAULT_STATE: GridState &
@@ -210,6 +211,7 @@ export const useControlStore = create<ControlState>()(
       setCellRoof: (patch) => set(patch),
       setCellShape: (patch) => set(patch),
       setCellTransition: (patch) => set(patch),
+      resetToDefaults: () => set(DEFAULT_STATE),
     }),
     {
       name: 'voxel-control-panel',
