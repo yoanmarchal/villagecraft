@@ -69,6 +69,7 @@ export class VillageGrid {
     this.grid[x][y][z].color = undefined;
     this.grid[x][y][z].placementOrder = -1;
     this.grid[x][y][z].propertyBundle = undefined;
+    this.grid[x][y][z].isAutoRoof = false;
     this.recomputeProceduralLogic();
   }
 
@@ -79,7 +80,10 @@ export class VillageGrid {
 
     for (let y = this.sizeY - 1; y >= 0; y -= 1) {
       const cell = this.grid[x][y][z];
-      if (!cell.isOccupied) {
+      // On ignore les caps de toit auto-générés : "retirer le sommet" doit
+      // retirer le vrai bloc du dessus, le cap disparaîtra de lui-même au
+      // prochain recalcul (syncAutoRoofs).
+      if (!cell.isOccupied || cell.isAutoRoof) {
         continue;
       }
 
@@ -90,6 +94,13 @@ export class VillageGrid {
     return null;
   }
 
+  /**
+   * Topmost occupied cell in the column, auto-roof cap included — used to
+   * decide where the next real block goes: it always builds strictly above
+   * whatever is currently there, cap or not, so adding a block on a capped
+   * single-story column visibly grows it (the old cap gets promoted to a
+   * real wall by `syncAutoRoofs` once something real sits above it).
+   */
   public getTopOccupiedY(x: number, z: number): number | null {
     if (!this.isValidCoordinate(x, 0, z)) {
       return null;
@@ -97,6 +108,27 @@ export class VillageGrid {
 
     for (let y = this.sizeY - 1; y >= 0; y -= 1) {
       if (this.grid[x][y][z].isOccupied) {
+        return y;
+      }
+    }
+
+    return null;
+  }
+
+  /**
+   * Topmost *real* (user-placed) cell in the column, ignoring any
+   * auto-generated roof cap — used for removal, so "remove the top block"
+   * always demolishes an actual wall instead of fighting the self-healing
+   * cap (which would just regrow on the next recompute).
+   */
+  public getTopRealOccupiedY(x: number, z: number): number | null {
+    if (!this.isValidCoordinate(x, 0, z)) {
+      return null;
+    }
+
+    for (let y = this.sizeY - 1; y >= 0; y -= 1) {
+      const cell = this.grid[x][y][z];
+      if (cell.isOccupied && !cell.isAutoRoof) {
         return y;
       }
     }
@@ -134,6 +166,7 @@ export class VillageGrid {
           this.grid[x][y][z].color = undefined;
           this.grid[x][y][z].placementOrder = -1;
           this.grid[x][y][z].propertyBundle = undefined;
+          this.grid[x][y][z].isAutoRoof = false;
         }
       }
     }
@@ -207,7 +240,77 @@ export class VillageGrid {
     return grid;
   }
 
+  /**
+   * Une colonne réduite à son seul rez-de-chaussée (y=0) ne peut jamais
+   * devenir un toit via la règle "sommet de colonne" normale, puisque y=0
+   * est toujours forcé en Foundation/Mur. On lui ajoute donc ici un cap de
+   * toit auto-généré à y=1 pour qu'un bâtiment d'un seul étage soit quand
+   * même coiffé automatiquement, sans que l'utilisateur ait à cliquer une
+   * seconde fois. Dès qu'un vrai bloc est posé plus haut (colonne à 2+
+   * étages), la règle normale prend le relais et ce cap est retiré.
+   */
+  private syncAutoRoofs(): void {
+    for (let x = 0; x < this.sizeX; x += 1) {
+      for (let z = 0; z < this.sizeZ; z += 1) {
+        let topOccupiedY = -1;
+        for (let y = this.sizeY - 1; y >= 0; y -= 1) {
+          if (this.grid[x][y][z].isOccupied) {
+            topOccupiedY = y;
+            break;
+          }
+        }
+
+        // Un cap n'est plus "au sommet" dès qu'un vrai bloc a été construit
+        // par-dessus (cf getTopOccupiedY, qui laisse toujours placer au-dessus
+        // du cap plutôt que de le réclamer sur place) : il devient alors un
+        // mur permanent, pas juste un cap qu'on retire.
+        for (let y = 0; y < topOccupiedY; y += 1) {
+          const cell = this.grid[x][y][z];
+          if (cell.isAutoRoof) {
+            cell.isAutoRoof = false;
+            cell.placementOrder = this.nextPlacementOrder;
+            this.nextPlacementOrder += 1;
+          }
+        }
+
+        let realTopY = -1;
+        for (let y = this.sizeY - 1; y >= 0; y -= 1) {
+          const cell = this.grid[x][y][z];
+          if (cell.isOccupied && !cell.isAutoRoof) {
+            realTopY = y;
+            break;
+          }
+        }
+
+        const autoRoofY = realTopY === 0 && this.isValidCoordinate(x, 1, z) ? 1 : null;
+
+        for (let y = 0; y < this.sizeY; y += 1) {
+          const cell = this.grid[x][y][z];
+          if (!cell.isAutoRoof || y === autoRoofY) {
+            continue;
+          }
+          // Cap devenu obsolète (colonne démolie).
+          cell.isOccupied = false;
+          cell.isAutoRoof = false;
+          cell.type = BlockType.Empty;
+          cell.color = undefined;
+          cell.propertyBundle = undefined;
+        }
+
+        if (autoRoofY !== null) {
+          const cell = this.grid[x][autoRoofY][z];
+          if (!cell.isOccupied) {
+            cell.isOccupied = true;
+            cell.isAutoRoof = true;
+          }
+        }
+      }
+    }
+  }
+
   private recomputeProceduralLogic(): void {
+    this.syncAutoRoofs();
+
     for (let x = 0; x < this.sizeX; x += 1) {
       for (let y = 0; y < this.sizeY; y += 1) {
         for (let z = 0; z < this.sizeZ; z += 1) {

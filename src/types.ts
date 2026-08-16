@@ -20,6 +20,13 @@ export interface GridCell {
   color?: string;
   placementOrder: number;
   propertyBundle?: PropertyBundle;
+  /**
+   * True for a roof cap the grid added on its own above a lone ground-floor
+   * cell (see `VillageGrid.syncAutoRoofs`) — not a block the user placed.
+   * Clicking to build on top of it, or removing the wall below it, should
+   * claim/clear it transparently rather than treating it as a real block.
+   */
+  isAutoRoof?: boolean;
 }
 
 export interface CellCoordinate {

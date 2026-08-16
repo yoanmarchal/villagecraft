@@ -78,7 +78,7 @@ export function App() {
           previewCell={previewCell}
           toWorldPosition={toWorldPosition}
           getNextPlacementY={(x, z, minimumY) => grid.getNextPlacementY(x, z, minimumY)}
-          getTopOccupiedY={(x, z) => grid.getTopOccupiedY(x, z)}
+          getTopRealOccupiedY={(x, z) => grid.getTopRealOccupiedY(x, z)}
         />
       </div>
       <TweakpanePanel />

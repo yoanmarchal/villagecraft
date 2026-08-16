@@ -18,7 +18,7 @@ interface VoxelSceneProps {
   previewCell: { x: number; z: number } | null;
   toWorldPosition: (x: number, y: number, z: number) => [number, number, number];
   getNextPlacementY: (x: number, z: number, minimumY: number) => number | null;
-  getTopOccupiedY: (x: number, z: number) => number | null;
+  getTopRealOccupiedY: (x: number, z: number) => number | null;
 }
 
 const selectLighting = (state: ControlState) => ({
@@ -75,7 +75,7 @@ export function VoxelScene({
   previewCell,
   toWorldPosition,
   getNextPlacementY,
-  getTopOccupiedY,
+  getTopRealOccupiedY,
 }: VoxelSceneProps) {
   const gridSize = useControlStore((state) => state.gridSize);
   const showPerfMonitor = useControlStore((state) => state.showPerfMonitor);
@@ -123,7 +123,7 @@ export function VoxelScene({
     const gridZ = Math.floor(event.point.z + gridDepth / 2);
     onPreviewMove(gridX, gridZ);
     const placementY = getNextPlacementY(gridX, gridZ, selectedHeight);
-    const removalY = getTopOccupiedY(gridX, gridZ);
+    const removalY = getTopRealOccupiedY(gridX, gridZ);
 
     if (event.button === 2) {
       if (removalY !== null) {
