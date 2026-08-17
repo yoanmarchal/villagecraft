@@ -1,4 +1,4 @@
-Cahier des Charges : Projet "WebGlade / WebScaper"
+Cahier des Charges : Projet "villagecraft"
 1. Présentation du Projet
 L'objectif est de développer une application web interactive en 3D permettant à l'utilisateur de générer un village de manière organique et procédurale. En cliquant sur une grille, l'utilisateur pose des blocs élémentaires, et l'application calcule automatiquement la forme visuelle la plus logique (maison, toit, arche, escalier) en fonction de l'environnement direct.
 
