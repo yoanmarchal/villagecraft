@@ -28,10 +28,11 @@ export function App() {
     useGridControllerStore.getState().setOnMutate(refreshScene);
   }, [grid, refreshScene]);
 
-  // Global shortcut to show/hide the control panel (backtick).
+  // Global shortcut to show/hide the control panel (Ctrl+O).
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === '`') {
+      if (event.ctrlKey && event.key.toLowerCase() === 'o') {
+        event.preventDefault();
         useControlStore.getState().togglePanel();
       }
     };

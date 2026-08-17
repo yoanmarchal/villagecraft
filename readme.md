@@ -9,7 +9,7 @@ An interactive 3D voxel village builder in the browser. Click a grid cell to pla
 - **Left click** a cell: add a block
 - **Right click** a column: remove its top block
 - **Mouse drag / scroll**: orbit and zoom the camera
-- **Backtick (`` ` ``)**: show/hide the control panel
+- **Ctrl+O**: show/hide the control panel
 
 The control panel (Tweakpane) lets you tweak lighting, sky/fog, camera, post-processing, materials, decorations, roof shape, and wall/tower geometry live, and persists your changes between sessions. The **Actions** section has buttons to clear the grid, generate a random terrain, and reset every setting back to its default.
 
