@@ -3,7 +3,8 @@
  *
  * Format binaire (v1) : [version, gridSize, x0, y0, z0, x1, y1, z1, …] — un
  * octet par valeur, blocs dans leur ordre de pose. Une grille 5×10×5 pleine
- * tient en ~1 000 caractères.
+ * tient en ~1 000 caractères, une 12×10×12 pleine en ~5 800 (un village
+ * réel, loin d'être plein, en fait bien moins).
  */
 
 import { GRID_HEIGHT, GRID_SIZE_MAX, GRID_SIZE_MIN } from '../config/gridConfig';

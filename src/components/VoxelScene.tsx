@@ -1,13 +1,15 @@
 import { OrbitControls, Sky } from '@react-three/drei';
 import { Canvas, useThree, type ThreeEvent } from '@react-three/fiber';
+import type { DirectionalLight } from 'three';
 import { useShallow } from 'zustand/react/shallow';
 import type { GridCell } from '../types';
 import { VillageMeshes } from './VillageMeshes';
 import { PlacementPreview } from './PlacementPreview';
 import { Bloom, EffectComposer, Noise, Vignette } from '@react-three/postprocessing'
 import { useControlStore, type ControlState } from '../store/controlStore';
-import { lazy, Suspense, useEffect, useRef, useState } from 'react';
+import { lazy, Suspense, useEffect, useRef, useState, type ComponentType } from 'react';
 import { useUiStore } from '../store/uiStore';
+import { initialCameraScale, sceneScale, shadowCameraHalfSize } from '../config/gridConfig';
 
 // Chargé seulement quand le moniteur est activé (Debug) : hors du bundle initial.
 const Perf = lazy(() => import('r3f-perf').then((module) => ({ default: module.Perf })));
@@ -19,11 +21,12 @@ const BASE_CAMERA_POSITION: [number, number, number] = [10, 12, 14];
  * en portrait le champ horizontal se resserre et coupe le village, on
  * recule donc la caméra en proportion (plafonné).
  */
-function initialCameraPosition(): [number, number, number] {
+function initialCameraPosition(gridSize: number): [number, number, number] {
   const aspect = window.innerWidth / window.innerHeight;
   // Plafonné pour rester en deçà du début du brouillard par défaut (fogNear = 30).
   const factor = aspect < 1 ? Math.min(1.4, 1 / aspect) : 1;
-  return BASE_CAMERA_POSITION.map((v) => v * factor) as [number, number, number];
+  const scale = initialCameraScale(gridSize);
+  return BASE_CAMERA_POSITION.map((v) => v * factor * scale) as [number, number, number];
 }
 
 /** Au-delà de ce déplacement (px) entre pointerdown et pointerup, c'est un drag caméra, pas un clic. */
@@ -101,6 +104,9 @@ const selectCamera = (state: ControlState) => ({
 });
 
 const selectPostFx = (state: ControlState) => ({
+  aoEnabled: state.aoEnabled,
+  aoIntensity: state.aoIntensity,
+  aoRadius: state.aoRadius,
   bloomEnabled: state.bloomEnabled,
   bloomLuminanceThreshold: state.bloomLuminanceThreshold,
   bloomLuminanceSmoothing: state.bloomLuminanceSmoothing,
@@ -126,8 +132,19 @@ export function VoxelScene({
 }: VoxelSceneProps) {
   const toolMode = useUiStore((state) => state.toolMode);
   // Calculée une seule fois : R3F réapplique les options caméra si elles changent.
-  const [cameraPosition] = useState(initialCameraPosition);
   const gridSize = useControlStore((state) => state.gridSize);
+  const [cameraPosition] = useState(() => initialCameraPosition(gridSize));
+  // Distances caméra/brouillard étirées pour les grandes grilles (voir gridConfig).
+  const scale = sceneScale(gridSize);
+  const shadowHalf = shadowCameraHalfSize(gridSize);
+  const sunRef = useRef<DirectionalLight>(null);
+
+
+  // Les bornes de la caméra d'ombre sont posées via props : il faut
+  // recalculer sa projection nous-mêmes quand elles changent.
+  useEffect(() => {
+    sunRef.current?.shadow.camera.updateProjectionMatrix();
+  }, [shadowHalf]);
   const showPerfMonitor = useControlStore((state) => state.showPerfMonitor);
   const {
     ambientIntensity,
@@ -158,6 +175,9 @@ export function VoxelScene({
     useShallow(selectCamera),
   );
   const {
+    aoEnabled,
+    aoIntensity,
+    aoRadius,
     bloomEnabled,
     bloomLuminanceThreshold,
     bloomLuminanceSmoothing,
@@ -166,6 +186,22 @@ export function VoxelScene({
     vignetteOffset,
     vignetteDarkness,
   } = useControlStore(useShallow(selectPostFx));
+
+  // N8AO (~85 kB gzip) n'est chargé qu'une fois l'effet activé. Pas de
+  // React.lazy + Suspense ici : l'EffectComposer ne recalcule ses passes que
+  // quand ses enfants changent, il faut donc monter le composant une fois
+  // le module arrivé (même mécanique que l'activation/désactivation du bloom).
+  const [AmbientOcclusion, setAmbientOcclusion] = useState<ComponentType<{ intensity: number; radius: number }> | null>(null);
+  useEffect(() => {
+    if (!aoEnabled || AmbientOcclusion) return;
+    let cancelled = false;
+    void import('./AmbientOcclusion').then((module) => {
+      if (!cancelled) setAmbientOcclusion(() => module.default);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [aoEnabled, AmbientOcclusion]);
 
   // Position écran du pointerdown : le clic gauche/droit glissé sert aussi à
   // OrbitControls (rotation/pan), on n'agit donc qu'au pointerup, et
@@ -230,7 +266,7 @@ export function VoxelScene({
       onContextMenu={(event) => event.preventDefault()}
     >
       <color attach="background" args={[backgroundColor]} />
-      <fog attach="fog" args={[fogColor, fogNear, fogFar]} />
+      <fog attach="fog" args={[fogColor, fogNear * scale, fogFar * scale]} />
       {showPerfMonitor && (
         <Suspense fallback={null}>
           <Perf position="top-left" />
@@ -238,6 +274,7 @@ export function VoxelScene({
       )}
       <ambientLight intensity={ambientIntensity} color={ambientColor} />
       <directionalLight
+        ref={sunRef}
         position={directionalPosition}
         intensity={directionalIntensity}
         color={directionalColor}
@@ -246,6 +283,12 @@ export function VoxelScene({
         shadow-mapSize-height={shadowMapSize}
         shadow-radius={shadowRadius}
         shadow-bias={shadowBias}
+        shadow-camera-left={-shadowHalf}
+        shadow-camera-right={shadowHalf}
+        shadow-camera-top={shadowHalf}
+        shadow-camera-bottom={-shadowHalf}
+        shadow-camera-near={0.5}
+        shadow-camera-far={100}
       />
       <Sky
         distance={skyDistance}
@@ -281,9 +324,12 @@ export function VoxelScene({
         dampingFactor={dampingFactor}
         maxPolarAngle={maxPolarAngle}
         minDistance={minDistance}
-        maxDistance={maxDistance}
+        maxDistance={maxDistance * scale}
       />
       <EffectComposer>
+        {/* Occlusion ambiante en premier : elle doit assombrir la scène avant
+            que bloom/vignette ne s'appliquent. */}
+        {aoEnabled && AmbientOcclusion ? <AmbientOcclusion intensity={aoIntensity} radius={aoRadius} /> : <></>}
         {bloomEnabled ? (
           <Bloom
             mipmapBlur

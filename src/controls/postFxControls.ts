@@ -4,6 +4,9 @@ import type { Disposer } from './types';
 
 function toModel(state: PostFxState) {
   return {
+    aoEnabled: state.aoEnabled,
+    aoIntensity: state.aoIntensity,
+    aoRadius: state.aoRadius,
     bloomEnabled: state.bloomEnabled,
     bloomLuminanceThreshold: state.bloomLuminanceThreshold,
     bloomLuminanceSmoothing: state.bloomLuminanceSmoothing,
@@ -27,6 +30,9 @@ export function registerPostFxControls(pane: Pane): Disposer {
   };
 
   const bindings = [
+    folder.addBinding(model, 'aoEnabled', { label: 'ambient occlusion' }),
+    folder.addBinding(model, 'aoIntensity', { label: 'AO intensity', min: 0, max: 6, step: 0.1 }),
+    folder.addBinding(model, 'aoRadius', { label: 'AO radius', min: 0.1, max: 2, step: 0.05 }),
     folder.addBinding(model, 'bloomEnabled'),
     folder.addBinding(model, 'bloomLuminanceThreshold', { min: 0, max: 1, step: 0.01 }),
     folder.addBinding(model, 'bloomLuminanceSmoothing', { min: 0, max: 1, step: 0.01 }),

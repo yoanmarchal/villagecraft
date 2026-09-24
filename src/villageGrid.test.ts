@@ -130,6 +130,62 @@ describe('VillageGrid — types de blocs', () => {
   });
 });
 
+describe('VillageGrid — generateTerrain', () => {
+  const columnHeights = (grid: VillageGrid, size: number) => {
+    const heights: number[][] = [];
+    for (let x = 0; x < size; x += 1) {
+      heights.push([]);
+      for (let z = 0; z < size; z += 1) {
+        const top = grid.getTopRealOccupiedY(x, z);
+        heights[x].push(top === null ? 0 : top + 1);
+      }
+    }
+    return heights;
+  };
+
+  it('même graine → même village', () => {
+    const a = new VillageGrid(12, HEIGHT, 12);
+    const b = new VillageGrid(12, HEIGHT, 12);
+    a.generateTerrain(12, 1234);
+    b.generateTerrain(12, 1234);
+    expect(a.exportBlocks()).toEqual(b.exportBlocks());
+  });
+
+  it('ne produit jamais une parcelle vide, ni pleine', () => {
+    for (let seed = 0; seed < 30; seed += 1) {
+      const grid = new VillageGrid(8, HEIGHT, 8);
+      grid.generateTerrain(8, seed);
+      const occupied = columnHeights(grid, 8).flat().filter((h) => h > 0).length;
+      expect(occupied).toBeGreaterThan(0);
+      expect(occupied).toBeLessThan(64);
+    }
+  });
+
+  it('reste sous le plafond de la grille', () => {
+    for (let seed = 0; seed < 30; seed += 1) {
+      const grid = new VillageGrid(12, HEIGHT, 12);
+      grid.generateTerrain(12, seed);
+      // < HEIGHT : il reste toujours au moins un étage pour le toit.
+      expect(Math.max(...columnHeights(grid, 12).flat())).toBeLessThan(HEIGHT);
+    }
+  });
+
+  it('laisse des rues vides sur les grandes grilles', () => {
+    const grid = new VillageGrid(12, HEIGHT, 12);
+    grid.generateTerrain(12, 99);
+    const heights = columnHeights(grid, 12);
+    const emptyRows = heights.filter((row) => row.every((h) => h === 0)).length;
+    const emptyCols = heights[0].filter((_, z) => heights.every((row) => row[z] === 0)).length;
+    expect(emptyRows + emptyCols).toBeGreaterThan(0);
+  });
+
+  it('ne déborde pas de la taille demandée', () => {
+    const grid = new VillageGrid(10, HEIGHT, 10);
+    grid.generateTerrain(4, 5);
+    expect(grid.exportBlocks().every(([x, , z]) => x < 4 && z < 4)).toBe(true);
+  });
+});
+
 describe('VillageGrid — export / import', () => {
   const buildSample = () => {
     const grid = new VillageGrid(5, HEIGHT, 5);

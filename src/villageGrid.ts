@@ -1,4 +1,27 @@
 import { BlockType, type CellCoordinate, type GridCell } from './types';
+import { createValueNoise, seededRandom } from './utils/noise';
+
+/** Taille (en cases) des "taches" du bruit : des îlots de ~3-4 cases. */
+const NOISE_CELL_SCALE = 3.5;
+/** Densité de bruit sous laquelle une case reste vide. */
+const OCCUPANCY_THRESHOLD = 0.42;
+/** Part minimale des cases constructibles (hors rues) à occuper. */
+const MIN_OCCUPANCY = 0.4;
+/** Probabilité qu'une colonne soit rehaussée de 2 étages. */
+const LANDMARK_CHANCE = 0.06;
+
+/**
+ * Indices de rangées laissées vides en guise de rues (grilles ≥ 6) : une
+ * tous les 4-5 cases, avec un départ aléatoire.
+ */
+function pickStreets(size: number, random: () => number): Set<number> {
+  const streets = new Set<number>();
+  if (size < 6) return streets;
+  for (let i = 2 + Math.floor(random() * 2); i < size - 1; i += 4 + Math.floor(random() * 2)) {
+    streets.add(i);
+  }
+  return streets;
+}
 
 export class VillageGrid {
   private readonly sizeX: number;
@@ -165,44 +188,61 @@ export class VillageGrid {
     }
   }
 
-  public generateTerrain(
-    gridSize: number = 2,
-    options: { occupancyChance?: number; minHeight?: number; maxHeight?: number } = {},
-  ): void {
+  /**
+   * Génère un village procédural sur les `gridSize` × `gridSize` premières
+   * cases. Un bruit de valeur lissé décide de l'occupation et de la hauteur,
+   * ce qui forme des îlots de bâtiments plutôt qu'un semis aléatoire ; sur
+   * les grandes grilles, quelques rangées vides font office de rues. Même
+   * graine → même village.
+   */
+  public generateTerrain(gridSize: number = this.sizeX, seed: number = Math.floor(Math.random() * 2 ** 32)): void {
     this.clear();
 
-    const { occupancyChance = 0.7, minHeight = 1, maxHeight = 3 } = options;
-    const clampedMaxHeight = Math.max(1, Math.min(maxHeight, this.sizeY));
-    const clampedMinHeight = Math.max(1, Math.min(minHeight, clampedMaxHeight));
+    const size = Math.max(1, Math.min(gridSize, this.sizeX, this.sizeZ));
+    const random = seededRandom(seed);
+    const noise = createValueNoise(seed);
 
-    // Randomly skip some columns so the footprint isn't a solid gridSize x gridSize
-    // slab, and give each occupied column its own random height so the plot has
-    // some vertical variety instead of everything being a single story.
-    const occupiedColumns: Array<{ x: number; z: number }> = [];
-    for (let x = 0; x < gridSize; x += 1) {
-      for (let z = 0; z < gridSize; z += 1) {
-        if (Math.random() < occupancyChance) {
-          occupiedColumns.push({ x, z });
-        }
-      }
-    }
-
-    // Never generate an empty plot: fall back to a single random column.
-    if (occupiedColumns.length === 0) {
-      occupiedColumns.push({
-        x: Math.floor(Math.random() * gridSize),
-        z: Math.floor(Math.random() * gridSize),
-      });
-    }
+    const streetsX = pickStreets(size, random);
+    const streetsZ = pickStreets(size, random);
+    // Hauteur max qui croît avec la grille (3 étages à 5, 5 à 12), sous le plafond de la grille.
+    const maxHeight = Math.max(1, Math.min(this.sizeY - 1, 2 + Math.floor(size / 4)));
 
     // Un seul recalcul pour tout le terrain (et non un par bloc via addBlock).
     const blocks: Array<[number, number, number]> = [];
-    for (const { x, z } of occupiedColumns) {
-      const height = clampedMinHeight + Math.floor(Math.random() * (clampedMaxHeight - clampedMinHeight + 1));
-      for (let y = 0; y < height; y += 1) {
-        blocks.push([x, y, z]);
+    const addColumn = (x: number, z: number, height: number) => {
+      for (let y = 0; y < height; y += 1) blocks.push([x, y, z]);
+    };
+
+    const lots: Array<{ x: number; z: number; density: number }> = [];
+    for (let x = 0; x < size; x += 1) {
+      for (let z = 0; z < size; z += 1) {
+        if (streetsX.has(x) || streetsZ.has(z)) continue;
+        lots.push({ x, z, density: noise(x / NOISE_CELL_SCALE, z / NOISE_CELL_SCALE) });
       }
     }
+
+    // Seuil abaissé si le bruit est trop "creux" sur cette graine : sur une
+    // petite grille, une seule tache basse laisserait la parcelle presque vide.
+    const byDensity = lots.map((lot) => lot.density).sort((a, b) => b - a);
+    const minOccupied = Math.ceil(lots.length * MIN_OCCUPANCY);
+    const threshold = Math.min(OCCUPANCY_THRESHOLD, byDensity[minOccupied - 1] ?? OCCUPANCY_THRESHOLD);
+
+    for (const { x, z, density } of lots) {
+      if (density < threshold) continue;
+
+      const t = (density - threshold) / (1 - threshold);
+      let height = 1 + Math.floor(t * maxHeight);
+      // Quelques colonnes plus hautes, pour des repères (clochers, tours).
+      if (random() < LANDMARK_CHANCE) height += 2;
+      addColumn(x, z, Math.min(height, this.sizeY - 1));
+    }
+
+    // Jamais de parcelle vide : une colonne au centre à défaut.
+    if (blocks.length === 0) {
+      const center = Math.floor(size / 2);
+      addColumn(center, center, Math.min(2, this.sizeY - 1));
+    }
+
     this.importBlocks(blocks);
   }
 

@@ -30,6 +30,10 @@ export default defineConfig({
             { name: 'react', test: vendor('react', 'react-dom', 'scheduler', 'zustand') },
             { name: 'r3f', test: vendor('@react-three', 'postprocessing', 'maath', 'camera-controls') },
             { name: 'tweakpane', test: vendor('tweakpane', '@tweakpane') },
+            // Occlusion ambiante, chargée à la demande (AmbientOcclusion.tsx). Sans
+            // groupe prioritaire, n8ao serait aspiré dans "r3f" comme dépendance
+            // de @react-three/postprocessing, donc chargé au démarrage.
+            { name: 'n8ao', test: vendor('n8ao'), priority: 10, includeDependenciesRecursively: false },
           ],
         },
       },

@@ -58,10 +58,24 @@ export function boxGeo(w: number, h: number, d: number): THREE.BufferGeometry {
   return getGeo(`box|${w}|${h}|${d}`, () => new THREE.BoxGeometry(w, h, d));
 }
 
+/**
+ * Budget de détail des arrondis. Un RoundedBoxGeometry coûte 6·6·(2s+1)²
+ * sommets (non indexé) : 324 à s=1, 900 à s=2, 2 916 à s=4, 6 084 à s=6.
+ * Toutes les petites pièces du village (pierres, quoins, cadres, portes…)
+ * ont des rayons de l'ordre du centimètre, soit moins d'un pixel à distance
+ * de vue : au-delà d'un segment (simple chanfrein aux normales lissées) le
+ * surcoût est invisible — il représentait ~94 % des sommets du village.
+ */
+function roundedBoxSegments(radius: number, requested: number): number {
+  if (radius <= 0.015) return 1;
+  return Math.min(requested, 2);
+}
+
 export function roundedBoxGeo(w: number, h: number, d: number, radius: number, smoothness = 2): THREE.BufferGeometry {
+  const segments = roundedBoxSegments(radius, smoothness);
   return getGeo(
-    `rbox|${w}|${h}|${d}|${r3(radius)}|${smoothness}`,
-    () => new RoundedBoxGeometry(w, h, d, smoothness, radius),
+    `rbox|${w}|${h}|${d}|${r3(radius)}|${segments}`,
+    () => new RoundedBoxGeometry(w, h, d, segments, radius),
   );
 }
 

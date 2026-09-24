@@ -40,6 +40,9 @@ export interface CameraState {
 }
 
 export interface PostFxState {
+  aoEnabled: boolean;
+  aoIntensity: number;
+  aoRadius: number;
   bloomEnabled: boolean;
   bloomLuminanceThreshold: number;
   bloomLuminanceSmoothing: number;
@@ -159,6 +162,9 @@ const DEFAULT_STATE: GridState &
   minDistance: 6,
   maxDistance: 36,
 
+  aoEnabled: true,
+  aoIntensity: 4,
+  aoRadius: 1,
   bloomEnabled: true,
   bloomLuminanceThreshold: 0.3,
   bloomLuminanceSmoothing: 0.9,

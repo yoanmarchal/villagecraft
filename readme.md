@@ -12,7 +12,7 @@ An interactive 3D voxel village builder in the browser. Click a grid cell to pla
 - **Ctrl+Z / Ctrl+Y** (or Ctrl+Shift+Z): undo / redo
 - **Ctrl+O**: show/hide the advanced settings panel
 
-The toolbar at the bottom of the screen has the Build/Demolish tools, undo/redo, random generation, clear, preset ambiences (day, morning, sunset, mist, night), a share-link button, a PNG screenshot button and the help card. On first launch a small random village is generated so you don't start from an empty grid.
+The toolbar at the bottom of the screen has the Build/Demolish tools, undo/redo, random generation, clear, preset ambiences (day, morning, sunset, mist, night), a share-link button, a PNG screenshot button and the help card. On first launch a small random village is generated so you don't start from an empty grid. Grids go up to 12×12; **Generate** builds a procedural village (noise-based clusters of houses with streets and a few towers).
 
 Your village is saved in the browser automatically and restored on reload. The advanced settings panel (Tweakpane, collapsed by default) lets you tweak lighting, sky/fog, camera, post-processing, materials, decorations, roof shape, and wall/tower geometry live, and persists your changes between sessions. Share links encode the whole village in the URL — opening one loads that village, asking first if it would replace yours. **Reset to Defaults** (in the panel's Actions section) restores every setting.
 
@@ -20,7 +20,7 @@ Your village is saved in the browser automatically and restored on reload. The a
 
 - [Vite](https://vite.dev/) + [React](https://react.dev/) + TypeScript
 - [Three.js](https://threejs.org/) via [`@react-three/fiber`](https://github.com/pmndrs/react-three-fiber) and [`@react-three/drei`](https://github.com/pmndrs/drei)
-- [`@react-three/postprocessing`](https://github.com/pmndrs/react-postprocessing) for bloom/vignette/noise
+- [`@react-three/postprocessing`](https://github.com/pmndrs/react-postprocessing) for bloom/vignette/noise, and [N8AO](https://github.com/N8python/n8ao) ambient occlusion (loaded on demand)
 - [Tweakpane](https://tweakpane.github.io/docs/) for the control panel
 - [Zustand](https://github.com/pmndrs/zustand) for state
 
