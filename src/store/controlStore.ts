@@ -62,6 +62,8 @@ export interface CellMaterialsState {
   wallRoughness: number;
   wallBaseColor: string;
   roofBaseColor: string;
+  /** Ardoise des toitures de tours. */
+  spireColor: string;
 }
 
 export interface CellDecorationsState {
@@ -165,6 +167,7 @@ const DEFAULT_STATE: GridState &
   wallRoughness: 0.94,
   wallBaseColor: '#f5e6d3',
   roofBaseColor: '#c85a3f',
+  spireColor: '#56606c',
 
   windowStonesPerFace: 25,
   windowStoneRoughness: 0.85,

@@ -119,6 +119,106 @@ export function shapedBoxGeo(w: number, h: number, d: number, radii: CornerRadii
   });
 }
 
+// ── Toiture de tour : surfaces entre anneaux homothétiques du contour ───────
+
+/**
+ * Contour de la tour dans le plan XZ, avec la même orientation que
+ * `shapedBoxGeo` (plan XY de la shape → scène XZ, z = −y) pour que les coins
+ * arrondis de la toiture tombent pile sur ceux du mur.
+ */
+function towerContourXZ(halfSize: number, radii: CornerRadii): Array<[number, number]> {
+  return getRoundedRectContourPoints(halfSize, halfSize, radii).map(([x, y]) => [x, -y]);
+}
+
+/** Ajoute un triangle en l'orientant pour que sa face regarde du côté de `facing`. */
+function pushTriangle(
+  positions: number[],
+  normals: number[],
+  vertices: [THREE.Vector3, THREE.Vector3, THREE.Vector3],
+  vertexNormals: [THREE.Vector3, THREE.Vector3, THREE.Vector3],
+  facing: THREE.Vector3,
+): void {
+  const [a, b, c] = vertices;
+  const faceNormal = new THREE.Vector3().subVectors(b, a).cross(new THREE.Vector3().subVectors(c, a));
+  const order = faceNormal.dot(facing) >= 0 ? [0, 1, 2] : [0, 2, 1];
+  for (const i of order) {
+    positions.push(vertices[i].x, vertices[i].y, vertices[i].z);
+    normals.push(vertexNormals[i].x, vertexNormals[i].y, vertexNormals[i].z);
+  }
+}
+
+/**
+ * Bande de toiture de tour : surface réglée entre deux anneaux du contour
+ * de la tour, à l'échelle s0 (hauteur y0) et s1 (hauteur y1). s1 = 0 ferme
+ * la bande en pointe. Empiler des bandes de pentes différentes donne un
+ * profil à coyau (égout évasé puis cône raide), comme les toits de tours en
+ * ardoise. Normales analytiques : lisses le long du contour, vives entre
+ * deux bandes de pentes différentes (cassure du coyau).
+ */
+export function spireBandGeo(
+  halfSize: number,
+  radii: CornerRadii,
+  y0: number,
+  s0: number,
+  y1: number,
+  s1: number,
+): THREE.BufferGeometry {
+  const key = `spire|${r3(halfSize)}|${radiiKey(radii)}|${r3(y0)}|${r3(s0)}|${r3(y1)}|${r3(s1)}`;
+  return getGeo(key, () => {
+    const contour = towerContourXZ(halfSize, radii);
+    const n = contour.length;
+
+    const ring = (s: number, y: number) => contour.map(([x, z]) => new THREE.Vector3(x * s, y, z * s));
+    const lower = ring(s0, y0);
+    const upper = ring(s1, y1);
+
+    // Normale par colonne : produit vectoriel de la tangente au contour et
+    // de la génératrice (lower → upper), orientée vers l'extérieur.
+    const columnNormals = contour.map(([x, z], j) => {
+      const [xp, zp] = contour[(j - 1 + n) % n];
+      const [xn, zn] = contour[(j + 1) % n];
+      const tangent = new THREE.Vector3(xn - xp, 0, zn - zp);
+      const generatrix = new THREE.Vector3(x * (s1 - s0), y1 - y0, z * (s1 - s0));
+      const normal = new THREE.Vector3().crossVectors(tangent, generatrix).normalize();
+      if (normal.x * x + normal.z * z < 0) normal.negate();
+      return normal;
+    });
+
+    const positions: number[] = [];
+    const normals: number[] = [];
+    for (let j = 0; j < n; j += 1) {
+      const k = (j + 1) % n;
+      const facing = columnNormals[j].clone().add(columnNormals[k]);
+      pushTriangle(positions, normals, [lower[j], lower[k], upper[k]], [columnNormals[j], columnNormals[k], columnNormals[k]], facing);
+      pushTriangle(positions, normals, [lower[j], upper[k], upper[j]], [columnNormals[j], columnNormals[k], columnNormals[j]], facing);
+    }
+
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+    geo.setAttribute('normal', new THREE.Float32BufferAttribute(normals, 3));
+    return geo;
+  });
+}
+
+/** Disque plat du contour de la tour (échelle s, hauteur y), tourné vers le bas : dessous de l'avant-toit. */
+export function towerSoffitGeo(halfSize: number, radii: CornerRadii, y: number, s: number): THREE.BufferGeometry {
+  return getGeo(`soffit|${r3(halfSize)}|${radiiKey(radii)}|${r3(y)}|${r3(s)}`, () => {
+    const contour = towerContourXZ(halfSize, radii).map(([x, z]) => new THREE.Vector3(x * s, y, z * s));
+    const center = new THREE.Vector3(0, y, 0);
+    const down = new THREE.Vector3(0, -1, 0);
+    const positions: number[] = [];
+    const normals: number[] = [];
+    contour.forEach((point, j) => {
+      const next = contour[(j + 1) % contour.length];
+      pushTriangle(positions, normals, [center, point, next], [down, down, down], down);
+    });
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+    geo.setAttribute('normal', new THREE.Float32BufferAttribute(normals, 3));
+    return geo;
+  });
+}
+
 // ── Cadre percé (fenêtres) : remplace le CSG runtime ─────────────────────────
 
 function roundedRectShape<T extends THREE.Shape | THREE.Path>(target: T, w: number, h: number, r: number): T {

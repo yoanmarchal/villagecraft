@@ -269,6 +269,55 @@ export function isTowerColumn(lookup: CellLookup, cell: GridCell): boolean {
   return false;
 }
 
+/** Cellule la plus haute de la colonne (x, z) contenant `cell` (en montant tant que c'est occupé). */
+export function getColumnTop(lookup: CellLookup, cell: GridCell): GridCell {
+  let top = cell;
+  for (let above = getCell(lookup, cell.x, cell.y + 1, cell.z); above?.isOccupied; ) {
+    top = above;
+    above = getCell(lookup, top.x, top.y + 1, top.z);
+  }
+  return top;
+}
+
+/**
+ * True si `cell` (le sommet d'une colonne) appartient à une courtine : un
+ * alignement de murs d'une seule case d'épaisseur tendu entre deux
+ * structures plus hautes (tours, bâtiments), comme les remparts entre les
+ * tours d'une enceinte. Critères, au niveau de `cell` :
+ *  - des voisins sur un seul axe (X ou Z), jamais sur l'axe perpendiculaire,
+ *    et cela sur toute la longueur de l'alignement (épaisseur d'une case) ;
+ *  - aux deux bouts, l'alignement bute sur une colonne qui monte plus haut.
+ * Ces cellules reçoivent un parapet crénelé au lieu d'un toit à deux pans.
+ */
+export function isRampart(lookup: CellLookup, cell: GridCell): boolean {
+  const { x, y, z } = cell;
+  const alongX = hasOccupiedCell(lookup, x - 1, y, z) || hasOccupiedCell(lookup, x + 1, y, z);
+  const alongZ = hasOccupiedCell(lookup, x, y, z - 1) || hasOccupiedCell(lookup, x, y, z + 1);
+  if (alongX === alongZ) return false; // isolée, ou dans un angle / un bloc épais
+  if (hasOccupiedCell(lookup, x, y + 1, z)) return false; // pas un sommet de colonne
+
+  const [dx, dz] = alongX ? [1, 0] : [0, 1];
+  const [px, pz] = alongX ? [0, 1] : [1, 0]; // axe perpendiculaire
+
+  // Suit l'alignement dans un sens : true s'il bute sur une colonne plus haute.
+  const reachesTallerColumn = (sign: 1 | -1): boolean => {
+    let cx = x;
+    let cz = z;
+    for (;;) {
+      cx += sign * dx;
+      cz += sign * dz;
+      if (!hasOccupiedCell(lookup, cx, y, cz)) return false; // fin de mur dans le vide
+      if (hasOccupiedCell(lookup, cx, y + 1, cz)) return true; // tour / bâtiment plus haut
+      // Toujours une case d'épaisseur, sinon c'est un bâtiment, pas un rempart.
+      if (hasOccupiedCell(lookup, cx + px, y, cz + pz) || hasOccupiedCell(lookup, cx - px, y, cz - pz)) {
+        return false;
+      }
+    }
+  };
+
+  return reachesTallerColumn(1) && reachesTallerColumn(-1);
+}
+
 /**
  * Retourne la cellule la plus basse de la colonne (x, z) contenant `cell`,
  * en descendant tant que la colonne reste occupée.

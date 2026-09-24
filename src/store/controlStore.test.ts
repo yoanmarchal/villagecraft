@@ -19,7 +19,7 @@ describe('migrateControlState (v1 → v2)', () => {
     expect(migrated).toEqual({});
   });
 
-  it("ne touche pas à un état déjà en v2", () => {
+  it("ne touche pas à un état déjà à jour", () => {
     const state = { ambientIntensity: 1.3 };
     expect(migrateControlState(state, 2)).toEqual(state);
   });

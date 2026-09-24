@@ -8,6 +8,7 @@ const SETTINGS: RenderSettings = {
   wallRoughness: 0.94,
   wallBaseColor: '#f5e6d3',
   roofBaseColor: '#c85a3f',
+  spireColor: '#56606c',
   windowStonesPerFace: 25,
   windowStoneRoughness: 0.85,
   quoinMargin: 0.2,

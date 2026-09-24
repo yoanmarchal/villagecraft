@@ -23,6 +23,7 @@ export function pickRenderSettings(state: RenderSettings): RenderSettings {
     wallRoughness: state.wallRoughness,
     wallBaseColor: state.wallBaseColor,
     roofBaseColor: state.roofBaseColor,
+    spireColor: state.spireColor,
 
     windowStonesPerFace: state.windowStonesPerFace,
     windowStoneRoughness: state.windowStoneRoughness,

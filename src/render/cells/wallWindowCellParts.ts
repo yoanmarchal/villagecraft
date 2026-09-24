@@ -18,7 +18,9 @@ import { isQuoinProtected } from './decorations';
 import type { CellContext } from './context';
 
 export function wallWindowCellParts(ctx: CellContext): Part[] {
-  const { cell, lookup, exposedFaces, radii, isIsolated, settings } = ctx;
+  const { cell, lookup, exposedFaces, radii, isIsolated, isRampart, settings } = ctx;
+  // Tours et courtines sont défensives : meurtrières plutôt que fenêtres.
+  const hasArrowSlits = isIsolated || isRampart;
   const { windowStonesPerFace, windowStoneRoughness, quoinMargin } = settings;
 
   const baseColor = settings.wallBaseColor;
@@ -35,7 +37,8 @@ export function wallWindowCellParts(ctx: CellContext): Part[] {
   // ── Porte au rez-de-chaussée uniquement ────────────────────────────────
   const isGroundFloor = cell.y === 0;
   const doorFaceHash = Math.abs(cell.x * 31 + cell.z * 17) % Math.max(exposedFaces.length, 1);
-  const doorFace = isGroundFloor && exposedFaces.length > 0 ? exposedFaces[doorFaceHash] : null;
+  // Pas de porte au pied des courtines : un mur défensif ne s'ouvre pas à chaque case.
+  const doorFace = isGroundFloor && !isRampart && exposedFaces.length > 0 ? exposedFaces[doorFaceHash] : null;
 
   const hasBands = exposedFaces.length > 0;
 
@@ -94,7 +97,7 @@ export function wallWindowCellParts(ctx: CellContext): Part[] {
           let area = WINDOW_PROTECTED_AREAS.window;
           if (face === doorFace) {
             area = WINDOW_PROTECTED_AREAS.door;
-          } else if (isIsolated) {
+          } else if (hasArrowSlits) {
             area = WINDOW_PROTECTED_AREAS.arrowSlit;
           }
 
@@ -165,7 +168,7 @@ export function wallWindowCellParts(ctx: CellContext): Part[] {
   const faceParts = (face: CellFace): Part[] => {
     const rot = FACE_ROTATION_Y[face];
     if (face === doorFace) return doorParts(rot, openingScale(face, 0.48));
-    if (isIsolated) return arrowSlitParts(rot, openingScale(face, 0.14));
+    if (hasArrowSlits) return arrowSlitParts(rot, openingScale(face, 0.14));
     return windowParts(rot, openingScale(face, 0.6));
   };
 

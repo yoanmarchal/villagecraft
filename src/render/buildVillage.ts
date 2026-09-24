@@ -18,7 +18,9 @@ import { BlockType, type GridCell } from '../types';
 import {
   getCornerRadii,
   getExposedFaces,
+  getColumnTop,
   isIsolatedBlock,
+  isRampart,
   isTowerColumn,
   makeCellLookup,
 } from '../utils/cellUtils';
@@ -57,6 +59,7 @@ export function buildVillage(
       // Murs/fondations : propagation tour vers le bas. Toits : check local
       // non propagé. Asymétrie intentionnelle (voir AGENTS.md).
       isIsolated: cell.type === BlockType.Roof ? isIsolatedBlock(lookup, cell) : isTowerColumn(lookup, cell),
+      isRampart: isRampart(lookup, getColumnTop(lookup, cell)),
     };
 
     let cellParts: Part[];
