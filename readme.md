@@ -9,9 +9,10 @@ An interactive 3D voxel village builder in the browser. Click a grid cell to pla
 - **Left click** a cell: add a block
 - **Right click** a column: remove its top block
 - **Mouse drag / scroll**: orbit and zoom the camera
+- **Ctrl+Z / Ctrl+Y** (or Ctrl+Shift+Z): undo / redo
 - **Ctrl+O**: show/hide the control panel
 
-Your village is saved in the browser automatically and restored on reload. The control panel (Tweakpane) lets you tweak lighting, sky/fog, camera, post-processing, materials, decorations, roof shape, and wall/tower geometry live, and persists your changes between sessions. The **Actions** section has buttons to clear the grid, generate a random terrain, and reset every setting back to its default.
+Your village is saved in the browser automatically and restored on reload. The control panel (Tweakpane) lets you tweak lighting, sky/fog, camera, post-processing, materials, decorations, roof shape, and wall/tower geometry live, and persists your changes between sessions. The **Actions** section has buttons to undo/redo, clear the grid, generate a random terrain, copy a share link (the whole village is encoded in the URL — opening it loads that village, asking first if it would replace yours), and reset every setting back to its default.
 
 ## Tech stack
 

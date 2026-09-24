@@ -239,6 +239,27 @@ export class VillageGrid {
     this.recomputeProceduralLogic();
   }
 
+  /**
+   * Remplace tout le contenu par `blocks` (annuler/rétablir). Contrairement à
+   * `clear()` + `importBlocks()`, les types des cellules sont conservés
+   * jusqu'au recalcul : seules les cellules qui changent réellement rejouent
+   * leur animation d'apparition.
+   */
+  public replaceBlocks(blocks: ReadonlyArray<readonly [number, number, number]>): void {
+    this.nextPlacementOrder = 0;
+    for (let x = 0; x < this.sizeX; x += 1) {
+      for (let y = 0; y < this.sizeY; y += 1) {
+        for (let z = 0; z < this.sizeZ; z += 1) {
+          const cell = this.grid[x][y][z];
+          cell.isOccupied = false;
+          cell.isAutoRoof = false;
+          cell.placementOrder = -1;
+        }
+      }
+    }
+    this.importBlocks(blocks);
+  }
+
   public getGrid(): GridCell[][][] {
     return this.grid;
   }

@@ -1,6 +1,7 @@
 import type { Pane } from 'tweakpane';
 import { useControlStore } from '../store/controlStore';
 import type { Disposer } from './types';
+import { GRID_SIZE_MAX, GRID_SIZE_MIN } from '../config/gridConfig';
 
 export function registerGridControls(pane: Pane): Disposer {
   const folder = pane.addFolder({ title: 'Grid' });
@@ -8,7 +9,7 @@ export function registerGridControls(pane: Pane): Disposer {
 
   let applyingFromPane = false;
 
-  const binding = folder.addBinding(model, 'gridSize', { min: 2, max: 5, step: 1 });
+  const binding = folder.addBinding(model, 'gridSize', { min: GRID_SIZE_MIN, max: GRID_SIZE_MAX, step: 1 });
   binding.on('change', (ev) => {
     applyingFromPane = true;
     useControlStore.getState().setGridSize(ev.value);

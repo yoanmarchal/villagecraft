@@ -5,8 +5,12 @@ import { TweakpanePanel } from './components/TweakpanePanel';
 import { useControlStore } from './store/controlStore';
 import { useGridControllerStore } from './store/gridControllerStore';
 import { loadVillage, saveVillage } from './store/villageStorage';
+import { GRID_HEIGHT } from './config/gridConfig';
 
-const GRID_HEIGHT = 10;
+/** Ne pas détourner Ctrl+Z/Y quand l'utilisateur tape dans un champ (ex: couleur hex du panneau). */
+const isEditableTarget = (target: EventTarget | null) =>
+  target instanceof HTMLElement &&
+  (target.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName));
 
 /** Décalage qui garde le village centré quand la grille passe de `from` à `to` cases de côté. */
 const centeringOffset = (from: number, to: number) => Math.floor((to - from) / 2);
@@ -52,12 +56,25 @@ export function App() {
     useGridControllerStore.getState().setOnMutate(refreshScene);
   }, [grid, refreshScene]);
 
-  // Global shortcut to show/hide the control panel (Ctrl+O).
+  // Raccourcis globaux : Ctrl+O (panneau), Ctrl+Z (annuler), Ctrl+Y / Ctrl+Shift+Z (rétablir).
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.ctrlKey && event.key.toLowerCase() === 'o') {
+      const key = event.key.toLowerCase();
+
+      if (event.ctrlKey && key === 'o') {
         event.preventDefault();
         useControlStore.getState().togglePanel();
+        return;
+      }
+
+      if (!(event.ctrlKey || event.metaKey) || isEditableTarget(event.target)) return;
+      const controller = useGridControllerStore.getState();
+      if (key === 'z' && !event.shiftKey) {
+        event.preventDefault();
+        controller.undo();
+      } else if (key === 'y' || (key === 'z' && event.shiftKey)) {
+        event.preventDefault();
+        controller.redo();
       }
     };
     window.addEventListener('keydown', onKeyDown);
@@ -66,12 +83,12 @@ export function App() {
 
   const handleAddBlock = (x: number, y: number, z: number) => {
     grid.addBlock(x, y, z);
-    refreshScene();
+    useGridControllerStore.getState().commit();
   };
 
   const handleRemoveColumn = (x: number, z: number) => {
     grid.removeTopBlockInColumn(x, z);
-    refreshScene();
+    useGridControllerStore.getState().commit();
   };
 
   // ⚡ Références stables : le merge statique (VillageMeshes) ne doit être

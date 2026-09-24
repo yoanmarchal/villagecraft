@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { VillageGrid } from './villageGrid';
 import { BlockType } from './types';
 
@@ -150,6 +150,20 @@ describe('VillageGrid — export / import', () => {
     const copy = new VillageGrid(5, HEIGHT, 5);
     copy.importBlocks(grid.exportBlocks());
     expect(snapshot(copy)).toEqual(snapshot(grid));
+  });
+
+  it("replaceBlocks ne rejoue l'animation que des cellules qui changent", () => {
+    const now = vi.spyOn(performance, 'now').mockReturnValue(1000);
+    const grid = buildSample();
+    const before = grid.exportBlocks();
+
+    now.mockReturnValue(5000);
+    grid.replaceBlocks([...before, [4, 0, 0]]);
+
+    const spawn = (x: number, y: number, z: number) => grid.getCell({ x, y, z })?.spawnedAt;
+    expect(spawn(1, 0, 0)).toBe(1); // inchangée : spawnedAt d'origine (1000 ms)
+    expect(spawn(4, 0, 0)).toBe(5); // nouvelle cellule
+    now.mockRestore();
   });
 
   it("applique le décalage et ignore les blocs hors grille", () => {
