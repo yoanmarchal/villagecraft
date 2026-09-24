@@ -5,13 +5,18 @@
  */
 
 import { useEffect, useMemo } from 'react';
-import { useFrame } from '@react-three/fiber';
+import { useFrame, useThree } from '@react-three/fiber';
 import { useShallow } from 'zustand/react/shallow';
 import type { GridCell } from '../types';
 import { buildVillage } from '../render/buildVillage';
 import { createGrowMaterialSet, disposeGrowMaterialSet, POP_DURATION, updateGrowTime } from '../render/growMaterial';
 import { pickRenderSettings } from '../render/renderSettings';
 import { useControlStore } from '../store/controlStore';
+
+/** Teinte des fenêtres allumées (lumière de bougie / lampe). */
+const WINDOW_GLOW_COLOR = '#ffb45c';
+/** Intensité d'émission à `windowGlow` = 1 — assez pour passer le seuil du bloom. */
+const WINDOW_GLOW_INTENSITY = 2.2;
 
 interface VillageMeshesProps {
   cells: GridCell[];
@@ -22,6 +27,8 @@ export function VillageMeshes({ cells, toWorldPosition }: VillageMeshesProps) {
   // Référence stable tant qu'aucune valeur ne change (useShallow).
   const settings = useControlStore(useShallow(pickRenderSettings));
   const blockTransitionEnabled = useControlStore((state) => state.blockTransitionEnabled);
+  const windowGlow = useControlStore((state) => state.windowGlow);
+  const invalidate = useThree((state) => state.invalidate);
 
   const groups = useMemo(
     () => buildVillage(cells, toWorldPosition, settings),
@@ -52,6 +59,18 @@ export function VillageMeshes({ cells, toWorldPosition }: VillageMeshesProps) {
       ),
     [groups],
   );
+
+  // Fenêtres allumées : réglage de l'émission des groupes "glow" en place,
+  // sans toucher à la géométrie. Changement impératif → frame à demander.
+  useEffect(() => {
+    groups.forEach(({ mat }, i) => {
+      if (!mat.glow) return;
+      const { material } = materialSets[i];
+      material.emissive.set(WINDOW_GLOW_COLOR);
+      material.emissiveIntensity = windowGlow * WINDOW_GLOW_INTENSITY;
+    });
+    invalidate();
+  }, [groups, materialSets, windowGlow, invalidate]);
 
   useEffect(() => {
     return () => {

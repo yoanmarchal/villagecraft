@@ -1,10 +1,12 @@
-import { OrbitControls, Sky } from '@react-three/drei';
+import { OrbitControls } from '@react-three/drei';
 import { Canvas, useThree, type ThreeEvent } from '@react-three/fiber';
 import type { DirectionalLight } from 'three';
 import { useShallow } from 'zustand/react/shallow';
 import type { GridCell } from '../types';
 import { VillageMeshes } from './VillageMeshes';
 import { PlacementPreview } from './PlacementPreview';
+import { GradientBackground } from './GradientBackground';
+import { GroundTile } from './GroundTile';
 import { Bloom, EffectComposer, Noise, Vignette } from '@react-three/postprocessing'
 import { useControlStore, type ControlState } from '../store/controlStore';
 import { lazy, Suspense, useEffect, useRef, useState, type ComponentType } from 'react';
@@ -81,18 +83,12 @@ const selectLighting = (state: ControlState) => ({
 });
 
 const selectSkyFog = (state: ControlState) => ({
-  backgroundColor: state.backgroundColor,
+  skyTopColor: state.skyTopColor,
+  skyHorizonColor: state.skyHorizonColor,
   fogColor: state.fogColor,
   fogNear: state.fogNear,
   fogFar: state.fogFar,
-  skyDistance: state.skyDistance,
-  skySunPosition: state.skySunPosition,
-  skyInclination: state.skyInclination,
-  skyAzimuth: state.skyAzimuth,
-  skyTurbidity: state.skyTurbidity,
-  skyRayleigh: state.skyRayleigh,
   groundColor: state.groundColor,
-  groundOpacity: state.groundOpacity,
   groundRoughness: state.groundRoughness,
 });
 
@@ -156,21 +152,9 @@ export function VoxelScene({
     shadowRadius,
     shadowBias,
   } = useControlStore(useShallow(selectLighting));
-  const {
-    backgroundColor,
-    fogColor,
-    fogNear,
-    fogFar,
-    skyDistance,
-    skySunPosition,
-    skyInclination,
-    skyAzimuth,
-    skyTurbidity,
-    skyRayleigh,
-    groundColor,
-    groundOpacity,
-    groundRoughness,
-  } = useControlStore(useShallow(selectSkyFog));
+  const { skyTopColor, skyHorizonColor, fogColor, fogNear, fogFar, groundColor, groundRoughness } = useControlStore(
+    useShallow(selectSkyFog),
+  );
   const { dampingFactor, maxPolarAngle, minDistance, maxDistance } = useControlStore(
     useShallow(selectCamera),
   );
@@ -265,7 +249,7 @@ export function VoxelScene({
       gl={{ antialias: true }}
       onContextMenu={(event) => event.preventDefault()}
     >
-      <color attach="background" args={[backgroundColor]} />
+      <GradientBackground top={skyTopColor} horizon={skyHorizonColor} />
       <fog attach="fog" args={[fogColor, fogNear * scale, fogFar * scale]} />
       {showPerfMonitor && (
         <Suspense fallback={null}>
@@ -290,26 +274,26 @@ export function VoxelScene({
         shadow-camera-near={0.5}
         shadow-camera-far={100}
       />
-      <Sky
-        distance={skyDistance}
-        sunPosition={skySunPosition}
-        inclination={skyInclination}
-        azimuth={skyAzimuth}
-        turbidity={skyTurbidity}
-        rayleigh={skyRayleigh}
-      />
       <ScreenshotBridge />
-      <gridHelper args={[Math.max(gridWidth, gridDepth), Math.max(gridWidth, gridDepth), '#d4c4a8', '#e8dcc8']} />
+      <GroundTile width={gridWidth} depth={gridDepth} grassColor={groundColor} roughness={groundRoughness} />
+      {/* Quadrillage discret, juste au-dessus de l'herbe (évite le z-fighting). */}
+      <gridHelper
+        args={[Math.max(gridWidth, gridDepth), Math.max(gridWidth, gridDepth), '#000000', '#000000']}
+        position={[0, 0.003, 0]}
+        material-transparent
+        material-opacity={0.08}
+        material-depthWrite={false}
+      />
+      {/* Surface de clic : invisible (ni couleur ni profondeur), seulement raycastée. */}
       <mesh
         rotation={[-Math.PI / 2, 0, 0]}
         onPointerMove={handlePointerMove}
         onPointerDown={handlePointerDown}
         onPointerUp={handlePointerUp}
         onPointerOut={onPreviewLeave}
-        receiveShadow
       >
         <planeGeometry args={[gridWidth, gridDepth]} />
-        <meshStandardMaterial color={groundColor} transparent opacity={groundOpacity} roughness={groundRoughness} />
+        <meshBasicMaterial colorWrite={false} depthWrite={false} />
       </mesh>
       <VillageMeshes cells={cells} toWorldPosition={toWorldPosition} />
       <PlacementPreview

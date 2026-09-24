@@ -122,7 +122,7 @@ export function wallWindowCellParts(ctx: CellContext): Part[] {
         windowFrameColor, { roughness: 0.85 }, mul(faceRot, xform([0, 0, 0.50]))),
       // Vitre transparente
       part(roundedBoxGeo(0.54 * scale, 0.44, 0.03, glassRadius, 4), windowGlassColor,
-        { roughness: 0.1, metalness: 0.15, transparent: true, opacity: 0.85 },
+        { roughness: 0.1, metalness: 0.15, transparent: true, opacity: 0.85, glow: true },
         mul(faceRot, xform([0, 0, 0.51]))),
       // Séparateurs horizontal et vertical
       part(boxGeo(0.54 * scale, 0.05, 0.019), separatorColor, { roughness: 1 }, mul(faceRot, xform([0, 0, 0.52]))),
@@ -156,7 +156,7 @@ export function wallWindowCellParts(ctx: CellContext): Part[] {
     return [
       part(roundedBoxGeo(0.14 * scale, 0.4, 0.02, arrowSlitRadius, 4), '#3a2a1a', { roughness: 0.95 },
         mul(faceRot, xform([0, 0, 0.505]))),
-      part(roundedBoxGeo(0.08 * scale, 0.32, 0.04, arrowSlitInnerRadius, 4), '#0a0a0a', { roughness: 0.98 },
+      part(roundedBoxGeo(0.08 * scale, 0.32, 0.04, arrowSlitInnerRadius, 4), '#0a0a0a', { roughness: 0.98, glow: true },
         mul(faceRot, xform([0, 0, 0.49]))),
     ];
   };

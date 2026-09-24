@@ -31,16 +31,18 @@ const selectAmbience = (state: ControlState): AmbienceSettings => ({
   directionalIntensity: state.directionalIntensity,
   directionalColor: state.directionalColor,
   directionalPosition: state.directionalPosition,
-  backgroundColor: state.backgroundColor,
+  windowGlow: state.windowGlow,
+  skyTopColor: state.skyTopColor,
+  skyHorizonColor: state.skyHorizonColor,
   fogColor: state.fogColor,
   fogNear: state.fogNear,
   fogFar: state.fogFar,
-  skySunPosition: state.skySunPosition,
-  skyTurbidity: state.skyTurbidity,
-  skyRayleigh: state.skyRayleigh,
 });
 
-const swatchStyle = ([top, bottom]: [string, string]) => ({ background: `linear-gradient(${top}, ${bottom})` });
+/** La pastille reprend le dégradé du ciel de l'ambiance. */
+const swatchStyle = ({ skyTopColor, skyHorizonColor }: AmbienceSettings) => ({
+  background: `linear-gradient(${skyTopColor}, ${skyHorizonColor})`,
+});
 
 interface ToolButtonProps {
   label: string;
@@ -99,7 +101,7 @@ function AmbiencePicker() {
         aria-expanded={open}
         onClick={() => setOpen((value) => !value)}
       >
-        <span className={`swatch${current ? '' : ' swatch--custom'}`} style={current ? swatchStyle(current.swatch) : undefined} />
+        <span className={`swatch${current ? '' : ' swatch--custom'}`} style={current ? swatchStyle(current.settings) : undefined} />
       </button>
       {open && (
         <div className="ambience-menu" role="menu">
@@ -115,7 +117,7 @@ function AmbiencePicker() {
                 setOpen(false);
               }}
             >
-              <span className="swatch" style={swatchStyle(preset.swatch)} />
+              <span className="swatch" style={swatchStyle(preset.settings)} />
               {preset.label}
             </button>
           ))}

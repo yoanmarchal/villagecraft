@@ -14,6 +14,7 @@ function toModel(state: LightingState) {
     shadowMapSize: state.shadowMapSize,
     shadowRadius: state.shadowRadius,
     shadowBias: state.shadowBias,
+    windowGlow: state.windowGlow,
   };
 }
 
@@ -34,6 +35,7 @@ export function registerLightingControls(pane: Pane): Disposer {
       shadowMapSize: model.shadowMapSize,
       shadowRadius: model.shadowRadius,
       shadowBias: model.shadowBias,
+      windowGlow: model.windowGlow,
     });
     applyingFromPane = false;
   };
@@ -49,6 +51,7 @@ export function registerLightingControls(pane: Pane): Disposer {
     folder.addBinding(model, 'shadowMapSize', { min: 256, max: 4096, step: 256 }),
     folder.addBinding(model, 'shadowRadius', { min: 0, max: 10, step: 0.5 }),
     folder.addBinding(model, 'shadowBias', { min: -0.01, max: 0.01, step: 0.0001 }),
+    folder.addBinding(model, 'windowGlow', { label: 'window glow', min: 0, max: 1, step: 0.01 }),
   ];
 
   bindings.forEach((binding) => binding.on('change', applyPatch));

@@ -14,21 +14,19 @@ export interface LightingState {
   shadowMapSize: number;
   shadowRadius: number;
   shadowBias: number;
+  /** 0 = fenêtres éteintes, 1 = pleinement éclairées (soirée, nuit). */
+  windowGlow: number;
 }
 
 export interface SkyFogState {
-  backgroundColor: string;
+  /** Fond en dégradé vertical : haut de l'écran → horizon (voir GradientBackground). */
+  skyTopColor: string;
+  skyHorizonColor: string;
   fogColor: string;
   fogNear: number;
   fogFar: number;
-  skyDistance: number;
-  skySunPosition: [number, number, number];
-  skyInclination: number;
-  skyAzimuth: number;
-  skyTurbidity: number;
-  skyRayleigh: number;
+  /** Dessus (herbe) du socle du village ; les flancs sont en terre (GroundTile). */
   groundColor: string;
-  groundOpacity: number;
   groundRoughness: number;
 }
 
@@ -134,27 +132,22 @@ const DEFAULT_STATE: GridState &
   CellTransitionState = {
   gridSize: 4,
 
-  ambientIntensity: 1.3,
+  ambientIntensity: 0.7,
   ambientColor: '#fffaed',
-  directionalIntensity: 1.8,
+  directionalIntensity: 2.4,
   directionalColor: '#fffaed',
   directionalPosition: [12, 16, 10],
   shadowMapSize: 2048,
   shadowRadius: 4,
   shadowBias: -0.0001,
+  windowGlow: 0,
 
-  backgroundColor: '#b8d4f1',
-  fogColor: '#d0e5f5',
+  skyTopColor: '#7fb6e8',
+  skyHorizonColor: '#dcebf5',
+  fogColor: '#dcebf5',
   fogNear: 30,
   fogFar: 60,
-  skyDistance: 450000,
-  skySunPosition: [100, 20, 100],
-  skyInclination: 0.6,
-  skyAzimuth: 0.25,
-  skyTurbidity: 8,
-  skyRayleigh: 1.2,
-  groundColor: '#f5e6d3',
-  groundOpacity: 0.95,
+  groundColor: '#a9bd84',
   groundRoughness: 0.95,
 
   dampingFactor: 0.08,
@@ -166,7 +159,7 @@ const DEFAULT_STATE: GridState &
   aoIntensity: 4,
   aoRadius: 1,
   bloomEnabled: true,
-  bloomLuminanceThreshold: 0.3,
+  bloomLuminanceThreshold: 0.85,
   bloomLuminanceSmoothing: 0.9,
   bloomHeight: 300,
   noiseOpacity: 0.02,
@@ -200,6 +193,49 @@ const DEFAULT_STATE: GridState &
   blockTransitionEnabled: true,
 };
 
+type PersistedState = Record<string, unknown>;
+
+/**
+ * v1 → v2 (refonte ciel/éclairage) : ces défauts ont changé. `persist`
+ * enregistre tout l'état, donc sans migration un utilisateur existant
+ * garderait les anciennes valeurs (image délavée, sol beige). On ne remplace
+ * une valeur que si elle vaut encore l'ancien défaut : un réglage
+ * personnalisé est conservé.
+ */
+const V1_CHANGED_DEFAULTS: PersistedState = {
+  ambientIntensity: 1.3,
+  directionalIntensity: 1.8,
+  bloomLuminanceThreshold: 0.3,
+  groundColor: '#f5e6d3',
+  fogColor: '#d0e5f5',
+  aoIntensity: 2,
+  aoRadius: 0.6,
+};
+
+/** Réglages du ciel physique (drei Sky) et du plan de sol, supprimés en v2. */
+const V1_REMOVED_KEYS = [
+  'backgroundColor',
+  'skyDistance',
+  'skySunPosition',
+  'skyInclination',
+  'skyAzimuth',
+  'skyTurbidity',
+  'skyRayleigh',
+  'groundOpacity',
+];
+
+export function migrateControlState(persisted: unknown, version: number): PersistedState {
+  const state: PersistedState = { ...(persisted as PersistedState) };
+  if (version < 2) {
+    const defaults = DEFAULT_STATE as unknown as PersistedState;
+    for (const [key, oldDefault] of Object.entries(V1_CHANGED_DEFAULTS)) {
+      if (state[key] === oldDefault) state[key] = defaults[key];
+    }
+    for (const key of V1_REMOVED_KEYS) delete state[key];
+  }
+  return state;
+}
+
 export const useControlStore = create<ControlState>()(
   persist(
     (set) => ({
@@ -223,7 +259,8 @@ export const useControlStore = create<ControlState>()(
     }),
     {
       name: 'voxel-control-panel',
-      version: 1,
+      version: 2,
+      migrate: (persisted, version) => migrateControlState(persisted, version) as unknown as ControlState,
     },
   ),
 );
