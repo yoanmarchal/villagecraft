@@ -7,19 +7,13 @@ export enum BlockType {
   Arch = 'ARCH',
 }
 
-export interface PropertyBundle {
-  color: string;
-}
-
 export interface GridCell {
   x: number;
   y: number;
   z: number;
   isOccupied: boolean;
   type: BlockType;
-  color?: string;
   placementOrder: number;
-  propertyBundle?: PropertyBundle;
   /**
    * True for a roof cap the grid added on its own above a lone ground-floor
    * cell (see `VillageGrid.syncAutoRoofs`) — not a block the user placed.
@@ -27,6 +21,12 @@ export interface GridCell {
    * claim/clear it transparently rather than treating it as a real block.
    */
   isAutoRoof?: boolean;
+  /**
+   * True for an arch the grid added on its own over a lane between two
+   * facing buildings (see `VillageGrid.syncAutoArches`) — like `isAutoRoof`,
+   * not a user block: not saved, ignored by clicks and demolition.
+   */
+  isAutoArch?: boolean;
   /**
    * `performance.now()/1000` au dernier changement visuel (type ou couleur) —
    * pilote l'animation d'apparition/transition du bloc (voir growMaterial.ts).

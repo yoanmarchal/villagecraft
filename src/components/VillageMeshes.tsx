@@ -5,65 +5,37 @@
  */
 
 import { useEffect, useMemo } from 'react';
-import { useFrame } from '@react-three/fiber';
+import { useFrame, useThree } from '@react-three/fiber';
 import { useShallow } from 'zustand/react/shallow';
 import type { GridCell } from '../types';
 import { buildVillage } from '../render/buildVillage';
-import { createGrowMaterialSet, disposeGrowMaterialSet, updateGrowTime } from '../render/growMaterial';
-import {
-  useControlStore,
-  type CellMaterialsState,
-  type CellDecorationsState,
-  type CellRoofState,
-  type CellShapeState,
-} from '../store/controlStore';
+import { createGrowMaterialSet, disposeGrowMaterialSet, POP_DURATION, updateGrowTime } from '../render/growMaterial';
+import { pickRenderSettings } from '../render/renderSettings';
+import { useControlStore } from '../store/controlStore';
+
+/** Teinte des fenêtres allumées (lumière de bougie / lampe). */
+const WINDOW_GLOW_COLOR = '#ffb45c';
+/** Intensité d'émission à `windowGlow` = 1 — assez pour passer le seuil du bloom. */
+const WINDOW_GLOW_INTENSITY = 2.2;
 
 interface VillageMeshesProps {
   cells: GridCell[];
   toWorldPosition: (x: number, y: number, z: number) => [number, number, number];
+  /** Emprise de la grille : sert à paver les ruelles autour des bâtiments. */
+  gridWidth: number;
+  gridDepth: number;
 }
 
-const selectCellMaterials = (state: CellMaterialsState) => ({
-  wallRoughness: state.wallRoughness,
-  wallBaseColor: state.wallBaseColor,
-  roofBaseColor: state.roofBaseColor,
-});
-
-const selectCellDecorations = (state: CellDecorationsState) => ({
-  windowStonesPerFace: state.windowStonesPerFace,
-  windowStoneRoughness: state.windowStoneRoughness,
-  quoinMargin: state.quoinMargin,
-  quoinRoughness: state.quoinRoughness,
-});
-
-const selectCellRoof = (state: CellRoofState) => ({
-  ridgeY: state.ridgeY,
-  towerR: state.towerR,
-  merlonCount: state.merlonCount,
-  merlonR: state.merlonR,
-  merlonH: state.merlonH,
-  spireH: state.spireH,
-});
-
-const selectCellShape = (state: CellShapeState) => ({
-  isolatedWallRadius: state.isolatedWallRadius,
-  connectedWallExposedRadius: state.connectedWallExposedRadius,
-  connectedWallInteriorRadius: state.connectedWallInteriorRadius,
-});
-
-export function VillageMeshes({ cells, toWorldPosition }: VillageMeshesProps) {
-  // Ces valeurs ne sont pas passées à buildVillage() : les builders de cells
-  // les lisent eux-mêmes via useControlStore.getState(). Elles ne servent ici
-  // qu'à invalider le memo quand un slider de style change.
-  const cellMaterials = useControlStore(useShallow(selectCellMaterials));
-  const cellDecorations = useControlStore(useShallow(selectCellDecorations));
-  const cellRoof = useControlStore(useShallow(selectCellRoof));
-  const cellShape = useControlStore(useShallow(selectCellShape));
+export function VillageMeshes({ cells, toWorldPosition, gridWidth, gridDepth }: VillageMeshesProps) {
+  // Référence stable tant qu'aucune valeur ne change (useShallow).
+  const settings = useControlStore(useShallow(pickRenderSettings));
   const blockTransitionEnabled = useControlStore((state) => state.blockTransitionEnabled);
+  const windowGlow = useControlStore((state) => state.windowGlow);
+  const invalidate = useThree((state) => state.invalidate);
 
   const groups = useMemo(
-    () => buildVillage(cells, toWorldPosition),
-    [cells, toWorldPosition, cellMaterials, cellDecorations, cellRoof, cellShape],
+    () => buildVillage(cells, toWorldPosition, settings, { width: gridWidth, depth: gridDepth }),
+    [cells, toWorldPosition, settings, gridWidth, gridDepth],
   );
 
   // Libère les géométries fusionnées quand elles sont remplacées
@@ -91,16 +63,37 @@ export function VillageMeshes({ cells, toWorldPosition }: VillageMeshesProps) {
     [groups],
   );
 
+  // Fenêtres allumées : réglage de l'émission des groupes "glow" en place,
+  // sans toucher à la géométrie. Changement impératif → frame à demander.
+  useEffect(() => {
+    groups.forEach(({ mat }, i) => {
+      if (!mat.glow) return;
+      const { material } = materialSets[i];
+      material.emissive.set(WINDOW_GLOW_COLOR);
+      material.emissiveIntensity = windowGlow * WINDOW_GLOW_INTENSITY;
+    });
+    invalidate();
+  }, [groups, materialSets, windowGlow, invalidate]);
+
   useEffect(() => {
     return () => {
       for (const set of materialSets) disposeGrowMaterialSet(set);
     };
   }, [materialSets]);
 
-  useFrame(() => {
+  // Le canvas rend à la demande (frameloop="demand") : tant qu'une cellule
+  // est en pleine animation d'apparition, on redemande une frame à chaque
+  // frame ; ensuite plus rien ne tourne jusqu'au prochain changement.
+  const latestSpawn = useMemo(
+    () => cells.reduce((latest, cell) => Math.max(latest, cell.spawnedAt ?? 0), 0),
+    [cells],
+  );
+
+  useFrame(({ invalidate }) => {
     // Même horloge que `cell.spawnedAt` (villageGrid.ts), pas celle du canvas.
     const time = performance.now() / 1000;
     for (const set of materialSets) updateGrowTime(set, time, blockTransitionEnabled);
+    if (blockTransitionEnabled && time - latestSpawn < POP_DURATION) invalidate();
   });
 
   return (

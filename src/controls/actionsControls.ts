@@ -1,29 +1,17 @@
 import type { Pane } from 'tweakpane';
 import { useControlStore } from '../store/controlStore';
-import { useGridControllerStore } from '../store/gridControllerStore';
 import type { Disposer } from './types';
 
+// Les actions sur le village (annuler, générer, partager…) sont dans la
+// barre d'outils (Toolbar.tsx) ; le panneau ne garde que ce qui concerne
+// les réglages eux-mêmes.
 export function registerActionsControls(pane: Pane): Disposer {
   const folder = pane.addFolder({ title: 'Actions' });
-
-  const clearButton = folder.addButton({ title: 'Clear' });
-  clearButton.on('click', () => useGridControllerStore.getState().clear());
-
-  const generateButton = folder.addButton({ title: 'Generate Terrain' });
-  generateButton.on('click', () => {
-    void useGridControllerStore.getState().generateTerrain();
-  });
 
   const resetButton = folder.addButton({ title: 'Reset to Defaults' });
   resetButton.on('click', () => useControlStore.getState().resetToDefaults());
 
-  const unsubscribe = useGridControllerStore.subscribe((state) => {
-    generateButton.disabled = state.isGenerating;
-    generateButton.title = state.isGenerating ? 'Generating...' : 'Generate Terrain';
-  });
-
   return () => {
-    unsubscribe();
     folder.dispose();
   };
 }

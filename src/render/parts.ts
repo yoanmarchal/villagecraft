@@ -17,6 +17,11 @@ export interface MaterialSpec {
   metalness?: number;
   transparent?: boolean;
   opacity?: number;
+  /**
+   * Pièce qui s'allume le soir (vitres, meurtrières) : son groupe fusionné
+   * reçoit une émission chaude réglée par `windowGlow`, sans reconstruction.
+   */
+  glow?: boolean;
 }
 
 export interface Part {
@@ -50,7 +55,7 @@ const quantize = (v: number) => Math.round(v * 20) / 20;
 
 export function matKey(m: MaterialSpec): string {
   const t = m.transparent ? `t${m.opacity ?? 1}` : 'o';
-  return `${quantize(m.roughness)}|${quantize(m.metalness ?? 0)}|${t}`;
+  return `${quantize(m.roughness)}|${quantize(m.metalness ?? 0)}|${t}${m.glow ? '|glow' : ''}`;
 }
 
 const _euler = new THREE.Euler();

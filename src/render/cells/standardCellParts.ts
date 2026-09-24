@@ -11,10 +11,10 @@ import { shellParts } from './shellParts';
 import type { CellContext } from './context';
 
 export function standardCellParts(ctx: CellContext): Part[] {
-  const { cell, exposedFaces, radii } = ctx;
+  const { cell, exposedFaces, radii, settings } = ctx;
 
   const isFoundation = cell.type === BlockType.Foundation;
-  const baseColor = cell.color ?? (isFoundation ? '#8d8a80' : '#c0b0a0');
+  const baseColor = settings.wallBaseColor;
   const { trimColor } = shades(baseColor, { trimColor: -0.08 });
 
   const parts: Part[] = shellParts(ctx, baseColor);

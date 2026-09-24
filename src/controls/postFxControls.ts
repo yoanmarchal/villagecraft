@@ -1,51 +1,19 @@
 import type { Pane } from 'tweakpane';
-import { useControlStore, type PostFxState } from '../store/controlStore';
-import type { Disposer } from './types';
+import { registerStoreFolder } from './storeFolder';
 
-function toModel(state: PostFxState) {
-  return {
-    bloomEnabled: state.bloomEnabled,
-    bloomLuminanceThreshold: state.bloomLuminanceThreshold,
-    bloomLuminanceSmoothing: state.bloomLuminanceSmoothing,
-    bloomHeight: state.bloomHeight,
-    noiseOpacity: state.noiseOpacity,
-    vignetteOffset: state.vignetteOffset,
-    vignetteDarkness: state.vignetteDarkness,
-  };
-}
-
-export function registerPostFxControls(pane: Pane): Disposer {
-  const folder = pane.addFolder({ title: 'Post-processing', expanded: false });
-  const model = toModel(useControlStore.getState());
-
-  let applyingFromPane = false;
-
-  const applyPatch = () => {
-    applyingFromPane = true;
-    useControlStore.getState().setPostFx({ ...model });
-    applyingFromPane = false;
-  };
-
-  const bindings = [
-    folder.addBinding(model, 'bloomEnabled'),
-    folder.addBinding(model, 'bloomLuminanceThreshold', { min: 0, max: 1, step: 0.01 }),
-    folder.addBinding(model, 'bloomLuminanceSmoothing', { min: 0, max: 1, step: 0.01 }),
-    folder.addBinding(model, 'bloomHeight', { min: 50, max: 1000, step: 10 }),
-    folder.addBinding(model, 'noiseOpacity', { min: 0, max: 1, step: 0.01 }),
-    folder.addBinding(model, 'vignetteOffset', { min: 0, max: 1, step: 0.01 }),
-    folder.addBinding(model, 'vignetteDarkness', { min: 0, max: 1, step: 0.01 }),
-  ];
-
-  bindings.forEach((binding) => binding.on('change', applyPatch));
-
-  const unsubscribe = useControlStore.subscribe((state) => {
-    if (applyingFromPane) return;
-    Object.assign(model, toModel(state));
-    folder.refresh();
+export const registerPostFxControls = (pane: Pane) =>
+  registerStoreFolder(pane, {
+    title: 'Post-processing',
+    fields: [
+      ['aoEnabled', { label: 'ambient occlusion' }],
+      ['aoIntensity', { label: 'AO intensity', min: 0, max: 6, step: 0.1 }],
+      ['aoRadius', { label: 'AO radius', min: 0.1, max: 2, step: 0.05 }],
+      ['bloomEnabled'],
+      ['bloomLuminanceThreshold', { min: 0, max: 1, step: 0.01 }],
+      ['bloomLuminanceSmoothing', { min: 0, max: 1, step: 0.01 }],
+      ['bloomHeight', { min: 50, max: 1000, step: 10 }],
+      ['noiseOpacity', { min: 0, max: 1, step: 0.01 }],
+      ['vignetteOffset', { min: 0, max: 1, step: 0.01 }],
+      ['vignetteDarkness', { min: 0, max: 1, step: 0.01 }],
+    ],
   });
-
-  return () => {
-    unsubscribe();
-    folder.dispose();
-  };
-}

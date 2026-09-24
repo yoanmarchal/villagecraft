@@ -16,13 +16,14 @@ import { shellParts } from './shellParts';
 import { stoneParts } from './stoneParts';
 import { isQuoinProtected } from './decorations';
 import type { CellContext } from './context';
-import { useControlStore } from '../../store/controlStore';
 
 export function wallWindowCellParts(ctx: CellContext): Part[] {
-  const { cell, lookup, exposedFaces, radii, isIsolated } = ctx;
-  const { windowStonesPerFace, windowStoneRoughness } = useControlStore.getState();
+  const { cell, lookup, exposedFaces, radii, isIsolated, isRampart, settings } = ctx;
+  // Tours et courtines sont défensives : meurtrières plutôt que fenêtres.
+  const hasArrowSlits = isIsolated || isRampart;
+  const { windowStonesPerFace, windowStoneRoughness, quoinMargin } = settings;
 
-  const baseColor = cell.color ?? '#e0c996';
+  const baseColor = settings.wallBaseColor;
   const windowGlassColor = '#2a3a4a';
   const { windowFrameColor, doorColor } = shades(baseColor, { windowFrameColor: -0.15, doorColor: -0.20 });
   const doorFrameColor = windowFrameColor; // même teinte que le cadre de fenêtre
@@ -36,7 +37,8 @@ export function wallWindowCellParts(ctx: CellContext): Part[] {
   // ── Porte au rez-de-chaussée uniquement ────────────────────────────────
   const isGroundFloor = cell.y === 0;
   const doorFaceHash = Math.abs(cell.x * 31 + cell.z * 17) % Math.max(exposedFaces.length, 1);
-  const doorFace = isGroundFloor && exposedFaces.length > 0 ? exposedFaces[doorFaceHash] : null;
+  // Pas de porte au pied des courtines : un mur défensif ne s'ouvre pas à chaque case.
+  const doorFace = isGroundFloor && !isRampart && exposedFaces.length > 0 ? exposedFaces[doorFaceHash] : null;
 
   const hasBands = exposedFaces.length > 0;
 
@@ -95,7 +97,7 @@ export function wallWindowCellParts(ctx: CellContext): Part[] {
           let area = WINDOW_PROTECTED_AREAS.window;
           if (face === doorFace) {
             area = WINDOW_PROTECTED_AREAS.door;
-          } else if (isIsolated) {
+          } else if (hasArrowSlits) {
             area = WINDOW_PROTECTED_AREAS.arrowSlit;
           }
 
@@ -106,7 +108,7 @@ export function wallWindowCellParts(ctx: CellContext): Part[] {
             if (isInProtectedArea(WINDOW_PROTECTED_AREAS.bandBottom, x, y, w, h)) return true;
           }
 
-          if (isQuoinProtected(cell, lookup, isIsolated, face, x, w)) return true;
+          if (isQuoinProtected(cell, lookup, isIsolated, face, x, w, quoinMargin)) return true;
 
           return false;
         },
@@ -123,7 +125,7 @@ export function wallWindowCellParts(ctx: CellContext): Part[] {
         windowFrameColor, { roughness: 0.85 }, mul(faceRot, xform([0, 0, 0.50]))),
       // Vitre transparente
       part(roundedBoxGeo(0.54 * scale, 0.44, 0.03, glassRadius, 4), windowGlassColor,
-        { roughness: 0.1, metalness: 0.15, transparent: true, opacity: 0.85 },
+        { roughness: 0.1, metalness: 0.15, transparent: true, opacity: 0.85, glow: true },
         mul(faceRot, xform([0, 0, 0.51]))),
       // Séparateurs horizontal et vertical
       part(boxGeo(0.54 * scale, 0.05, 0.019), separatorColor, { roughness: 1 }, mul(faceRot, xform([0, 0, 0.52]))),
@@ -157,7 +159,7 @@ export function wallWindowCellParts(ctx: CellContext): Part[] {
     return [
       part(roundedBoxGeo(0.14 * scale, 0.4, 0.02, arrowSlitRadius, 4), '#3a2a1a', { roughness: 0.95 },
         mul(faceRot, xform([0, 0, 0.505]))),
-      part(roundedBoxGeo(0.08 * scale, 0.32, 0.04, arrowSlitInnerRadius, 4), '#0a0a0a', { roughness: 0.98 },
+      part(roundedBoxGeo(0.08 * scale, 0.32, 0.04, arrowSlitInnerRadius, 4), '#0a0a0a', { roughness: 0.98, glow: true },
         mul(faceRot, xform([0, 0, 0.49]))),
     ];
   };
@@ -166,7 +168,7 @@ export function wallWindowCellParts(ctx: CellContext): Part[] {
   const faceParts = (face: CellFace): Part[] => {
     const rot = FACE_ROTATION_Y[face];
     if (face === doorFace) return doorParts(rot, openingScale(face, 0.48));
-    if (isIsolated) return arrowSlitParts(rot, openingScale(face, 0.14));
+    if (hasArrowSlits) return arrowSlitParts(rot, openingScale(face, 0.14));
     return windowParts(rot, openingScale(face, 0.6));
   };
 

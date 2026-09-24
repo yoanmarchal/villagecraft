@@ -18,7 +18,9 @@ import { BlockType, type GridCell } from '../types';
 import {
   getCornerRadii,
   getExposedFaces,
+  getColumnTop,
   isIsolatedBlock,
+  isRampart,
   isTowerColumn,
   makeCellLookup,
 } from '../utils/cellUtils';
@@ -29,6 +31,8 @@ import { standardCellParts } from './cells/standardCellParts';
 import { wallWindowCellParts } from './cells/wallWindowCellParts';
 import { roofCellParts } from './cells/roofCellParts';
 import { archCellParts } from './cells/archCellParts';
+import { pavingParts } from './cells/pavingParts';
+import type { RenderSettings } from './renderSettings';
 
 export interface MergedGroup {
   key: string;
@@ -36,24 +40,47 @@ export interface MergedGroup {
   geometry: THREE.BufferGeometry;
 }
 
+/** Emprise au sol de la grille, pour paver les ruelles autour des bâtiments. */
+export interface GroundExtent {
+  width: number;
+  depth: number;
+}
+
 export function buildVillage(
   cells: GridCell[],
   toWorldPosition: (x: number, y: number, z: number) => [number, number, number],
+  settings: RenderSettings,
+  ground?: GroundExtent,
 ): MergedGroup[] {
   const lookup = makeCellLookup(cells);
   const groups = new Map<string, { mat: MaterialSpec; parts: PositionedPart[] }>();
 
   const translation = new THREE.Matrix4();
 
+  const addParts = (parts: Part[], cellCenter: THREE.Vector3, spawn: number, fallHeight: number) => {
+    for (const p of parts) {
+      p.matrix.premultiply(translation);
+      const key = matKey(p.mat);
+      let group = groups.get(key);
+      if (!group) {
+        group = { mat: p.mat, parts: [] };
+        groups.set(key, group);
+      }
+      group.parts.push({ ...p, cellCenter, spawn, fallHeight });
+    }
+  };
+
   for (const cell of cells) {
     const ctx: CellContext = {
       cell,
       lookup,
+      settings,
       exposedFaces: getExposedFaces(lookup, cell),
-      radii: getCornerRadii(lookup, cell),
+      radii: getCornerRadii(lookup, cell, settings),
       // Murs/fondations : propagation tour vers le bas. Toits : check local
       // non propagé. Asymétrie intentionnelle (voir AGENTS.md).
       isIsolated: cell.type === BlockType.Roof ? isIsolatedBlock(lookup, cell) : isTowerColumn(lookup, cell),
+      isRampart: isRampart(lookup, getColumnTop(lookup, cell)),
     };
 
     let cellParts: Part[];
@@ -78,15 +105,15 @@ export function buildVillage(
     const spawn = cell.spawnedAt ?? 0;
     const fallHeight = cell.type === BlockType.Roof ? ROOF_DROP_HEIGHT : 0;
 
-    for (const p of cellParts) {
-      p.matrix.premultiply(translation);
-      const key = matKey(p.mat);
-      let group = groups.get(key);
-      if (!group) {
-        group = { mat: p.mat, parts: [] };
-        groups.set(key, group);
-      }
-      group.parts.push({ ...p, cellCenter, spawn, fallHeight });
+    addParts(cellParts, cellCenter, spawn, fallHeight);
+  }
+
+  if (ground) {
+    for (const { x, z, parts } of pavingParts(lookup, ground)) {
+      const [wx, , wz] = toWorldPosition(x, 0, z);
+      translation.makeTranslation(wx, 0, wz);
+      // spawn = 0 : les pavés sont déjà "posés", sans animation d'apparition.
+      addParts(parts, new THREE.Vector3(wx, 0, wz), 0, 0);
     }
   }
 

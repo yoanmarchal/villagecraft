@@ -14,21 +14,19 @@ export interface LightingState {
   shadowMapSize: number;
   shadowRadius: number;
   shadowBias: number;
+  /** 0 = fenêtres éteintes, 1 = pleinement éclairées (soirée, nuit). */
+  windowGlow: number;
 }
 
 export interface SkyFogState {
-  backgroundColor: string;
+  /** Fond en dégradé vertical : haut de l'écran → horizon (voir GradientBackground). */
+  skyTopColor: string;
+  skyHorizonColor: string;
   fogColor: string;
   fogNear: number;
   fogFar: number;
-  skyDistance: number;
-  skySunPosition: [number, number, number];
-  skyInclination: number;
-  skyAzimuth: number;
-  skyTurbidity: number;
-  skyRayleigh: number;
+  /** Dessus (herbe) du socle du village ; les flancs sont en terre (GroundTile). */
   groundColor: string;
-  groundOpacity: number;
   groundRoughness: number;
 }
 
@@ -40,6 +38,9 @@ export interface CameraState {
 }
 
 export interface PostFxState {
+  aoEnabled: boolean;
+  aoIntensity: number;
+  aoRadius: number;
   bloomEnabled: boolean;
   bloomLuminanceThreshold: number;
   bloomLuminanceSmoothing: number;
@@ -61,6 +62,8 @@ export interface CellMaterialsState {
   wallRoughness: number;
   wallBaseColor: string;
   roofBaseColor: string;
+  /** Ardoise des toitures de tours. */
+  spireColor: string;
 }
 
 export interface CellDecorationsState {
@@ -103,18 +106,10 @@ export interface ControlState
     CellShapeState,
     CellTransitionState {
   setGridSize: (gridSize: number) => void;
-  setLighting: (patch: Partial<LightingState>) => void;
-  setSkyFog: (patch: Partial<SkyFogState>) => void;
-  setCamera: (patch: Partial<CameraState>) => void;
-  setPostFx: (patch: Partial<PostFxState>) => void;
-  setDebug: (patch: Partial<DebugState>) => void;
   togglePanel: () => void;
-  setCellMaterials: (patch: Partial<CellMaterialsState>) => void;
-  setCellDecorations: (patch: Partial<CellDecorationsState>) => void;
-  setCellRoof: (patch: Partial<CellRoofState>) => void;
-  setCellShape: (patch: Partial<CellShapeState>) => void;
-  setCellTransition: (patch: Partial<CellTransitionState>) => void;
   resetToDefaults: () => void;
+  // Les autres réglages sont écrits directement par le panneau (controls/storeFolder.ts)
+  // et les ambiances (setState), sans setter dédié par domaine.
 }
 
 const DEFAULT_STATE: GridState &
@@ -129,29 +124,24 @@ const DEFAULT_STATE: GridState &
   CellRoofState &
   CellShapeState &
   CellTransitionState = {
-  gridSize: 2,
+  gridSize: 4,
 
-  ambientIntensity: 1.3,
+  ambientIntensity: 0.7,
   ambientColor: '#fffaed',
-  directionalIntensity: 1.8,
+  directionalIntensity: 2.4,
   directionalColor: '#fffaed',
   directionalPosition: [12, 16, 10],
   shadowMapSize: 2048,
   shadowRadius: 4,
   shadowBias: -0.0001,
+  windowGlow: 0,
 
-  backgroundColor: '#b8d4f1',
-  fogColor: '#d0e5f5',
+  skyTopColor: '#7fb6e8',
+  skyHorizonColor: '#dcebf5',
+  fogColor: '#dcebf5',
   fogNear: 30,
   fogFar: 60,
-  skyDistance: 450000,
-  skySunPosition: [100, 20, 100],
-  skyInclination: 0.6,
-  skyAzimuth: 0.25,
-  skyTurbidity: 8,
-  skyRayleigh: 1.2,
-  groundColor: '#f5e6d3',
-  groundOpacity: 0.95,
+  groundColor: '#a9bd84',
   groundRoughness: 0.95,
 
   dampingFactor: 0.08,
@@ -159,8 +149,11 @@ const DEFAULT_STATE: GridState &
   minDistance: 6,
   maxDistance: 36,
 
+  aoEnabled: true,
+  aoIntensity: 4,
+  aoRadius: 1,
   bloomEnabled: true,
-  bloomLuminanceThreshold: 0.3,
+  bloomLuminanceThreshold: 0.85,
   bloomLuminanceSmoothing: 0.9,
   bloomHeight: 300,
   noiseOpacity: 0.02,
@@ -174,6 +167,7 @@ const DEFAULT_STATE: GridState &
   wallRoughness: 0.94,
   wallBaseColor: '#f5e6d3',
   roofBaseColor: '#c85a3f',
+  spireColor: '#56606c',
 
   windowStonesPerFace: 25,
   windowStoneRoughness: 0.85,
@@ -194,28 +188,64 @@ const DEFAULT_STATE: GridState &
   blockTransitionEnabled: true,
 };
 
+type PersistedState = Record<string, unknown>;
+
+/**
+ * v1 → v2 (refonte ciel/éclairage) : ces défauts ont changé. `persist`
+ * enregistre tout l'état, donc sans migration un utilisateur existant
+ * garderait les anciennes valeurs (image délavée, sol beige). On ne remplace
+ * une valeur que si elle vaut encore l'ancien défaut : un réglage
+ * personnalisé est conservé.
+ */
+const V1_CHANGED_DEFAULTS: PersistedState = {
+  ambientIntensity: 1.3,
+  directionalIntensity: 1.8,
+  bloomLuminanceThreshold: 0.3,
+  groundColor: '#f5e6d3',
+  fogColor: '#d0e5f5',
+  aoIntensity: 2,
+  aoRadius: 0.6,
+};
+
+/** Réglages du ciel physique (drei Sky) et du plan de sol, supprimés en v2. */
+const V1_REMOVED_KEYS = [
+  'backgroundColor',
+  'skyDistance',
+  'skySunPosition',
+  'skyInclination',
+  'skyAzimuth',
+  'skyTurbidity',
+  'skyRayleigh',
+  'groundOpacity',
+];
+
+export function migrateControlState(persisted: unknown, version: number): PersistedState {
+  const state: PersistedState = { ...(persisted as PersistedState) };
+  if (version < 2) {
+    const defaults = DEFAULT_STATE as unknown as PersistedState;
+    for (const [key, oldDefault] of Object.entries(V1_CHANGED_DEFAULTS)) {
+      if (state[key] === oldDefault) state[key] = defaults[key];
+    }
+    for (const key of V1_REMOVED_KEYS) delete state[key];
+  }
+  return state;
+}
+
 export const useControlStore = create<ControlState>()(
   persist(
     (set) => ({
       ...DEFAULT_STATE,
 
       setGridSize: (gridSize) => set({ gridSize }),
-      setLighting: (patch) => set(patch),
-      setSkyFog: (patch) => set(patch),
-      setCamera: (patch) => set(patch),
-      setPostFx: (patch) => set(patch),
-      setDebug: (patch) => set(patch),
       togglePanel: () => set((state) => ({ panelVisible: !state.panelVisible })),
-      setCellMaterials: (patch) => set(patch),
-      setCellDecorations: (patch) => set(patch),
-      setCellRoof: (patch) => set(patch),
-      setCellShape: (patch) => set(patch),
-      setCellTransition: (patch) => set(patch),
-      resetToDefaults: () => set(DEFAULT_STATE),
+      // La taille de grille est conservée : la changer recrée la grille et
+      // rognerait le village, ce qu'on n'attend pas d'un reset de réglages.
+      resetToDefaults: () => set((state) => ({ ...DEFAULT_STATE, gridSize: state.gridSize })),
     }),
     {
       name: 'voxel-control-panel',
-      version: 1,
+      version: 2,
+      migrate: (persisted, version) => migrateControlState(persisted, version) as unknown as ControlState,
     },
   ),
 );

@@ -7,10 +7,13 @@
 
 import type { GridCell } from '../../types';
 import type { CellFace, CellLookup, CornerRadii } from '../../utils/cellUtils';
+import type { RenderSettings } from '../renderSettings';
 
 export interface CellContext {
   cell: GridCell;
   lookup: CellLookup;
+  /** Réglages de style (couleurs, rugosités, formes) — ne jamais lire le store dans un builder. */
+  settings: RenderSettings;
   exposedFaces: CellFace[];
   radii: CornerRadii;
   /**
@@ -19,4 +22,10 @@ export interface CellContext {
    * voir AGENTS.md.
    */
   isIsolated: boolean;
+  /**
+   * La colonne est une courtine (mur d'une case tendu entre deux structures
+   * plus hautes, voir `isRampart`) : son sommet reçoit un parapet crénelé,
+   * ses murs des meurtrières au lieu de fenêtres.
+   */
+  isRampart: boolean;
 }
