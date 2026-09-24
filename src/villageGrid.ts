@@ -195,12 +195,15 @@ export class VillageGrid {
       });
     }
 
+    // Un seul recalcul pour tout le terrain (et non un par bloc via addBlock).
+    const blocks: Array<[number, number, number]> = [];
     for (const { x, z } of occupiedColumns) {
       const height = clampedMinHeight + Math.floor(Math.random() * (clampedMaxHeight - clampedMinHeight + 1));
       for (let y = 0; y < height; y += 1) {
-        this.addBlock(x, y, z);
+        blocks.push([x, y, z]);
       }
     }
+    this.importBlocks(blocks);
   }
 
   public get width(): number {

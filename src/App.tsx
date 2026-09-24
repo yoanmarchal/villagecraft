@@ -2,6 +2,8 @@ import { useState, useEffect, useMemo, useCallback } from 'react';
 import { VillageGrid } from './villageGrid';
 import { VoxelScene } from './components/VoxelScene';
 import { TweakpanePanel } from './components/TweakpanePanel';
+import { Toolbar } from './components/Toolbar';
+import { HintCard } from './components/HintCard';
 import { useControlStore } from './store/controlStore';
 import { useGridControllerStore } from './store/gridControllerStore';
 import { loadVillage, saveVillage } from './store/villageStorage';
@@ -20,13 +22,17 @@ export function App() {
   const [previewCell, setPreviewCell] = useState<{ x: number; z: number } | null>(null);
   const gridSize = useControlStore((state) => state.gridSize);
 
-  // Grille initiale restaurée depuis la sauvegarde locale, s'il y en a une.
+  // Grille initiale restaurée depuis la sauvegarde locale ; au tout premier
+  // lancement (aucune sauvegarde, même vide), un petit village généré pour ne
+  // pas accueillir l'utilisateur sur une grille vide.
   const [grid, setGrid] = useState(() => {
     const initial = new VillageGrid(gridSize, GRID_HEIGHT, gridSize);
     const saved = loadVillage();
     if (saved) {
       const offset = centeringOffset(saved.gridSize, gridSize);
       initial.importBlocks(saved.blocks, offset, offset);
+    } else {
+      initial.generateTerrain(gridSize);
     }
     return initial;
   });
@@ -111,18 +117,18 @@ export function App() {
           onAddBlock={handleAddBlock}
           onRemoveColumn={handleRemoveColumn}
           onPreviewMove={(x, z) => {
-            // Only allow preview within the selected grid size
-            if (x < gridSize && z < gridSize) {
-              setPreviewCell({ x, z });
-            } else {
-              setPreviewCell(null);
-            }
+            const inside = x >= 0 && z >= 0 && x < gridSize && z < gridSize;
+            setPreviewCell(inside ? { x, z } : null);
           }}
+          onPreviewLeave={() => setPreviewCell(null)}
           previewCell={previewCell}
           toWorldPosition={toWorldPosition}
           getNextPlacementY={(x, z, minimumY) => grid.getNextPlacementY(x, z, minimumY)}
+          getRemovalY={(x, z) => grid.getTopOccupiedY(x, z)}
         />
       </div>
+      <HintCard />
+      <Toolbar />
       <TweakpanePanel />
     </div>
   );

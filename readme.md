@@ -6,13 +6,15 @@ An interactive 3D voxel village builder in the browser. Click a grid cell to pla
 
 ## Controls
 
-- **Left click** a cell: add a block
+- **Left click** (or tap) a cell: add a block — or remove the top block when the **Demolish** tool is selected
 - **Right click** a column: remove its top block
-- **Mouse drag / scroll**: orbit and zoom the camera
+- **Mouse drag / scroll** (or drag / pinch): orbit and zoom the camera
 - **Ctrl+Z / Ctrl+Y** (or Ctrl+Shift+Z): undo / redo
-- **Ctrl+O**: show/hide the control panel
+- **Ctrl+O**: show/hide the advanced settings panel
 
-Your village is saved in the browser automatically and restored on reload. The control panel (Tweakpane) lets you tweak lighting, sky/fog, camera, post-processing, materials, decorations, roof shape, and wall/tower geometry live, and persists your changes between sessions. The **Actions** section has buttons to undo/redo, clear the grid, generate a random terrain, copy a share link (the whole village is encoded in the URL — opening it loads that village, asking first if it would replace yours), and reset every setting back to its default.
+The toolbar at the bottom of the screen has the Build/Demolish tools, undo/redo, random generation, clear, preset ambiences (day, morning, sunset, mist, night), a share-link button, a PNG screenshot button and the help card. On first launch a small random village is generated so you don't start from an empty grid.
+
+Your village is saved in the browser automatically and restored on reload. The advanced settings panel (Tweakpane, collapsed by default) lets you tweak lighting, sky/fog, camera, post-processing, materials, decorations, roof shape, and wall/tower geometry live, and persists your changes between sessions. Share links encode the whole village in the URL — opening one loads that village, asking first if it would replace yours. **Reset to Defaults** (in the panel's Actions section) restores every setting.
 
 ## Tech stack
 

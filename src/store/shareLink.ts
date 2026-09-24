@@ -48,6 +48,21 @@ export function buildShareUrl(village: SavedVillage): string {
 }
 
 /**
+ * Copie le lien de partage de `village` dans le presse-papiers. Si c'est
+ * refusé (contexte non sécurisé, permission…), l'affiche pour copie manuelle.
+ */
+export async function copyShareLink(village: SavedVillage): Promise<'copied' | 'shown'> {
+  const url = buildShareUrl(village);
+  try {
+    await navigator.clipboard.writeText(url);
+    return 'copied';
+  } catch {
+    window.prompt('Copy this link:', url);
+    return 'shown';
+  }
+}
+
+/**
  * À appeler avant le premier rendu : si l'URL contient un village partagé,
  * il devient le village sauvegardé (restauré ensuite normalement par App),
  * après confirmation s'il écraserait un village existant. Le hash est

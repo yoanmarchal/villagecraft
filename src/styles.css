@@ -90,3 +90,369 @@ input {
     max-height: calc(100vh - 24px);
   }
 }
+
+/* Thème Tweakpane accordé à l'interface (Tweakpane lit ces variables). */
+.tweakpane-root {
+  --tp-base-font-family: "Trebuchet MS", "Gill Sans", "Segoe UI", sans-serif;
+  --tp-base-background-color: hsla(36, 45%, 97%, 0.94);
+  --tp-base-shadow-color: hsla(25, 35%, 18%, 0.18);
+  --tp-button-background-color: hsla(14, 52%, 51%, 1);
+  --tp-button-background-color-active: hsla(14, 52%, 40%, 1);
+  --tp-button-background-color-focus: hsla(14, 52%, 45%, 1);
+  --tp-button-background-color-hover: hsla(14, 52%, 45%, 1);
+  --tp-button-foreground-color: hsla(36, 60%, 98%, 1);
+  --tp-container-background-color: hsla(25, 30%, 30%, 0.08);
+  --tp-container-background-color-active: hsla(25, 30%, 30%, 0.2);
+  --tp-container-background-color-focus: hsla(25, 30%, 30%, 0.16);
+  --tp-container-background-color-hover: hsla(25, 30%, 30%, 0.12);
+  --tp-container-foreground-color: hsla(25, 25%, 20%, 1);
+  --tp-groove-foreground-color: hsla(25, 30%, 30%, 0.12);
+  --tp-input-background-color: hsla(25, 30%, 30%, 0.08);
+  --tp-input-background-color-active: hsla(25, 30%, 30%, 0.2);
+  --tp-input-background-color-focus: hsla(25, 30%, 30%, 0.16);
+  --tp-input-background-color-hover: hsla(25, 30%, 30%, 0.12);
+  --tp-input-foreground-color: hsla(25, 25%, 20%, 1);
+  --tp-label-foreground-color: hsla(25, 20%, 30%, 0.75);
+  --tp-monitor-background-color: hsla(25, 30%, 30%, 0.06);
+  --tp-monitor-foreground-color: hsla(25, 20%, 30%, 0.7);
+}
+
+/* ── Interface : barre d'outils, aide, notifications ─────────────────────── */
+
+:root {
+  --ui-surface: rgba(255, 251, 245, 0.86);
+  --ui-surface-solid: #fffbf5;
+  --ui-border: rgba(90, 66, 46, 0.14);
+  --ui-hover: rgba(90, 66, 46, 0.08);
+  --ui-text: #3b3027;
+  --ui-muted: #7a6a5a;
+  --ui-accent: #c85a3f;
+  --ui-accent-strong: #a94530;
+  --ui-accent-soft: rgba(200, 90, 63, 0.12);
+  --ui-on-accent: #fffaf4;
+  --ui-shadow: 0 10px 30px rgba(59, 42, 28, 0.16), 0 2px 6px rgba(59, 42, 28, 0.08);
+  --ui-radius: 16px;
+}
+
+.toolbar-dock {
+  position: absolute;
+  left: 50%;
+  bottom: 16px;
+  transform: translateX(-50%);
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  width: max-content;
+  max-width: calc(100vw - 32px);
+  pointer-events: none;
+}
+
+.toolbar-dock > * {
+  pointer-events: auto;
+}
+
+.toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: center;
+  gap: 4px;
+  padding: 6px;
+  background: var(--ui-surface);
+  backdrop-filter: blur(14px) saturate(1.4);
+  -webkit-backdrop-filter: blur(14px) saturate(1.4);
+  border: 1px solid var(--ui-border);
+  border-radius: var(--ui-radius);
+  box-shadow: var(--ui-shadow);
+  color: var(--ui-text);
+}
+
+.tool-group {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.tool-group + .tool-group {
+  padding-left: 4px;
+  border-left: 1px solid var(--ui-border);
+}
+
+.tool-group--segmented {
+  padding: 2px;
+  border-radius: 12px;
+  background: var(--ui-hover);
+}
+
+.tool-group--segmented + .tool-group {
+  border-left: none;
+}
+
+.tool-button,
+.icon-button {
+  display: inline-grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  border: none;
+  border-radius: 10px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  transition: background-color 120ms ease, color 120ms ease, transform 80ms ease;
+}
+
+.tool-button:hover:not(:disabled),
+.icon-button:hover {
+  background: var(--ui-hover);
+}
+
+.tool-button:active:not(:disabled) {
+  transform: scale(0.94);
+}
+
+.tool-button[aria-pressed="true"] {
+  background: var(--ui-accent);
+  color: var(--ui-on-accent);
+  box-shadow: 0 2px 6px rgba(169, 69, 48, 0.35);
+}
+
+.tool-button:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.tool-button:focus-visible,
+.icon-button:focus-visible,
+.ambience-option:focus-visible,
+.hint-card__cta:focus-visible {
+  outline: 2px solid var(--ui-accent);
+  outline-offset: 2px;
+}
+
+/* Ambiances */
+
+.ambience {
+  position: relative;
+}
+
+.swatch {
+  display: inline-block;
+  flex: none;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 2px solid var(--ui-surface-solid);
+  box-shadow: 0 0 0 1px var(--ui-border);
+}
+
+.swatch--custom {
+  background: conic-gradient(#8ec5f0, #f7d9bd, #f59a62, #34406e, #8ec5f0);
+}
+
+.ambience-menu {
+  position: absolute;
+  bottom: calc(100% + 12px);
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 168px;
+  padding: 6px;
+  background: var(--ui-surface-solid);
+  border: 1px solid var(--ui-border);
+  border-radius: 14px;
+  box-shadow: var(--ui-shadow);
+  animation: ui-pop-centered 140ms ease-out;
+}
+
+.ambience-option {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 10px;
+  border: none;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--ui-text);
+  font-size: 14px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.ambience-option:hover {
+  background: var(--ui-hover);
+}
+
+.ambience-option[aria-checked="true"] {
+  background: var(--ui-accent-soft);
+  color: var(--ui-accent-strong);
+  font-weight: 600;
+}
+
+/* Notifications */
+
+.toast {
+  display: flex;
+  align-items: flex-end;
+  min-height: 34px;
+}
+
+.toast-message {
+  padding: 8px 14px;
+  border-radius: 999px;
+  background: rgba(43, 34, 27, 0.9);
+  color: #fffaf4;
+  font-size: 13px;
+  box-shadow: var(--ui-shadow);
+  animation: ui-pop 160ms ease-out;
+}
+
+/* Carte d'aide */
+
+.hint-card {
+  position: absolute;
+  left: 16px;
+  bottom: 16px;
+  z-index: 11;
+  width: 300px;
+  padding: 16px 18px 18px;
+  background: var(--ui-surface);
+  backdrop-filter: blur(14px) saturate(1.4);
+  -webkit-backdrop-filter: blur(14px) saturate(1.4);
+  border: 1px solid var(--ui-border);
+  border-radius: var(--ui-radius);
+  box-shadow: var(--ui-shadow);
+  color: var(--ui-text);
+  animation: ui-pop 200ms ease-out;
+}
+
+.hint-card__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: -4px -8px 4px 0;
+}
+
+.hint-card__header .icon-button {
+  width: 32px;
+  height: 32px;
+  color: var(--ui-muted);
+}
+
+.hint-card__title {
+  margin: 0;
+  font-size: 18px;
+  letter-spacing: 0.01em;
+  color: var(--ui-accent-strong);
+}
+
+.hint-card__intro {
+  margin: 0 0 12px;
+  font-size: 14px;
+  line-height: 1.45;
+  color: var(--ui-muted);
+}
+
+.hint-card__list {
+  display: grid;
+  gap: 6px;
+  margin: 0 0 14px;
+}
+
+.hint-card__row {
+  display: grid;
+  grid-template-columns: 118px 1fr;
+  align-items: baseline;
+  gap: 10px;
+  font-size: 13px;
+}
+
+.hint-card__row dt {
+  justify-self: start;
+  padding: 2px 7px;
+  border: 1px solid var(--ui-border);
+  border-radius: 6px;
+  background: var(--ui-hover);
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.hint-card__row dd {
+  margin: 0;
+}
+
+.hint-card__cta {
+  width: 100%;
+  padding: 9px;
+  border: none;
+  border-radius: 10px;
+  background: var(--ui-accent);
+  color: var(--ui-on-accent);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.hint-card__cta:hover {
+  background: var(--ui-accent-strong);
+}
+
+@keyframes ui-pop {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+}
+
+/* Variante qui conserve le centrage horizontal pendant l'animation. */
+@keyframes ui-pop-centered {
+  from {
+    opacity: 0;
+    transform: translate(-50%, 4px);
+  }
+}
+
+@media (max-width: 760px) {
+  .hint-card {
+    top: 56px;
+    right: 12px;
+    bottom: auto;
+    left: 12px;
+    width: auto;
+  }
+}
+
+/* Sur petit écran la barre passe sur deux lignes : les séparateurs verticaux
+   tomberaient alors en début de ligne, on les remplace par l'espacement. */
+@media (max-width: 560px) {
+  .toolbar {
+    gap: 6px 10px;
+  }
+
+  .tool-group + .tool-group {
+    padding-left: 0;
+    border-left: none;
+  }
+}
+
+@media (max-width: 420px) {
+  .tool-button {
+    width: 36px;
+    height: 36px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .toolbar *,
+  .hint-card,
+  .ambience-menu,
+  .toast-message {
+    animation: none !important;
+    transition: none !important;
+  }
+}

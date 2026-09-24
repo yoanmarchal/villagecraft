@@ -16,16 +16,38 @@ import { RoundedBoxGeometry } from 'three-stdlib';
 import type { CornerRadii } from '../utils/cellUtils';
 import { getRoundedRectContourPoints } from '../utils/cellUtils';
 
+/**
+ * Borne du cache (LRU). Un village complet n'utilise que quelques centaines
+ * de géométries, mais chaque cran d'un slider de forme (rayons, flèche…) en
+ * crée de nouvelles : sans borne, le cache grossit indéfiniment pendant qu'on
+ * les manipule. Les géométries du cache ne sont jamais rendues directement
+ * (le merge copie leurs attributs), donc pas de ressource GPU à libérer :
+ * les oublier suffit.
+ */
+const MAX_CACHED_GEOMETRIES = 1500;
+
+// Map = ordre d'insertion : la première clé est la moins récemment utilisée.
 const cache = new Map<string, THREE.BufferGeometry>();
 
 function getGeo(key: string, build: () => THREE.BufferGeometry): THREE.BufferGeometry {
   let geo = cache.get(key);
-  if (!geo) {
+  if (geo) {
+    cache.delete(key);
+  } else {
     geo = build();
     if (geo.index) geo = geo.toNonIndexed();
-    cache.set(key, geo);
+  }
+  cache.set(key, geo);
+
+  if (cache.size > MAX_CACHED_GEOMETRIES) {
+    cache.delete(cache.keys().next().value!);
   }
   return geo;
+}
+
+/** Nombre de géométries en cache (tests / debug). */
+export function geometryCacheSize(): number {
+  return cache.size;
 }
 
 const r3 = (v: number) => Math.round(v * 1000) / 1000;

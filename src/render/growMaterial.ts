@@ -24,7 +24,7 @@
 
 import * as THREE from 'three';
 
-const POP_DURATION = 0.45;
+export const POP_DURATION = 0.45;
 /** Hauteur de chute des toits (en unités monde, ~1 par bloc) — "pas haut". */
 export const ROOF_DROP_HEIGHT = 0.6;
 /** Échelle de départ des murs — 0 (point) rendait le pop trop violent. */

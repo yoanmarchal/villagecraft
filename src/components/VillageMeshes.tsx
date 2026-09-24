@@ -9,7 +9,7 @@ import { useFrame } from '@react-three/fiber';
 import { useShallow } from 'zustand/react/shallow';
 import type { GridCell } from '../types';
 import { buildVillage } from '../render/buildVillage';
-import { createGrowMaterialSet, disposeGrowMaterialSet, updateGrowTime } from '../render/growMaterial';
+import { createGrowMaterialSet, disposeGrowMaterialSet, POP_DURATION, updateGrowTime } from '../render/growMaterial';
 import { pickRenderSettings } from '../render/renderSettings';
 import { useControlStore } from '../store/controlStore';
 
@@ -59,10 +59,19 @@ export function VillageMeshes({ cells, toWorldPosition }: VillageMeshesProps) {
     };
   }, [materialSets]);
 
-  useFrame(() => {
+  // Le canvas rend à la demande (frameloop="demand") : tant qu'une cellule
+  // est en pleine animation d'apparition, on redemande une frame à chaque
+  // frame ; ensuite plus rien ne tourne jusqu'au prochain changement.
+  const latestSpawn = useMemo(
+    () => cells.reduce((latest, cell) => Math.max(latest, cell.spawnedAt ?? 0), 0),
+    [cells],
+  );
+
+  useFrame(({ invalidate }) => {
     // Même horloge que `cell.spawnedAt` (villageGrid.ts), pas celle du canvas.
     const time = performance.now() / 1000;
     for (const set of materialSets) updateGrowTime(set, time, blockTransitionEnabled);
+    if (blockTransitionEnabled && time - latestSpawn < POP_DURATION) invalidate();
   });
 
   return (

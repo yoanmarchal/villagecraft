@@ -23,7 +23,8 @@ export function TweakpanePanel() {
     const container = containerRef.current;
     if (!container) return;
 
-    const pane = new Pane({ container, title: 'Voxel Controls' });
+    // Réglages avancés : repliés par défaut, la barre d'outils couvre l'usage courant.
+    const pane = new Pane({ container, title: 'Advanced settings', expanded: false });
 
     const disposers: Disposer[] = [
       registerGridControls(pane),

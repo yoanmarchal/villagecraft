@@ -129,7 +129,7 @@ const DEFAULT_STATE: GridState &
   CellRoofState &
   CellShapeState &
   CellTransitionState = {
-  gridSize: 2,
+  gridSize: 4,
 
   ambientIntensity: 1.3,
   ambientColor: '#fffaed',
