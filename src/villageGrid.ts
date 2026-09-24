@@ -9,6 +9,8 @@ const OCCUPANCY_THRESHOLD = 0.42;
 const MIN_OCCUPANCY = 0.4;
 /** Probabilité qu'une colonne soit rehaussée de 2 étages. */
 const LANDMARK_CHANCE = 0.06;
+/** Largeur maximale (en cases) d'une rue enjambée par une arche automatique. */
+export const MAX_ARCH_SPAN = 2;
 
 /**
  * Indices de rangées laissées vides en guise de rues (grilles ≥ 6) : une
@@ -82,6 +84,7 @@ export class VillageGrid {
     this.grid[x][y][z].type = BlockType.Empty;
     this.grid[x][y][z].placementOrder = -1;
     this.grid[x][y][z].isAutoRoof = false;
+    this.grid[x][y][z].isAutoArch = false;
     this.recomputeProceduralLogic();
   }
 
@@ -130,7 +133,8 @@ export class VillageGrid {
     }
 
     for (let y = this.sizeY - 1; y >= 0; y -= 1) {
-      if (this.grid[x][y][z].isOccupied) {
+      const cell = this.grid[x][y][z];
+      if (cell.isOccupied && !cell.isAutoArch) {
         return y;
       }
     }
@@ -151,7 +155,7 @@ export class VillageGrid {
 
     for (let y = this.sizeY - 1; y >= 0; y -= 1) {
       const cell = this.grid[x][y][z];
-      if (cell.isOccupied && !cell.isAutoRoof) {
+      if (cell.isOccupied && !cell.isAutoRoof && !cell.isAutoArch) {
         return y;
       }
     }
@@ -183,6 +187,7 @@ export class VillageGrid {
           this.grid[x][y][z].type = BlockType.Empty;
           this.grid[x][y][z].placementOrder = -1;
           this.grid[x][y][z].isAutoRoof = false;
+          this.grid[x][y][z].isAutoArch = false;
         }
       }
     }
@@ -261,7 +266,7 @@ export class VillageGrid {
    */
   public exportBlocks(): Array<[number, number, number]> {
     return this.getOccupiedCells()
-      .filter((cell) => !cell.isAutoRoof)
+      .filter((cell) => !cell.isAutoRoof && !cell.isAutoArch)
       .sort((a, b) => a.placementOrder - b.placementOrder)
       .map((cell) => [cell.x, cell.y, cell.z]);
   }
@@ -296,6 +301,7 @@ export class VillageGrid {
           const cell = this.grid[x][y][z];
           cell.isOccupied = false;
           cell.isAutoRoof = false;
+          cell.isAutoArch = false;
           cell.placementOrder = -1;
         }
       }
@@ -349,11 +355,12 @@ export class VillageGrid {
    * resterait exclu de la sauvegarde et ignoré par la démolition).
    */
   private occupy(cell: GridCell): void {
-    if (cell.isOccupied && !cell.isAutoRoof) {
+    if (cell.isOccupied && !cell.isAutoRoof && !cell.isAutoArch) {
       return;
     }
     cell.isOccupied = true;
     cell.isAutoRoof = false;
+    cell.isAutoArch = false;
     cell.placementOrder = this.nextPlacementOrder;
     this.nextPlacementOrder += 1;
   }
@@ -388,7 +395,7 @@ export class VillageGrid {
       for (let z = 0; z < this.sizeZ; z += 1) {
         let topOccupiedY = -1;
         for (let y = this.sizeY - 1; y >= 0; y -= 1) {
-          if (this.grid[x][y][z].isOccupied) {
+          if (this.grid[x][y][z].isOccupied && !this.grid[x][y][z].isAutoArch) {
             topOccupiedY = y;
             break;
           }
@@ -410,7 +417,7 @@ export class VillageGrid {
         let realTopY = -1;
         for (let y = this.sizeY - 1; y >= 0; y -= 1) {
           const cell = this.grid[x][y][z];
-          if (cell.isOccupied && !cell.isAutoRoof) {
+          if (cell.isOccupied && !cell.isAutoRoof && !cell.isAutoArch) {
             realTopY = y;
             break;
           }
@@ -440,7 +447,100 @@ export class VillageGrid {
     }
   }
 
+  /**
+   * Arches automatiques. Une rue de 1 à MAX_ARCH_SPAN cases (jamais plus), ouverte au sol,
+   * entre deux bâtiments qui se font face avec au moins deux niveaux visibles
+   * (occupés en y = 0 et y = 1, cap de toit compris : une maison d'un clic
+   * suffit) est enjambée par une arche au premier étage. Une seule arche par
+   * tronçon de rue, au milieu, pour ne pas transformer la rue en tunnel.
+   *
+   * Comme les caps de toit, ce ne sont pas des blocs de l'utilisateur : elles
+   * apparaissent et disparaissent avec les bâtiments qui les portent, ne sont
+   * pas sauvegardées, et un clic dans la ruelle bâtit toujours au sol.
+   */
+  private syncAutoArches(): void {
+    const ARCH_Y = 1;
+    if (this.sizeY < ARCH_Y + 1) return;
+
+    // Occupation "réelle" pour la règle : les arches auto elles-mêmes ne comptent pas.
+    const solid = (x: number, y: number, z: number) => {
+      const cell = this.getNeighborCell(x, y, z);
+      return !!cell && cell.isOccupied && !cell.isAutoArch;
+    };
+
+    // Porteur : bâti au sol et au premier étage. Passage : vide aux deux niveaux.
+    const support = (x: number, z: number) => solid(x, 0, z) && solid(x, ARCH_Y, z);
+    const open = (x: number, z: number) =>
+      this.isValidCoordinate(x, 0, z) && !solid(x, 0, z) && !solid(x, ARCH_Y, z);
+
+    const wanted = new Set<string>();
+    /**
+     * Rues enjambées selon un axe. `at(o, i)` → (x, z), `i` le long de la
+     * portée, `o` le long de la rue. Dans chaque rangée, un passage = cases
+     * ouvertes consécutives (1 à MAX_ARCH_SPAN) bordées par deux porteurs ; les
+     * passages identiques de rangées voisines forment un tronçon de rue, dont
+     * on couvre la rangée du milieu.
+     */
+    const collect = (outer: number, inner: number, at: (o: number, i: number) => [number, number]) => {
+      const gapsByRow: Array<Array<[number, number]>> = [];
+      for (let o = 0; o < outer; o += 1) {
+        const gaps: Array<[number, number]> = [];
+        for (let i = 1; i < inner - 1; i += 1) {
+          if (!support(...at(o, i - 1)) || !open(...at(o, i))) continue;
+          let end = i;
+          while (end + 1 < inner && open(...at(o, end + 1))) end += 1;
+          if (end + 1 < inner && support(...at(o, end + 1)) && end - i + 1 <= MAX_ARCH_SPAN) {
+            gaps.push([i, end]);
+          }
+          i = end;
+        }
+        gapsByRow.push(gaps);
+      }
+
+      const taken = (o: number, [a, b]: [number, number]) => {
+        for (let i = a; i <= b; i += 1) if (wanted.has(at(o, i).join(','))) return true;
+        return false;
+      };
+      const done = new Set<string>();
+      for (let o = 0; o < outer; o += 1) {
+        for (const gap of gapsByRow[o]) {
+          const id = `${gap[0]}-${gap[1]}`;
+          if (done.has(`${o}|${id}`)) continue;
+          let last = o;
+          while (last + 1 < outer && gapsByRow[last + 1].some(([a, b]) => `${a}-${b}` === id)) last += 1;
+          for (let r = o; r <= last; r += 1) done.add(`${r}|${id}`);
+          const row = o + Math.floor((last - o) / 2);
+          if (taken(row, gap)) continue; // carrefour : déjà couvert dans l'autre sens
+          for (let i = gap[0]; i <= gap[1]; i += 1) wanted.add(at(row, i).join(','));
+        }
+      }
+    };
+    collect(this.sizeZ, this.sizeX, (z, x) => [x, z]); // portée selon X
+    collect(this.sizeX, this.sizeZ, (x, z) => [x, z]); // portée selon Z
+
+    for (let x = 0; x < this.sizeX; x += 1) {
+      for (let z = 0; z < this.sizeZ; z += 1) {
+        const cell = this.grid[x][ARCH_Y][z];
+        const want = wanted.has(`${x},${z}`);
+        if (cell.isAutoArch && !want) {
+          cell.isOccupied = false;
+          cell.isAutoArch = false;
+          cell.type = BlockType.Empty;
+        } else if (want && !cell.isOccupied) {
+          cell.isOccupied = true;
+          cell.isAutoArch = true;
+        }
+      }
+    }
+  }
+
   private recomputeProceduralLogic(): void {
+    // Toits → arches → toits : les arches s'appuient sur les caps de toit des
+    // maisons d'un étage (il faut qu'ils existent déjà), et une arche qui
+    // disparaît (passage bâti) doit laisser sa place au cap de la colonne
+    // dans la même passe — sinon le résultat dépendrait de l'ordre des clics.
+    this.syncAutoRoofs();
+    this.syncAutoArches();
     this.syncAutoRoofs();
 
     const now = performance.now() / 1000;
@@ -508,7 +608,9 @@ export class VillageGrid {
   private isSimpleArch(x: number, y: number, z: number,
                      hasLeft: boolean, hasRight: boolean,
                      hasFront: boolean, hasBack: boolean): boolean {
-    // Logique d'arche simplifiée : deux voisins opposés, pas de support en dessous ou voisins plus hauts
+    // Deux voisins opposés sur un seul axe, et rien dessous (le passage).
+    // Pas d'exigence de murs au-dessus : entre deux maisons d'un étage, le
+    // voisin porteur est un toit (cap auto) — l'arche s'y adosse quand même.
     const oppositePairs = (
       (hasLeft && hasRight) ? 1 : 0
     ) + (
@@ -520,18 +622,7 @@ export class VillageGrid {
     const hasSupportBelow = this.getNeighborCell(x, y - 1, z)?.isOccupied ?? false;
     if (hasSupportBelow) return false;
 
-    // Vérifier que les voisins porteurs ont au moins un étage au-dessus
-    if (hasLeft && hasRight) {
-      const leftHasAbove = this.getNeighborCell(x - 1, y + 1, z)?.isOccupied ?? false;
-      const rightHasAbove = this.getNeighborCell(x + 1, y + 1, z)?.isOccupied ?? false;
-      return leftHasAbove && rightHasAbove;
-    } else if (hasFront && hasBack) {
-      const frontHasAbove = this.getNeighborCell(x, y + 1, z - 1)?.isOccupied ?? false;
-      const backHasAbove = this.getNeighborCell(x, y + 1, z + 1)?.isOccupied ?? false;
-      return frontHasAbove && backHasAbove;
-    }
-
-    return false;
+    return true;
   }
 
   private getNeighborCell(x: number, y: number, z: number): GridCell | null {
@@ -564,3 +655,8 @@ export class VillageGrid {
     );
   }
 }
+
+// La grille vit dans un useState d'App : un remplacement à chaud garderait
+// l'instance existante, donc l'ancien code des règles (arches, toits…).
+// Toute modification de ce module recharge donc la page.
+import.meta.hot?.accept(() => window.location.reload());

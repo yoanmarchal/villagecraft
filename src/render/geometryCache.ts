@@ -15,6 +15,7 @@ import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three-stdlib';
 import type { CornerRadii } from '../utils/cellUtils';
 import { getRoundedRectContourPoints } from '../utils/cellUtils';
+import { seededRandom } from '../utils/noise';
 
 /**
  * Borne du cache (LRU). Un village complet n'utilise que quelques centaines
@@ -212,6 +213,168 @@ export function towerSoffitGeo(halfSize: number, radii: CornerRadii, y: number, 
       const next = contour[(j + 1) % contour.length];
       pushTriangle(positions, normals, [center, point, next], [down, down, down], down);
     });
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+    geo.setAttribute('normal', new THREE.Float32BufferAttribute(normals, 3));
+    return geo;
+  });
+}
+
+// ── Arche : bloc maçonné évidé par un arc surbaissé ──────────────────────────
+
+/**
+ * Cercle de l'intrados d'un arc surbaissé de `span` cases, qui s'appuie sur
+ * les bords bas de la rue (x = ±span/2, y = −0.5) et monte de `rise` en son
+ * milieu. Coordonnées centrées sur le milieu de l'arche.
+ */
+function archCircle(rise: number, span: number): { centerY: number; radius: number; springAngle: number } {
+  const halfSpan = span / 2;
+  const radius = (halfSpan * halfSpan + rise * rise) / (2 * rise);
+  const centerY = -0.5 + rise - radius;
+  const springAngle = Math.atan2(-0.5 - centerY, halfSpan); // angle du point d'appui droit
+  return { centerY, radius, springAngle };
+}
+
+const ARC_SEGMENTS_PER_CELL = 24;
+
+/**
+ * Corps de l'arche, tranche n° `slice` (0 = côté x négatif) d'une arche de
+ * `span` cases : la cellule entière en maçonnerie, dont le dessous est
+ * creusé par l'arc (intrados) — comme un pont ou une porte de ville, et non
+ * un portique sur piliers. Profil dans le plan XY (portée selon X), extrudé
+ * sur Z (sens du passage), centré sur la cellule.
+ */
+export function archBodyGeo(rise: number, span = 1, slice = 0): THREE.BufferGeometry {
+  return getGeo(`archBody|${r3(rise)}|${span}|${slice}`, () => {
+    const { centerY, radius } = archCircle(rise, span);
+    const x0 = -span / 2 + slice;
+    const x1 = x0 + 1;
+    const offset = x0 + 0.5; // centre de la tranche dans le repère de l'arche
+    const intrados = (x: number) => Math.max(-0.5, centerY + Math.sqrt(Math.max(0, radius * radius - x * x)));
+
+    const shape = new THREE.Shape();
+    shape.moveTo(x1 - offset, intrados(x1));
+    shape.lineTo(x1 - offset, 0.5);
+    shape.lineTo(x0 - offset, 0.5);
+    shape.lineTo(x0 - offset, intrados(x0));
+    for (let i = 1; i < ARC_SEGMENTS_PER_CELL; i += 1) {
+      const x = x0 + i / ARC_SEGMENTS_PER_CELL;
+      shape.lineTo(x - offset, intrados(x));
+    }
+    shape.closePath();
+
+    const geo = new THREE.ExtrudeGeometry(shape, { depth: 1, bevelEnabled: false });
+    geo.applyMatrix4(new THREE.Matrix4().makeTranslation(0, 0, -0.5));
+    geo.computeVertexNormals();
+    return geo;
+  });
+}
+
+/** Angle (radians, 0 = +X) du milieu du claveau n° `index` sur `count`. */
+function archVoussoirMidAngle(rise: number, span: number, index: number, count: number): number {
+  const { springAngle } = archCircle(rise, span);
+  return springAngle + ((Math.PI - 2 * springAngle) * (index + 0.5)) / count;
+}
+
+/** Abscisse (repère centré sur l'arche) du milieu du claveau n° `index` — sert à le rattacher à une case. */
+export function archVoussoirMidX(rise: number, span: number, index: number, count: number): number {
+  const { radius } = archCircle(rise, span);
+  return Math.cos(archVoussoirMidAngle(rise, span, index, count)) * radius;
+}
+
+/**
+ * Claveau n° `index` (sur `count`) d'une arche de `span` cases : secteur de
+ * couronne autour de l'intrados, d'épaisseur `depth` selon Z, centré en
+ * z = 0, dans le repère centré sur l'arche. Un petit jour angulaire sépare
+ * les claveaux ; `extraHeight` allonge la clé de voûte.
+ */
+export function archVoussoirGeo(
+  rise: number,
+  index: number,
+  count: number,
+  ringWidth: number,
+  depth: number,
+  extraHeight = 0,
+  span = 1,
+): THREE.BufferGeometry {
+  const key = `voussoir|${r3(rise)}|${index}|${count}|${r3(ringWidth)}|${r3(depth)}|${r3(extraHeight)}|${span}`;
+  return getGeo(key, () => {
+    const { centerY, radius, springAngle } = archCircle(rise, span);
+    const arc = Math.PI - 2 * springAngle;
+    const gap = 0.012 / radius; // joint constant (~1.2 cm) quel que soit le rayon
+    const a0 = springAngle + (arc * index) / count + gap / 2;
+    const a1 = springAngle + (arc * (index + 1)) / count - gap / 2;
+    const inner = radius;
+    const outer = radius + ringWidth + extraHeight;
+
+    const shape = new THREE.Shape();
+    const steps = 4;
+    for (let i = 0; i <= steps; i += 1) {
+      const a = a0 + ((a1 - a0) * i) / steps;
+      const point: [number, number] = [Math.cos(a) * inner, centerY + Math.sin(a) * inner];
+      if (i === 0) shape.moveTo(...point);
+      else shape.lineTo(...point);
+    }
+    for (let i = steps; i >= 0; i -= 1) {
+      const a = a0 + ((a1 - a0) * i) / steps;
+      shape.lineTo(Math.cos(a) * outer, centerY + Math.sin(a) * outer);
+    }
+    shape.closePath();
+
+    const geo = new THREE.ExtrudeGeometry(shape, { depth, bevelEnabled: false });
+    geo.applyMatrix4(new THREE.Matrix4().makeTranslation(0, 0, -depth / 2));
+    geo.computeVertexNormals();
+    return geo;
+  });
+}
+
+// ── Pavés : dalle de rue d'une cellule ───────────────────────────────────────
+
+/** Nombre de variantes de dalle pavée (tirées puis tournées selon la cellule). */
+export const COBBLE_TILE_VARIANTS = 3;
+const COBBLES_PER_SIDE = 6;
+
+/**
+ * Une cellule de rue pavée (1 × 1, posée sur y = 0) : 6 × 6 pavés
+ * irréguliers (taille, hauteur, décalage, légère rotation) fusionnés en une
+ * seule géométrie, déterministe par variante. Une rue entière ne coûte
+ * ainsi qu'une part par cellule.
+ */
+export function cobbleTileGeo(variant: number): THREE.BufferGeometry {
+  return getGeo(`cobbles|${variant}`, () => {
+    const random = seededRandom(0xc0bb1e + variant * 7919);
+    const pitch = 1 / COBBLES_PER_SIDE;
+    const positions: number[] = [];
+    const normals: number[] = [];
+    const matrix = new THREE.Matrix4();
+    const quaternion = new THREE.Quaternion();
+    const euler = new THREE.Euler();
+
+    for (let i = 0; i < COBBLES_PER_SIDE; i += 1) {
+      for (let j = 0; j < COBBLES_PER_SIDE; j += 1) {
+        // Rangs décalés d'un demi-pavé une ligne sur deux, comme un vrai
+        // pavage : le dernier pavé d'un rang décalé déborderait de la dalle,
+        // il devient un demi-pavé calé contre le bord opposé.
+        const staggered = j % 2 === 1;
+        const isHalf = staggered && i === COBBLES_PER_SIDE - 1;
+        const w = (isHalf ? pitch / 2 : pitch) * (0.78 + random() * 0.14);
+        const d = pitch * (0.78 + random() * 0.14);
+        const h = 0.028 + random() * 0.018;
+        const jitter = () => (random() - 0.5) * pitch * 0.1;
+        const x = isHalf ? -0.5 + pitch / 4 : -0.5 + pitch * (i + 0.5) + (staggered ? pitch / 2 : 0) + jitter();
+        const z = -0.5 + pitch * (j + 0.5) + jitter();
+        euler.set((random() - 0.5) * 0.08, (random() - 0.5) * 0.25, (random() - 0.5) * 0.08);
+        quaternion.setFromEuler(euler);
+        matrix.compose(new THREE.Vector3(x, h / 2, z), quaternion, new THREE.Vector3(1, 1, 1));
+
+        const box = new THREE.BoxGeometry(w, h, d).toNonIndexed();
+        box.applyMatrix4(matrix);
+        positions.push(...(box.getAttribute('position').array as Float32Array));
+        normals.push(...(box.getAttribute('normal').array as Float32Array));
+        box.dispose();
+      }
+    }
+
     const geo = new THREE.BufferGeometry();
     geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
     geo.setAttribute('normal', new THREE.Float32BufferAttribute(normals, 3));

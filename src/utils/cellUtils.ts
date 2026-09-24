@@ -157,23 +157,6 @@ export function getRoofConfig(lookup: CellLookup, cell: GridCell): {
   return { axis, hasLeft, hasRight, hasFront, hasBack, isCorner, isEnd };
 }
 
-export function getArchAxis(lookup: CellLookup, cell: GridCell): 'x' | 'z' {
-  const eastWest = Number(hasOccupiedCell(lookup, cell.x - 1, cell.y, cell.z)) + Number(hasOccupiedCell(lookup, cell.x + 1, cell.y, cell.z));
-  const northSouth = Number(hasOccupiedCell(lookup, cell.x, cell.y, cell.z - 1)) + Number(hasOccupiedCell(lookup, cell.x, cell.y, cell.z + 1));
-
-  // Si plus de voisins sur l'axe X, l'arche doit être orientée selon Z (pour enjambée l'axe X)
-  // Si plus de voisins sur l'axe Z, l'arche doit être orientée selon X (pour enjambée l'axe Z)
-  if (eastWest > northSouth) {
-    return 'z';
-  }
-  if (northSouth > eastWest) {
-    return 'x';
-  }
-
-  // Si égal, choisir en fonction de la position pour une cohérence visuelle
-  return 'z';
-}
-
 export type CellFace = 'front' | 'back' | 'left' | 'right';
 
 /**

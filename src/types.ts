@@ -22,6 +22,12 @@ export interface GridCell {
    */
   isAutoRoof?: boolean;
   /**
+   * True for an arch the grid added on its own over a lane between two
+   * facing buildings (see `VillageGrid.syncAutoArches`) — like `isAutoRoof`,
+   * not a user block: not saved, ignored by clicks and demolition.
+   */
+  isAutoArch?: boolean;
+  /**
    * `performance.now()/1000` au dernier changement visuel (type ou couleur) —
    * pilote l'animation d'apparition/transition du bloc (voir growMaterial.ts).
    */

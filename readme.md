@@ -6,7 +6,7 @@ An interactive 3D voxel village builder in the browser. Click a grid cell to pla
 
 ## Controls
 
-- **Left click** (or tap) a cell: add a block — or remove the top block when the **Demolish** tool is selected
+- **Left click** (or tap) a cell: add a block — or remove the top block with the **Demolish** tool. A street (1 or 2 cells wide) between two facing houses of at least two levels gets an arch on its own (crenellated when it touches a tower, roofed when the houses around it have gable roofs) — even with one-click houses
 - **Right click** a column: remove its top block
 - **Mouse drag / scroll** (or drag / pinch): orbit and zoom the camera
 - **Ctrl+Z / Ctrl+Y** (or Ctrl+Shift+Z): undo / redo

@@ -295,7 +295,7 @@ export function VoxelScene({
         <planeGeometry args={[gridWidth, gridDepth]} />
         <meshBasicMaterial colorWrite={false} depthWrite={false} />
       </mesh>
-      <VillageMeshes cells={cells} toWorldPosition={toWorldPosition} />
+      <VillageMeshes cells={cells} toWorldPosition={toWorldPosition} gridWidth={gridWidth} gridDepth={gridDepth} />
       <PlacementPreview
         previewCell={previewCell}
         mode={toolMode}

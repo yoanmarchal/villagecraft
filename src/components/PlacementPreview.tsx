@@ -26,7 +26,8 @@ export function PlacementPreview({
   }
 
   const isDemolish = mode === 'demolish';
-  const y = isDemolish ? getRemovalY(previewCell.x, previewCell.z) : getNextPlacementY(previewCell.x, previewCell.z, 0);
+  const { x, z } = previewCell;
+  const y = isDemolish ? getRemovalY(x, z) : getNextPlacementY(x, z, 0);
   if (y === null) {
     return null;
   }

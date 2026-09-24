@@ -130,6 +130,93 @@ describe('VillageGrid — types de blocs', () => {
   });
 });
 
+describe('VillageGrid — arches automatiques', () => {
+  /** Deux bâtiments de `height` blocs, en x = 0 et x = 2, sur z ∈ [z0, z1] ; ruelle en x = 1. */
+  const twoRows = (height: number, z0 = 1, z1 = 1, size = 3) => {
+    const grid = new VillageGrid(size, HEIGHT, size);
+    for (let z = z0; z <= z1; z += 1) {
+      buildColumn(grid, 0, z, height);
+      buildColumn(grid, 2, z, height);
+    }
+    return grid;
+  };
+  const archesIn = (grid: VillageGrid) => grid.getOccupiedCells().filter((cell) => cell.type === BlockType.Arch);
+
+  it('couvre un passage entre deux bâtiments à deux niveaux de murs (+ toit)', () => {
+    const grid = twoRows(3);
+    const arch = grid.getCell({ x: 1, y: 1, z: 1 });
+    expect(arch?.type).toBe(BlockType.Arch);
+    expect(arch?.isAutoArch).toBe(true);
+    expect(grid.getCell({ x: 1, y: 0, z: 1 })?.isOccupied).toBe(false); // le passage reste libre
+  });
+
+  it("se forme dès deux maisons d'un seul clic (rez-de-chaussée + toit auto)", () => {
+    const grid = new VillageGrid(3, HEIGHT, 3);
+    for (const x of [0, 2]) grid.addBlock(x, grid.getNextPlacementY(x, 1)!, 1); // un clic chacune
+    expect(archesIn(grid).map(({ x, y, z }) => [x, y, z])).toEqual([[1, 1, 1]]);
+  });
+
+  it("ne se forme pas avec un seul bâtiment, ni en diagonale", () => {
+    const single = new VillageGrid(3, HEIGHT, 3);
+    buildColumn(single, 0, 1, 3);
+    expect(archesIn(single)).toHaveLength(0);
+
+    const diagonal = new VillageGrid(3, HEIGHT, 3);
+    buildColumn(diagonal, 0, 0, 3);
+    buildColumn(diagonal, 2, 2, 3);
+    expect(archesIn(diagonal)).toHaveLength(0);
+  });
+
+  it('une seule arche par tronçon de ruelle, au milieu', () => {
+    const grid = twoRows(3, 0, 4, 5);
+    const arches = archesIn(grid);
+    expect(arches).toHaveLength(1);
+    expect([arches[0].x, arches[0].z]).toEqual([1, 2]);
+  });
+
+  it("enjambe d'un seul tenant une rue de 2 cases, jamais plus", () => {
+    const street = (width: number) => {
+      const grid = new VillageGrid(6, HEIGHT, 3);
+      buildColumn(grid, 0, 1, 2);
+      buildColumn(grid, width + 1, 1, 2);
+      return archesIn(grid).map(({ x, y, z }) => [x, y, z]);
+    };
+    expect(street(2)).toEqual([[1, 1, 1], [2, 1, 1]]);
+    expect(street(3)).toEqual([]);
+  });
+
+  it('disparaît quand un bâtiment porteur est entièrement démoli', () => {
+    const grid = twoRows(3);
+    while (grid.removeTopBlockInColumn(2, 1) !== null) {
+      // démolition complète, clic après clic
+    }
+    expect(archesIn(grid)).toHaveLength(0);
+  });
+
+  it('un clic dans la ruelle bâtit au sol, et bouche le passage', () => {
+    const grid = twoRows(3);
+    expect(grid.getNextPlacementY(1, 1)).toBe(0);
+    grid.addBlock(1, 0, 1);
+    expect(archesIn(grid)).toHaveLength(0);
+  });
+
+  it("n'est ni sauvegardée ni démolissable", () => {
+    const grid = twoRows(3);
+    expect(grid.exportBlocks().some(([x, y, z]) => x === 1 && y === 1 && z === 1)).toBe(false);
+    expect(grid.removeTopBlockInColumn(1, 1)).toBeNull();
+  });
+
+  it('apparaît aussi dans les villages générés', () => {
+    let arches = 0;
+    for (let seed = 0; seed < 20; seed += 1) {
+      const grid = new VillageGrid(12, HEIGHT, 12);
+      grid.generateTerrain(12, seed);
+      arches += archesIn(grid).length;
+    }
+    expect(arches).toBeGreaterThan(0);
+  });
+});
+
 describe('VillageGrid — generateTerrain', () => {
   const columnHeights = (grid: VillageGrid, size: number) => {
     const heights: number[][] = [];

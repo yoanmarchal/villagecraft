@@ -23,8 +23,6 @@ import {
   UndoIcon,
 } from './icons';
 
-const TOAST_MS = 2200;
-
 const selectAmbience = (state: ControlState): AmbienceSettings => ({
   ambientIntensity: state.ambientIntensity,
   ambientColor: state.ambientColor,
@@ -129,20 +127,11 @@ function AmbiencePicker() {
 
 export function Toolbar() {
   const toolMode = useUiStore((state) => state.toolMode);
+  const toast = useUiStore((state) => state.toast);
   const { canUndo, canRedo, isGenerating } = useGridControllerStore(
     useShallow((state) => ({ canUndo: state.canUndo, canRedo: state.canRedo, isGenerating: state.isGenerating })),
   );
-  const [toast, setToast] = useState<string | null>(null);
-  const toastTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
-
-  const showToast = (message: string) => {
-    setToast(message);
-    clearTimeout(toastTimer.current);
-    toastTimer.current = setTimeout(() => setToast(null), TOAST_MS);
-  };
-  useEffect(() => () => clearTimeout(toastTimer.current), []);
-
-  const { setToolMode, setHintVisible } = useUiStore.getState();
+  const { setToolMode, setHintVisible, showToast } = useUiStore.getState();
   const controller = useGridControllerStore.getState;
 
   const share = async () => {

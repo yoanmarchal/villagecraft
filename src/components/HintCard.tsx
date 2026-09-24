@@ -4,6 +4,7 @@ import { CloseIcon } from './icons';
 const MOUSE_HINTS: Array<[string, string]> = [
   ['Click', 'build a block'],
   ['Right click', 'demolish the top block'],
+  ['Lane between tall houses', 'an arch forms by itself'],
   ['Drag · scroll', 'orbit · zoom'],
   ['Ctrl+Z / Ctrl+Y', 'undo / redo'],
   ['Ctrl+O', 'advanced settings'],

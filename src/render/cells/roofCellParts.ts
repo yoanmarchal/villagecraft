@@ -25,7 +25,15 @@ import {
   towerSoffitGeo,
 } from '../geometryCache';
 import { mul, part, xform, type Part } from '../parts';
+import type { RenderSettings } from '../renderSettings';
 import type { CellContext } from './context';
+import {
+  crenellatedWalkwayParts,
+  MERLON_DEPTH,
+  MERLON_WIDTH_FACTOR,
+  PARAPET_H,
+  stoneColors,
+} from './walkwayParts';
 
 // ── Constantes géométriques (espace local cellule : Y=0 centre, ±0.5 bords) ──
 const RUN = 0.5;                                      // course horizontale = demi-cellule
@@ -38,7 +46,44 @@ const RIB_OFFSETS = [-0.40, -0.13, 0.13, 0.40];
 export function roofCellParts(ctx: CellContext): Part[] {
   const { cell, lookup, isIsolated, settings } = ctx;
 
-  // ── Constantes géométriques pilotées par les réglages (faîtage/tour) ──
+  // CAS 1 — Tour isolée : toiture en ardoise (voir towerRoofParts).
+  if (isIsolated) {
+    return isCrenellatedTower(cell) ? crenellatedTowerParts(ctx) : towerRoofParts(ctx);
+  }
+
+  // CAS 1 bis — Courtine entre deux tours : parapet crénelé et chemin de ronde.
+  if (ctx.isRampart) {
+    return rampartParts(ctx);
+  }
+
+  // CAS 2 — Toit pentu à deux pans, faîtage le long de l'axe des voisins.
+  const roofConfig = getRoofConfig(lookup, cell);
+  return gableRoofParts(settings, {
+    axis: roofConfig.axis,
+    gablePos: roofConfig.axis === 'z' ? !roofConfig.hasFront : !roofConfig.hasRight,
+    gableNeg: roofConfig.axis === 'z' ? !roofConfig.hasBack : !roofConfig.hasLeft,
+    // Cheminée déterministe : ~33 % des cellules.
+    chimney: (cell.x + cell.z) % 3 === 0 ? (cell.x % 2 === 0 ? 0.14 : -0.14) : null,
+  });
+}
+
+/**
+ * Toit pentu à deux pans sur une cellule, faîtage selon `axis` (monde),
+ * pignons aux extrémités ±axe demandées (`gablePos` = côté +axe). `baseY`
+ * décale le toit verticalement (0 : égout au plancher de la cellule).
+ * Partagé par les toits de maison et le dessus des arches.
+ */
+export function gableRoofParts(
+  settings: RenderSettings,
+  { axis, gablePos, gableNeg, chimney = null, baseY = 0 }: {
+    axis: 'x' | 'z';
+    gablePos: boolean;
+    gableNeg: boolean;
+    /** Décalage X local de la cheminée, ou null pour aucune. */
+    chimney?: number | null;
+    baseY?: number;
+  },
+): Part[] {
   const { ridgeY: RIDGE_Y } = settings;
   // Toujours collé au plancher de la cellule de toit (= haut du bloc du
   // dessous), pas réglable : un toit ne doit jamais flotter au-dessus de son
@@ -52,26 +97,10 @@ export function roofCellParts(ctx: CellContext): Part[] {
   const roofColor = settings.roofBaseColor;
   const { colorDark, colorLight } = shades(roofColor, { colorDark: -0.18, colorLight: 0.07 });
 
-  // CAS 1 — Tour isolée : toiture en ardoise (voir towerRoofParts).
-  if (isIsolated) {
-    return isCrenellatedTower(cell) ? crenellatedTowerParts(ctx) : towerRoofParts(ctx);
-  }
-
-  // CAS 1 bis — Courtine entre deux tours : parapet crénelé et chemin de ronde.
-  if (ctx.isRampart) {
-    return rampartParts(ctx);
-  }
-
-  // ════════════════════════════════════════════════════════════════════════
-  // CAS 2 — Toit pentu. Faîtage le long du Z local ; rotation 90° si axe X.
-  // Pignons aux extrémités locales ±Z sans voisin.
-  // ════════════════════════════════════════════════════════════════════════
-  const roofConfig = getRoofConfig(lookup, cell);
-  const yRot = roofConfig.axis === 'x' ? Math.PI / 2 : 0;
-  const G = xform([0, 0, 0], [0, yRot, 0]); // groupe racine
-
-  const needGablePos = roofConfig.axis === 'z' ? !roofConfig.hasFront : !roofConfig.hasRight;
-  const needGableNeg = roofConfig.axis === 'z' ? !roofConfig.hasBack : !roofConfig.hasLeft;
+  // Faîtage le long du Z local ; rotation 90° si axe X.
+  const G = xform([0, baseY, 0], [0, axis === 'x' ? Math.PI / 2 : 0, 0]); // groupe racine
+  const needGablePos = gablePos;
+  const needGableNeg = gableNeg;
 
   const parts: Part[] = [];
   const panelGeo = boxGeo(SLOPE_LEN, PANEL_T, PANEL_LEN);
@@ -128,10 +157,9 @@ export function roofCellParts(ctx: CellContext): Part[] {
   if (needGablePos) addGable(1);
   if (needGableNeg) addGable(-1);
 
-  // ── Cheminée (déterministe : ~33% des cellules) ──
-  if ((cell.x + cell.z) % 3 === 0) {
-    const sideX = cell.x % 2 === 0 ? 0.14 : -0.14;
-    const C = mul(G, xform([sideX, RIDGE_Y - 0.06, 0.06]));
+  // ── Cheminée ──
+  if (chimney !== null) {
+    const C = mul(G, xform([chimney, RIDGE_Y - 0.06, 0.06]));
     parts.push(
       part(boxGeo(0.14, 0.46, 0.14), '#a09080', { roughness: 0.93 }, C.clone()),
       part(boxGeo(0.19, 0.04, 0.19), '#7a6a5a', { roughness: 0.91 }, mul(C, xform([0, 0.25, 0]))),
@@ -214,12 +242,6 @@ function towerRoofParts({ radii, settings }: CellContext): Part[] {
 
 // ── Créneaux (tours crénelées, courtines) ────────────────────────────────────
 
-/** Profondeur (épaisseur) d'un merlon, perpendiculairement au mur. */
-const MERLON_DEPTH = 0.12;
-/** Largeur d'un merlon rapportée au réglage `merlonR` (demi-largeur de référence). */
-const MERLON_WIDTH_FACTOR = 2.5;
-/** Hauteur du parapet continu sous les merlons. */
-const PARAPET_H = 0.14;
 
 /** ~1 tour sur 3, choisie de façon déterministe par sa colonne (stable d'un rendu à l'autre). */
 function isCrenellatedTower(cell: GridCell): boolean {
@@ -227,10 +249,6 @@ function isCrenellatedTower(cell: GridCell): boolean {
   return ((hash >>> 0) % 3) === 0;
 }
 
-/** Couleurs de pierre des éléments défensifs, dérivées de la couleur des murs. */
-function stoneColors(wallBaseColor: string) {
-  return shades(wallBaseColor, { stone: -0.05, cornice: -0.14, slit: -0.75 });
-}
 
 /**
  * Tour crénelée sans toit : plate-forme débordante (corniche), parapet
@@ -304,38 +322,8 @@ function crenellatedTowerParts({ radii, settings }: CellContext): Part[] {
  * case à l'autre. Conçu le long de X, tourné de 90° si le mur court selon Z.
  */
 function rampartParts({ cell, lookup, settings }: CellContext): Part[] {
-  const { merlonR, merlonH, wallBaseColor } = settings;
-  const { stone, cornice, slit } = stoneColors(wallBaseColor);
-  const BASE_Y = -0.5;
-
   const alongX = hasOccupiedCell(lookup, cell.x - 1, cell.y, cell.z) || hasOccupiedCell(lookup, cell.x + 1, cell.y, cell.z);
   const G = xform([0, 0, 0], [0, alongX ? 0 : Math.PI / 2, 0]);
 
-  const walkwayH = 0.06;
-  const faceZ = 0.5 - MERLON_DEPTH / 2 + 0.02; // léger débord sur le nu du mur
-  const parapetY = BASE_Y + walkwayH + PARAPET_H / 2;
-  const merlonY = BASE_Y + walkwayH + PARAPET_H + merlonH / 2;
-  const merlonW = merlonR * MERLON_WIDTH_FACTOR;
-
-  const parts: Part[] = [
-    part(boxGeo(1.0, walkwayH, 1.08), cornice, { roughness: 0.9 }, mul(G, xform([0, BASE_Y + walkwayH / 2, 0]))),
-  ];
-
-  const parapetGeo = boxGeo(1.0, PARAPET_H, MERLON_DEPTH);
-  const merlonGeo = boxGeo(merlonW, merlonH, MERLON_DEPTH);
-  // Archère : fente sombre traversant le merlon (visible sur ses deux faces).
-  const slitGeo = boxGeo(0.035, merlonH * 0.55, MERLON_DEPTH + 0.006);
-
-  for (const side of [1, -1] as const) {
-    const z = side * faceZ;
-    parts.push(part(parapetGeo, stone, { roughness: 0.92 }, mul(G, xform([0, parapetY, z]))));
-    for (const x of [-0.25, 0.25]) {
-      parts.push(
-        part(merlonGeo, stone, { roughness: 0.92 }, mul(G, xform([x, merlonY, z]))),
-        part(slitGeo, slit, { roughness: 1 }, mul(G, xform([x, merlonY - merlonH * 0.05, z]))),
-      );
-    }
-  }
-
-  return parts;
+  return crenellatedWalkwayParts(G, -0.5, settings);
 }

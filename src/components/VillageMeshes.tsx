@@ -21,9 +21,12 @@ const WINDOW_GLOW_INTENSITY = 2.2;
 interface VillageMeshesProps {
   cells: GridCell[];
   toWorldPosition: (x: number, y: number, z: number) => [number, number, number];
+  /** Emprise de la grille : sert à paver les ruelles autour des bâtiments. */
+  gridWidth: number;
+  gridDepth: number;
 }
 
-export function VillageMeshes({ cells, toWorldPosition }: VillageMeshesProps) {
+export function VillageMeshes({ cells, toWorldPosition, gridWidth, gridDepth }: VillageMeshesProps) {
   // Référence stable tant qu'aucune valeur ne change (useShallow).
   const settings = useControlStore(useShallow(pickRenderSettings));
   const blockTransitionEnabled = useControlStore((state) => state.blockTransitionEnabled);
@@ -31,8 +34,8 @@ export function VillageMeshes({ cells, toWorldPosition }: VillageMeshesProps) {
   const invalidate = useThree((state) => state.invalidate);
 
   const groups = useMemo(
-    () => buildVillage(cells, toWorldPosition, settings),
-    [cells, toWorldPosition, settings],
+    () => buildVillage(cells, toWorldPosition, settings, { width: gridWidth, depth: gridDepth }),
+    [cells, toWorldPosition, settings, gridWidth, gridDepth],
   );
 
   // Libère les géométries fusionnées quand elles sont remplacées
