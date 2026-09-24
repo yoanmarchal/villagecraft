@@ -7,6 +7,10 @@ import { PlacementPreview } from './PlacementPreview';
 import { Bloom, EffectComposer, Noise, Vignette } from '@react-three/postprocessing'
 import { Perf } from 'r3f-perf';
 import { useControlStore, type ControlState } from '../store/controlStore';
+import { useRef } from 'react';
+
+/** Au-delà de ce déplacement (px) entre pointerdown et pointerup, c'est un drag caméra, pas un clic. */
+const CLICK_MAX_DRAG_PX = 5;
 
 interface VoxelSceneProps {
   cells: GridCell[];
@@ -117,10 +121,37 @@ export function VoxelScene({
     vignetteDarkness,
   } = useControlStore(useShallow(selectPostFx));
 
-  const handlePointer = (event: ThreeEvent<PointerEvent>) => {
+  // Position écran du pointerdown : le clic gauche/droit glissé sert aussi à
+  // OrbitControls (rotation/pan), on n'agit donc qu'au pointerup, et
+  // seulement si le pointeur n'a quasiment pas bougé entre-temps.
+  const pointerDownRef = useRef<{ x: number; y: number; button: number } | null>(null);
+
+  const toGridCoords = (event: ThreeEvent<PointerEvent>) => ({
+    gridX: Math.floor(event.point.x + gridWidth / 2),
+    gridZ: Math.floor(event.point.z + gridDepth / 2),
+  });
+
+  const handlePointerMove = (event: ThreeEvent<PointerEvent>) => {
     event.stopPropagation();
-    const gridX = Math.floor(event.point.x + gridWidth / 2);
-    const gridZ = Math.floor(event.point.z + gridDepth / 2);
+    const { gridX, gridZ } = toGridCoords(event);
+    onPreviewMove(gridX, gridZ);
+  };
+
+  const handlePointerDown = (event: ThreeEvent<PointerEvent>) => {
+    event.stopPropagation();
+    pointerDownRef.current = { x: event.nativeEvent.clientX, y: event.nativeEvent.clientY, button: event.button };
+  };
+
+  const handlePointerUp = (event: ThreeEvent<PointerEvent>) => {
+    event.stopPropagation();
+    const down = pointerDownRef.current;
+    pointerDownRef.current = null;
+    if (!down || down.button !== event.button) return;
+
+    const dragDistance = Math.hypot(event.nativeEvent.clientX - down.x, event.nativeEvent.clientY - down.y);
+    if (dragDistance > CLICK_MAX_DRAG_PX) return;
+
+    const { gridX, gridZ } = toGridCoords(event);
     onPreviewMove(gridX, gridZ);
 
     if (event.button === 2) {
@@ -166,7 +197,7 @@ export function VoxelScene({
         rayleigh={skyRayleigh}
       />
         <gridHelper args={[Math.max(gridWidth, gridDepth), Math.max(gridWidth, gridDepth), '#d4c4a8', '#e8dcc8']} />
-        <mesh rotation={[-Math.PI / 2, 0, 0]} onPointerMove={handlePointer} onPointerDown={handlePointer} receiveShadow>
+        <mesh rotation={[-Math.PI / 2, 0, 0]} onPointerMove={handlePointerMove} onPointerDown={handlePointerDown} onPointerUp={handlePointerUp} receiveShadow>
           <planeGeometry args={[gridWidth, gridDepth]} />
         <meshStandardMaterial color={groundColor} transparent opacity={groundOpacity} roughness={groundRoughness} />
       </mesh>

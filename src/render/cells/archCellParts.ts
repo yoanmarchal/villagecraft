@@ -11,10 +11,10 @@ import { mul, part, xform, type Part } from '../parts';
 import type { CellContext } from './context';
 
 export function archCellParts(ctx: CellContext): Part[] {
-  const { cell, lookup } = ctx;
+  const { cell, lookup, settings } = ctx;
   const archAxis = getArchAxis(lookup, cell);
 
-  const baseColor = cell.color ?? '#9f8f7b';
+  const baseColor = settings.wallBaseColor;
   const mainColor = baseColor;
   const { darkStoneColor, accentStoneColor, lintelColor } = shades(baseColor, {
     darkStoneColor: -0.12,

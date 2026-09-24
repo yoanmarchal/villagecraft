@@ -10,60 +10,22 @@ import { useShallow } from 'zustand/react/shallow';
 import type { GridCell } from '../types';
 import { buildVillage } from '../render/buildVillage';
 import { createGrowMaterialSet, disposeGrowMaterialSet, updateGrowTime } from '../render/growMaterial';
-import {
-  useControlStore,
-  type CellMaterialsState,
-  type CellDecorationsState,
-  type CellRoofState,
-  type CellShapeState,
-} from '../store/controlStore';
+import { pickRenderSettings } from '../render/renderSettings';
+import { useControlStore } from '../store/controlStore';
 
 interface VillageMeshesProps {
   cells: GridCell[];
   toWorldPosition: (x: number, y: number, z: number) => [number, number, number];
 }
 
-const selectCellMaterials = (state: CellMaterialsState) => ({
-  wallRoughness: state.wallRoughness,
-  wallBaseColor: state.wallBaseColor,
-  roofBaseColor: state.roofBaseColor,
-});
-
-const selectCellDecorations = (state: CellDecorationsState) => ({
-  windowStonesPerFace: state.windowStonesPerFace,
-  windowStoneRoughness: state.windowStoneRoughness,
-  quoinMargin: state.quoinMargin,
-  quoinRoughness: state.quoinRoughness,
-});
-
-const selectCellRoof = (state: CellRoofState) => ({
-  ridgeY: state.ridgeY,
-  towerR: state.towerR,
-  merlonCount: state.merlonCount,
-  merlonR: state.merlonR,
-  merlonH: state.merlonH,
-  spireH: state.spireH,
-});
-
-const selectCellShape = (state: CellShapeState) => ({
-  isolatedWallRadius: state.isolatedWallRadius,
-  connectedWallExposedRadius: state.connectedWallExposedRadius,
-  connectedWallInteriorRadius: state.connectedWallInteriorRadius,
-});
-
 export function VillageMeshes({ cells, toWorldPosition }: VillageMeshesProps) {
-  // Ces valeurs ne sont pas passées à buildVillage() : les builders de cells
-  // les lisent eux-mêmes via useControlStore.getState(). Elles ne servent ici
-  // qu'à invalider le memo quand un slider de style change.
-  const cellMaterials = useControlStore(useShallow(selectCellMaterials));
-  const cellDecorations = useControlStore(useShallow(selectCellDecorations));
-  const cellRoof = useControlStore(useShallow(selectCellRoof));
-  const cellShape = useControlStore(useShallow(selectCellShape));
+  // Référence stable tant qu'aucune valeur ne change (useShallow).
+  const settings = useControlStore(useShallow(pickRenderSettings));
   const blockTransitionEnabled = useControlStore((state) => state.blockTransitionEnabled);
 
   const groups = useMemo(
-    () => buildVillage(cells, toWorldPosition),
-    [cells, toWorldPosition, cellMaterials, cellDecorations, cellRoof, cellShape],
+    () => buildVillage(cells, toWorldPosition, settings),
+    [cells, toWorldPosition, settings],
   );
 
   // Libère les géométries fusionnées quand elles sont remplacées

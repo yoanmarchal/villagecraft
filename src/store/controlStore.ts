@@ -211,7 +211,9 @@ export const useControlStore = create<ControlState>()(
       setCellRoof: (patch) => set(patch),
       setCellShape: (patch) => set(patch),
       setCellTransition: (patch) => set(patch),
-      resetToDefaults: () => set(DEFAULT_STATE),
+      // La taille de grille est conservée : la changer recrée la grille et
+      // rognerait le village, ce qu'on n'attend pas d'un reset de réglages.
+      resetToDefaults: () => set((state) => ({ ...DEFAULT_STATE, gridSize: state.gridSize })),
     }),
     {
       name: 'voxel-control-panel',

@@ -4,23 +4,47 @@ import { VoxelScene } from './components/VoxelScene';
 import { TweakpanePanel } from './components/TweakpanePanel';
 import { useControlStore } from './store/controlStore';
 import { useGridControllerStore } from './store/gridControllerStore';
+import { loadVillage, saveVillage } from './store/villageStorage';
 
 const GRID_HEIGHT = 10;
+
+/** Décalage qui garde le village centré quand la grille passe de `from` à `to` cases de côté. */
+const centeringOffset = (from: number, to: number) => Math.floor((to - from) / 2);
 
 export function App() {
   const [renderTick, setRenderTick] = useState(0);
   const [previewCell, setPreviewCell] = useState<{ x: number; z: number } | null>(null);
   const gridSize = useControlStore((state) => state.gridSize);
 
-  // Create VillageGrid with dynamic size based on gridSize
-  const [grid, setGrid] = useState(() => new VillageGrid(gridSize, GRID_HEIGHT, gridSize));
+  // Grille initiale restaurée depuis la sauvegarde locale, s'il y en a une.
+  const [grid, setGrid] = useState(() => {
+    const initial = new VillageGrid(gridSize, GRID_HEIGHT, gridSize);
+    const saved = loadVillage();
+    if (saved) {
+      const offset = centeringOffset(saved.gridSize, gridSize);
+      initial.importBlocks(saved.blocks, offset, offset);
+    }
+    return initial;
+  });
 
-  // Recreate grid when gridSize changes
+  // Changement de taille : on recrée la grille en y recopiant les blocs,
+  // recentrés (ceux qui sortent de la nouvelle grille sont perdus).
   useEffect(() => {
-    setGrid(new VillageGrid(gridSize, GRID_HEIGHT, gridSize));
+    setGrid((prev) => {
+      if (prev.width === gridSize) return prev;
+      const next = new VillageGrid(gridSize, GRID_HEIGHT, gridSize);
+      const offset = centeringOffset(prev.width, gridSize);
+      next.importBlocks(prev.exportBlocks(), offset, offset);
+      return next;
+    });
   }, [gridSize]);
 
   const refreshScene = useCallback(() => setRenderTick((tick) => tick + 1), []);
+
+  // Sauvegarde après chaque mutation de la grille.
+  useEffect(() => {
+    saveVillage({ gridSize: grid.width, blocks: grid.exportBlocks() });
+  }, [grid, renderTick]);
 
   // Bridge the imperative grid instance + refresh callback to the Tweakpane Actions module.
   useEffect(() => {

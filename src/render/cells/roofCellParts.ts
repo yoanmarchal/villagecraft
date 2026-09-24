@@ -14,7 +14,6 @@ import { shades } from '../../colorPalettes';
 import { boxGeo, cylinderGeo, gableGeo, shapedBoxGeo, sphereGeo } from '../geometryCache';
 import { mul, part, xform, type Part } from '../parts';
 import type { CellContext } from './context';
-import { useControlStore } from '../../store/controlStore';
 
 // ── Constantes géométriques (espace local cellule : Y=0 centre, ±0.5 bords) ──
 const RUN = 0.5;                                      // course horizontale = demi-cellule
@@ -25,10 +24,10 @@ const PANEL_T = 0.055;                                // épaisseur de pan
 const RIB_OFFSETS = [-0.40, -0.13, 0.13, 0.40];
 
 export function roofCellParts(ctx: CellContext): Part[] {
-  const { cell, lookup, radii, isIsolated } = ctx;
+  const { cell, lookup, radii, isIsolated, settings } = ctx;
 
-  // ── Constantes géométriques pilotées par le store (faîtage/tour) ──
-  const { ridgeY: RIDGE_Y, towerR: TOWER_R } = useControlStore.getState();
+  // ── Constantes géométriques pilotées par les réglages (faîtage/tour) ──
+  const { ridgeY: RIDGE_Y, towerR: TOWER_R } = settings;
   // Toujours collé au plancher de la cellule de toit (= haut du bloc du
   // dessous), pas réglable : un toit ne doit jamais flotter au-dessus de son
   // mur ni s'enfoncer dedans. Seule sa taille (RIDGE_Y) reste modifiable.
@@ -38,7 +37,7 @@ export function roofCellParts(ctx: CellContext): Part[] {
   const SLOPE_ANG = Math.atan2(RISE, RUN);
   const CENTER_Y = (EAVE_Y + RIDGE_Y) / 2;
 
-  const roofColor = cell.color ?? '#c85a3f';
+  const roofColor = settings.roofBaseColor;
   const { colorDark, colorLight } = shades(roofColor, { colorDark: -0.18, colorLight: 0.07 });
 
   // ════════════════════════════════════════════════════════════════════════
@@ -57,7 +56,7 @@ export function roofCellParts(ctx: CellContext): Part[] {
       { roughness: 0.88 }, xform([0, BASE_Y + 0.02, 0])));
 
     // ── Merlons répartis sur le contour réel du mur ──
-    const { merlonCount: MERLON_COUNT, merlonR: MERLON_R, merlonH: MERLON_H } = useControlStore.getState();
+    const { merlonCount: MERLON_COUNT, merlonR: MERLON_R, merlonH: MERLON_H } = settings;
     const merlonY = BASE_Y + MERLON_H / 2;
     const merlonContour = getRoundedRectContourPoints(TOWER_R, TOWER_R, radii);
     const merlonGeo = cylinderGeo(MERLON_R, MERLON_R * 1.1, MERLON_H, 10);
@@ -68,7 +67,7 @@ export function roofCellParts(ctx: CellContext): Part[] {
 
     // ── Bague de base de flèche ──
     const SPIRE_BASE_R = TOWER_R - 0.06;
-    const { spireH: SPIRE_H } = useControlStore.getState();
+    const { spireH: SPIRE_H } = settings;
     const SPIRE_RING_R = SPIRE_BASE_R + 0.08;
     const spireRingRadii = scaleCornerRadii(radii, SPIRE_RING_R / TOWER_R);
     parts.push(part(shapedBoxGeo(SPIRE_RING_R * 2, 0.10, SPIRE_RING_R * 2, spireRingRadii), colorDark,

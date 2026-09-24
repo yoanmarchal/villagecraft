@@ -29,6 +29,7 @@ import { standardCellParts } from './cells/standardCellParts';
 import { wallWindowCellParts } from './cells/wallWindowCellParts';
 import { roofCellParts } from './cells/roofCellParts';
 import { archCellParts } from './cells/archCellParts';
+import type { RenderSettings } from './renderSettings';
 
 export interface MergedGroup {
   key: string;
@@ -39,6 +40,7 @@ export interface MergedGroup {
 export function buildVillage(
   cells: GridCell[],
   toWorldPosition: (x: number, y: number, z: number) => [number, number, number],
+  settings: RenderSettings,
 ): MergedGroup[] {
   const lookup = makeCellLookup(cells);
   const groups = new Map<string, { mat: MaterialSpec; parts: PositionedPart[] }>();
@@ -49,8 +51,9 @@ export function buildVillage(
     const ctx: CellContext = {
       cell,
       lookup,
+      settings,
       exposedFaces: getExposedFaces(lookup, cell),
-      radii: getCornerRadii(lookup, cell),
+      radii: getCornerRadii(lookup, cell, settings),
       // Murs/fondations : propagation tour vers le bas. Toits : check local
       // non propagé. Asymétrie intentionnelle (voir AGENTS.md).
       isIsolated: cell.type === BlockType.Roof ? isIsolatedBlock(lookup, cell) : isTowerColumn(lookup, cell),

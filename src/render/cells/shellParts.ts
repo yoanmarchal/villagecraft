@@ -10,10 +10,9 @@ import { shapedBoxGeo } from '../geometryCache';
 import { part, type Part } from '../parts';
 import { quoinParts } from './decorations';
 import type { CellContext } from './context';
-import { useControlStore } from '../../store/controlStore';
 
 export function shellParts(ctx: CellContext, baseColor: string): Part[] {
-  const { wallRoughness: roughness } = useControlStore.getState();
+  const { wallRoughness: roughness } = ctx.settings;
   return [
     // Corps principal : forme pilotée par radii (coins exposés arrondis)
     part(shapedBoxGeo(1.0, 1.0, 1.0, ctx.radii), baseColor, { roughness }),

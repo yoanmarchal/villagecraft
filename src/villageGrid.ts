@@ -1,5 +1,4 @@
 import { BlockType, type CellCoordinate, type GridCell } from './types';
-import { computePropertyBundle } from './propertyInheritanceSystem';
 
 export class VillageGrid {
   private readonly sizeX: number;
@@ -21,11 +20,7 @@ export class VillageGrid {
     }
 
     const cell = this.grid[x][y][z];
-    if (!cell.isOccupied) {
-      cell.placementOrder = this.nextPlacementOrder;
-      this.nextPlacementOrder += 1;
-      cell.isOccupied = true;
-    }
+    this.occupy(cell);
     this.recomputeProceduralLogic();
   }
 
@@ -50,11 +45,7 @@ export class VillageGrid {
     }
 
     const cell = this.grid[x][targetY][z];
-    if (!cell.isOccupied) {
-      cell.placementOrder = this.nextPlacementOrder;
-      this.nextPlacementOrder += 1;
-      cell.isOccupied = true;
-    }
+    this.occupy(cell);
     this.recomputeProceduralLogic();
     return targetY;
   }
@@ -66,9 +57,7 @@ export class VillageGrid {
 
     this.grid[x][y][z].isOccupied = false;
     this.grid[x][y][z].type = BlockType.Empty;
-    this.grid[x][y][z].color = undefined;
     this.grid[x][y][z].placementOrder = -1;
-    this.grid[x][y][z].propertyBundle = undefined;
     this.grid[x][y][z].isAutoRoof = false;
     this.recomputeProceduralLogic();
   }
@@ -162,11 +151,6 @@ export class VillageGrid {
     return targetY;
   }
 
-  /** Recompute per-cell colors/types from current occupancy without changing which cells are occupied. */
-  public recolor(): void {
-    this.recomputeProceduralLogic();
-  }
-
   public clear(): void {
     this.nextPlacementOrder = 0;
     for (let x = 0; x < this.sizeX; x += 1) {
@@ -174,9 +158,7 @@ export class VillageGrid {
         for (let z = 0; z < this.sizeZ; z += 1) {
           this.grid[x][y][z].isOccupied = false;
           this.grid[x][y][z].type = BlockType.Empty;
-          this.grid[x][y][z].color = undefined;
           this.grid[x][y][z].placementOrder = -1;
-          this.grid[x][y][z].propertyBundle = undefined;
           this.grid[x][y][z].isAutoRoof = false;
         }
       }
@@ -221,6 +203,42 @@ export class VillageGrid {
     }
   }
 
+  public get width(): number {
+    return this.sizeX;
+  }
+
+  public get depth(): number {
+    return this.sizeZ;
+  }
+
+  /**
+   * Blocs réels (hors caps de toit auto) dans leur ordre de pose — de quoi
+   * reconstruire la grille à l'identique via `importBlocks` (sauvegarde,
+   * redimensionnement).
+   */
+  public exportBlocks(): Array<[number, number, number]> {
+    return this.getOccupiedCells()
+      .filter((cell) => !cell.isAutoRoof)
+      .sort((a, b) => a.placementOrder - b.placementOrder)
+      .map((cell) => [cell.x, cell.y, cell.z]);
+  }
+
+  /**
+   * Pose une liste de blocs (dans l'ordre donné) décalés de (offsetX, offsetZ),
+   * en ignorant ceux hors grille, puis ne recalcule qu'une seule fois.
+   */
+  public importBlocks(blocks: ReadonlyArray<readonly [number, number, number]>, offsetX = 0, offsetZ = 0): void {
+    for (const [bx, y, bz] of blocks) {
+      const x = bx + offsetX;
+      const z = bz + offsetZ;
+      if (!this.isValidCoordinate(x, y, z)) {
+        continue;
+      }
+      this.occupy(this.grid[x][y][z]);
+    }
+    this.recomputeProceduralLogic();
+  }
+
   public getGrid(): GridCell[][][] {
     return this.grid;
   }
@@ -259,6 +277,21 @@ export class VillageGrid {
       x: Math.floor(worldX + this.sizeX / 2),
       z: Math.floor(worldZ + this.sizeZ / 2),
     };
+  }
+
+  /**
+   * Marque la cellule comme bloc réel posé par l'utilisateur. Un cap de toit
+   * auto à cet endroit est "réclamé" : il devient un vrai bloc (sinon il
+   * resterait exclu de la sauvegarde et ignoré par la démolition).
+   */
+  private occupy(cell: GridCell): void {
+    if (cell.isOccupied && !cell.isAutoRoof) {
+      return;
+    }
+    cell.isOccupied = true;
+    cell.isAutoRoof = false;
+    cell.placementOrder = this.nextPlacementOrder;
+    this.nextPlacementOrder += 1;
   }
 
   private createEmptyGrid(): GridCell[][][] {
@@ -330,8 +363,6 @@ export class VillageGrid {
           cell.isOccupied = false;
           cell.isAutoRoof = false;
           cell.type = BlockType.Empty;
-          cell.color = undefined;
-          cell.propertyBundle = undefined;
         }
 
         if (autoRoofY !== null) {
@@ -357,13 +388,10 @@ export class VillageGrid {
 
           if (!cell.isOccupied) {
             cell.type = BlockType.Empty;
-            cell.color = undefined;
-            cell.propertyBundle = undefined;
             continue;
           }
 
           const prevType = cell.type;
-          const prevColor = cell.color;
 
           const cellAbove = this.getNeighborCell(x, y + 1, z);
           const cellLeft = this.getNeighborCell(x - 1, y, z);
@@ -396,21 +424,16 @@ export class VillageGrid {
           } else if (horizontalNeighborCount < 4) {
             // NEW RULE: Only show windows on one block per floor when adjacent
             // Check if there's already a window on this floor in adjacent columns
-            const hasWindowOnSameFloor = this.hasWindowOnSameFloor(x, y, z, hasLeftNeighbor, hasRightNeighbor, hasFrontNeighbor, hasBackNeighbor);
+            const hasWindowOnSameFloor = this.hasWindowOnSameFloor(x, y, z);
             cell.type = hasWindowOnSameFloor ? BlockType.Wall : BlockType.WallWithWindow;
           } else {
             // Murs pleins pour les intérieurs
             cell.type = BlockType.Wall;
           }
 
-          // Calculer le PropertyBundle simplifié
-          cell.propertyBundle = computePropertyBundle(cell);
-          cell.color = cell.propertyBundle.color;
-
-          // Bloc neuf ou dont l'apparence a visiblement changé (type/couleur,
-          // ex: mur devenu toit après démolition du voisin) → rejoue la
-          // transition d'apparition.
-          if (cell.type !== prevType || cell.color !== prevColor) {
+          // Bloc neuf ou dont la forme a changé (ex: mur devenu toit après
+          // démolition du voisin) → rejoue la transition d'apparition.
+          if (cell.type !== prevType) {
             cell.spawnedAt = now;
           }
         }
@@ -460,45 +483,20 @@ export class VillageGrid {
   }
 
   /**
-   * Check if there's already a window on the same floor in adjacent blocks
-   * This implements the rule: only one window per floor when blocks are adjacent
+   * Règle "une seule fenêtre par étage entre blocs adjacents", appliquée en
+   * glouton dans l'ordre de parcours de `recomputeProceduralLogic` (x, puis
+   * y, puis z). On ne regarde donc que les voisins (x-1) et (z-1), déjà typés
+   * pendant CETTE passe : les voisins (x+1)/(z+1) portent encore le type de
+   * la passe précédente, ce qui faisait dépendre les fenêtres de l'ordre des
+   * clics. Ainsi le résultat ne dépend que de la forme du village. Les
+   * voisins (x+1)/(z+1) feront à leur tour le test contre cette cellule.
    */
-  private hasWindowOnSameFloor(x: number, y: number, z: number,
-                              hasLeft: boolean, hasRight: boolean,
-                              hasFront: boolean, hasBack: boolean): boolean {
-    // Check left neighbor on same floor
-    if (hasLeft) {
-      const leftCell = this.getNeighborCell(x - 1, y, z);
-      if (leftCell?.type === BlockType.WallWithWindow) {
-        return true;
-      }
-    }
-
-    // Check right neighbor on same floor
-    if (hasRight) {
-      const rightCell = this.getNeighborCell(x + 1, y, z);
-      if (rightCell?.type === BlockType.WallWithWindow) {
-        return true;
-      }
-    }
-
-    // Check front neighbor on same floor
-    if (hasFront) {
-      const frontCell = this.getNeighborCell(x, y, z - 1);
-      if (frontCell?.type === BlockType.WallWithWindow) {
-        return true;
-      }
-    }
-
-    // Check back neighbor on same floor
-    if (hasBack) {
-      const backCell = this.getNeighborCell(x, y, z + 1);
-      if (backCell?.type === BlockType.WallWithWindow) {
-        return true;
-      }
-    }
-
-    // No window found on same floor
-    return false;
+  private hasWindowOnSameFloor(x: number, y: number, z: number): boolean {
+    const leftCell = this.getNeighborCell(x - 1, y, z);
+    const frontCell = this.getNeighborCell(x, y, z - 1);
+    return (
+      (leftCell?.isOccupied === true && leftCell.type === BlockType.WallWithWindow) ||
+      (frontCell?.isOccupied === true && frontCell.type === BlockType.WallWithWindow)
+    );
   }
 }

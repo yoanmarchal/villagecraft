@@ -1,5 +1,4 @@
 import type { GridCell } from '../types';
-import { useControlStore } from '../store/controlStore';
 
 export type CellLookup = Record<string, GridCell>;
 
@@ -40,8 +39,14 @@ export interface CornerRadii {
  * and slightly rounded (almost right angle) corners on their exposed
  * extremities.
  */
-export function getCornerRadii(lookup: CellLookup, cell: GridCell): CornerRadii {
-  const { isolatedWallRadius, connectedWallExposedRadius, connectedWallInteriorRadius } = useControlStore.getState();
+export interface CornerRadiusSettings {
+  isolatedWallRadius: number;
+  connectedWallExposedRadius: number;
+  connectedWallInteriorRadius: number;
+}
+
+export function getCornerRadii(lookup: CellLookup, cell: GridCell, shape: CornerRadiusSettings): CornerRadii {
+  const { isolatedWallRadius, connectedWallExposedRadius, connectedWallInteriorRadius } = shape;
 
   if (isTowerColumn(lookup, cell)) {
     // C'est la base de la tour qui décide, une fois pour toutes, quels côtés

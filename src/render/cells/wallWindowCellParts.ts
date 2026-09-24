@@ -16,13 +16,12 @@ import { shellParts } from './shellParts';
 import { stoneParts } from './stoneParts';
 import { isQuoinProtected } from './decorations';
 import type { CellContext } from './context';
-import { useControlStore } from '../../store/controlStore';
 
 export function wallWindowCellParts(ctx: CellContext): Part[] {
-  const { cell, lookup, exposedFaces, radii, isIsolated } = ctx;
-  const { windowStonesPerFace, windowStoneRoughness } = useControlStore.getState();
+  const { cell, lookup, exposedFaces, radii, isIsolated, settings } = ctx;
+  const { windowStonesPerFace, windowStoneRoughness, quoinMargin } = settings;
 
-  const baseColor = cell.color ?? '#e0c996';
+  const baseColor = settings.wallBaseColor;
   const windowGlassColor = '#2a3a4a';
   const { windowFrameColor, doorColor } = shades(baseColor, { windowFrameColor: -0.15, doorColor: -0.20 });
   const doorFrameColor = windowFrameColor; // même teinte que le cadre de fenêtre
@@ -106,7 +105,7 @@ export function wallWindowCellParts(ctx: CellContext): Part[] {
             if (isInProtectedArea(WINDOW_PROTECTED_AREAS.bandBottom, x, y, w, h)) return true;
           }
 
-          if (isQuoinProtected(cell, lookup, isIsolated, face, x, w)) return true;
+          if (isQuoinProtected(cell, lookup, isIsolated, face, x, w, quoinMargin)) return true;
 
           return false;
         },

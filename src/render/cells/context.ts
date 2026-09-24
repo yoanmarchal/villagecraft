@@ -7,10 +7,13 @@
 
 import type { GridCell } from '../../types';
 import type { CellFace, CellLookup, CornerRadii } from '../../utils/cellUtils';
+import type { RenderSettings } from '../renderSettings';
 
 export interface CellContext {
   cell: GridCell;
   lookup: CellLookup;
+  /** Réglages de style (couleurs, rugosités, formes) — ne jamais lire le store dans un builder. */
+  settings: RenderSettings;
   exposedFaces: CellFace[];
   radii: CornerRadii;
   /**

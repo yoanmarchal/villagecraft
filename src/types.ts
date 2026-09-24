@@ -7,19 +7,13 @@ export enum BlockType {
   Arch = 'ARCH',
 }
 
-export interface PropertyBundle {
-  color: string;
-}
-
 export interface GridCell {
   x: number;
   y: number;
   z: number;
   isOccupied: boolean;
   type: BlockType;
-  color?: string;
   placementOrder: number;
-  propertyBundle?: PropertyBundle;
   /**
    * True for a roof cap the grid added on its own above a lone ground-floor
    * cell (see `VillageGrid.syncAutoRoofs`) — not a block the user placed.
