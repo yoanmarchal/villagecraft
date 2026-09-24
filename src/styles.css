@@ -26,37 +26,19 @@ input {
   font: inherit;
 }
 
+/* 100dvh : sur mobile, 100vh inclut la zone sous la barre d'adresse et
+   cacherait la barre d'outils du bas. 100vh reste en repli. */
 .app-shell {
   position: relative;
   height: 100vh;
-  padding: 0;
+  height: 100dvh;
   overflow: hidden;
-  background:
-    radial-gradient(circle at top left, rgba(184, 212, 241, 0.22), transparent 34%),
-    radial-gradient(circle at bottom right, rgba(245, 230, 211, 0.28), transparent 30%),
-    #e8f3fa;
-}
-
-.compact-shell {
-  height: 100vh;
 }
 
 .canvas-frame {
   position: relative;
-  width: 100vw;
-  height: 100vh;
-  overflow: hidden;
-}
-
-.canvas-frame > * {
-  position: relative;
-  z-index: 0;
-}
-
-@media (max-width: 980px) {
-  .app-shell {
-    padding: 0;
-  }
+  width: 100%;
+  height: 100%;
 }
 
 /* Tweakpane control panel container */
@@ -66,7 +48,7 @@ input {
   right: 18px;
   z-index: 10;
   width: 280px;
-  max-height: calc(100vh - 36px);
+  max-height: calc(100dvh - 36px);
   overflow-y: auto;
   overflow-x: hidden;
 }
@@ -76,7 +58,7 @@ input {
     top: 12px;
     right: 12px;
     width: 260px;
-    max-height: calc(100vh - 24px);
+    max-height: calc(100dvh - 24px);
   }
 }
 

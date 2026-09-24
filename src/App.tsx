@@ -17,6 +17,14 @@ const isEditableTarget = (target: EventTarget | null) =>
 /** Décalage qui garde le village centré quand la grille passe de `from` à `to` cases de côté. */
 const centeringOffset = (from: number, to: number) => Math.floor((to - from) / 2);
 
+/** Nouvelle grille de côté `size` contenant les blocs de `grid`, recentrés. */
+function resizeGrid(grid: VillageGrid, size: number): VillageGrid {
+  const next = new VillageGrid(size, GRID_HEIGHT, size);
+  const offset = centeringOffset(grid.width, size);
+  next.importBlocks(grid.exportBlocks(), offset, offset);
+  return next;
+}
+
 export function App() {
   const [renderTick, setRenderTick] = useState(0);
   const [previewCell, setPreviewCell] = useState<{ x: number; z: number } | null>(null);
@@ -38,16 +46,13 @@ export function App() {
   });
 
   // Changement de taille : on recrée la grille en y recopiant les blocs,
-  // recentrés (ceux qui sortent de la nouvelle grille sont perdus).
-  useEffect(() => {
-    setGrid((prev) => {
-      if (prev.width === gridSize) return prev;
-      const next = new VillageGrid(gridSize, GRID_HEIGHT, gridSize);
-      const offset = centeringOffset(prev.width, gridSize);
-      next.importBlocks(prev.exportBlocks(), offset, offset);
-      return next;
-    });
-  }, [gridSize]);
+  // recentrés (ceux qui sortent de la nouvelle grille sont perdus). Fait
+  // pendant le rendu ("ajuster l'état quand une prop change") plutôt que
+  // dans un effet : React relance aussitôt le rendu avec la nouvelle grille,
+  // sans jamais afficher une frame où `gridSize` et la grille divergent.
+  if (grid.width !== gridSize) {
+    setGrid(resizeGrid(grid, gridSize));
+  }
 
   const refreshScene = useCallback(() => setRenderTick((tick) => tick + 1), []);
 
@@ -100,6 +105,9 @@ export function App() {
   // ⚡ Références stables : le merge statique (VillageMeshes) ne doit être
   // reconstruit que lorsque la grille change réellement (renderTick), pas à
   // chaque re-render de App (ex: survol souris → previewCell).
+  // `renderTick` n'est pas lu dans le calcul : c'est justement le signal
+  // "la grille (objet mutable) a changé" qui doit invalider ce memo.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   const cells = useMemo(() => grid.getOccupiedCells(), [grid, renderTick]);
   const toWorldPosition = useCallback(
     (x: number, y: number, z: number) => grid.toWorldPosition(x, y, z),
@@ -107,7 +115,7 @@ export function App() {
   );
 
   return (
-    <div className="app-shell compact-shell">
+    <div className="app-shell">
       <div className="canvas-frame">
         <VoxelScene
           cells={cells}

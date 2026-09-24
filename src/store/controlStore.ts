@@ -104,18 +104,10 @@ export interface ControlState
     CellShapeState,
     CellTransitionState {
   setGridSize: (gridSize: number) => void;
-  setLighting: (patch: Partial<LightingState>) => void;
-  setSkyFog: (patch: Partial<SkyFogState>) => void;
-  setCamera: (patch: Partial<CameraState>) => void;
-  setPostFx: (patch: Partial<PostFxState>) => void;
-  setDebug: (patch: Partial<DebugState>) => void;
   togglePanel: () => void;
-  setCellMaterials: (patch: Partial<CellMaterialsState>) => void;
-  setCellDecorations: (patch: Partial<CellDecorationsState>) => void;
-  setCellRoof: (patch: Partial<CellRoofState>) => void;
-  setCellShape: (patch: Partial<CellShapeState>) => void;
-  setCellTransition: (patch: Partial<CellTransitionState>) => void;
   resetToDefaults: () => void;
+  // Les autres réglages sont écrits directement par le panneau (controls/storeFolder.ts)
+  // et les ambiances (setState), sans setter dédié par domaine.
 }
 
 const DEFAULT_STATE: GridState &
@@ -242,17 +234,7 @@ export const useControlStore = create<ControlState>()(
       ...DEFAULT_STATE,
 
       setGridSize: (gridSize) => set({ gridSize }),
-      setLighting: (patch) => set(patch),
-      setSkyFog: (patch) => set(patch),
-      setCamera: (patch) => set(patch),
-      setPostFx: (patch) => set(patch),
-      setDebug: (patch) => set(patch),
       togglePanel: () => set((state) => ({ panelVisible: !state.panelVisible })),
-      setCellMaterials: (patch) => set(patch),
-      setCellDecorations: (patch) => set(patch),
-      setCellRoof: (patch) => set(patch),
-      setCellShape: (patch) => set(patch),
-      setCellTransition: (patch) => set(patch),
       // La taille de grille est conservée : la changer recrée la grille et
       // rognerait le village, ce qu'on n'attend pas d'un reset de réglages.
       resetToDefaults: () => set((state) => ({ ...DEFAULT_STATE, gridSize: state.gridSize })),

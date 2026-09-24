@@ -33,9 +33,10 @@ npm run build       # type-check and build to dist/
 npm run typecheck   # type-check only
 npm run preview      # preview the production build locally
 npm test            # run the Vitest suite
+npm run lint        # ESLint
 ```
 
-There is no lint config yet.
+CI (GitHub Actions) runs lint, type-check, tests and build on every push to `dev` and on pull requests.
 
 ## Deployment
 
