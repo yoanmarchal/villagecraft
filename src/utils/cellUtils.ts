@@ -1,4 +1,4 @@
-import type { GridCell } from '../types';
+import { BlockType, type GridCell } from '../types';
 
 export type CellLookup = Record<string, GridCell>;
 
@@ -440,4 +440,68 @@ export function sampleContourPerimeter(
   }
   const [x, y] = points[0];
   return { x, z: y, angle: Math.atan2(y, x) };
+}
+
+// ── Blocs creux ──────────────────────────────────────────────────────────────
+
+/**
+ * Types de blocs rendus comme une coque maçonnée creuse (murs épais,
+ * plancher à chaque étage, ouvertures traversantes). Les arches et les toits
+ * restent pleins. Source unique de vérité pour "bloc creux".
+ */
+export function isHollowType(type: BlockType): boolean {
+  return type === BlockType.Wall || type === BlockType.WallWithWindow || type === BlockType.Foundation;
+}
+
+function isHollowAt(lookup: CellLookup, x: number, y: number, z: number): boolean {
+  const cell = getCell(lookup, x, y, z);
+  return !!cell?.isOccupied && isHollowType(cell.type);
+}
+
+/**
+ * Nature d'un côté de coque creuse :
+ * - `exterior` : rien à côté → mur extérieur (fenêtres, porte…) ;
+ * - `open` : bloc creux voisin → pas de mur, les deux intérieurs se rejoignent ;
+ * - `partition` : voisin plein (toit, arche) → mur aveugle qui ferme le volume.
+ */
+export type HollowSideKind = 'exterior' | 'open' | 'partition';
+
+export interface HollowShape {
+  sides: Record<CellFace, HollowSideKind>;
+  /**
+   * Coin dont les deux côtés sont `open` mais dont le voisin diagonal n'est
+   * pas creux (coin rentrant d'un bâtiment en L) : le volume intérieur garde
+   * un pilier d'angle, sinon les murs extérieurs des deux voisins laisseraient
+   * un trou à leur rencontre.
+   */
+  pillars: { backLeft: boolean; backRight: boolean; frontLeft: boolean; frontRight: boolean };
+  /** Le bloc du dessus est creux : pas de plafond, son plancher en tient lieu. */
+  topOpen: boolean;
+}
+
+/** Forme de la coque d'un bloc creux, déduite de ses voisins (à recalculer à chaque rebuild). */
+export function getHollowShape(lookup: CellLookup, cell: GridCell): HollowShape {
+  const { x, y, z } = cell;
+  const side = (nx: number, nz: number): HollowSideKind => {
+    if (!hasOccupiedCell(lookup, nx, y, nz)) return 'exterior';
+    return isHollowAt(lookup, nx, y, nz) ? 'open' : 'partition';
+  };
+  const sides: Record<CellFace, HollowSideKind> = {
+    front: side(x, z + 1),
+    back: side(x, z - 1),
+    left: side(x - 1, z),
+    right: side(x + 1, z),
+  };
+  const pillar = (sx: CellFace, sz: CellFace, dx: number, dz: number) =>
+    sides[sx] === 'open' && sides[sz] === 'open' && !isHollowAt(lookup, x + dx, y, z + dz);
+  return {
+    sides,
+    pillars: {
+      backLeft: pillar('left', 'back', -1, -1),
+      backRight: pillar('right', 'back', 1, -1),
+      frontLeft: pillar('left', 'front', -1, 1),
+      frontRight: pillar('right', 'front', 1, 1),
+    },
+    topOpen: isHollowAt(lookup, x, y + 1, z),
+  };
 }

@@ -6,7 +6,7 @@
  */
 
 import type { GridCell } from '../../types';
-import type { CellFace, CellLookup, CornerRadii } from '../../utils/cellUtils';
+import type { CellFace, CellLookup, CornerRadii, HollowShape } from '../../utils/cellUtils';
 import type { RenderSettings } from '../renderSettings';
 
 export interface CellContext {
@@ -28,4 +28,6 @@ export interface CellContext {
    * ses murs des meurtrières au lieu de fenêtres.
    */
   isRampart: boolean;
+  /** Forme de la coque des blocs creux (murs, fondations) ; null pour les toits et arches. */
+  hollow: HollowShape | null;
 }

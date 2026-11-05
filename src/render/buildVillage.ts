@@ -19,6 +19,8 @@ import {
   getCornerRadii,
   getExposedFaces,
   getColumnTop,
+  getHollowShape,
+  isHollowType,
   isIsolatedBlock,
   isRampart,
   isTowerColumn,
@@ -81,6 +83,7 @@ export function buildVillage(
       // non propagé. Asymétrie intentionnelle (voir AGENTS.md).
       isIsolated: cell.type === BlockType.Roof ? isIsolatedBlock(lookup, cell) : isTowerColumn(lookup, cell),
       isRampart: isRampart(lookup, getColumnTop(lookup, cell)),
+      hollow: isHollowType(cell.type) ? getHollowShape(lookup, cell) : null,
     };
 
     let cellParts: Part[];

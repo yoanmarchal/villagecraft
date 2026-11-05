@@ -13,8 +13,9 @@
 
 import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three-stdlib';
-import type { CornerRadii } from '../utils/cellUtils';
-import { getRoundedRectContourPoints } from '../utils/cellUtils';
+import { Brush, Evaluator, SUBTRACTION } from 'three-bvh-csg';
+import type { CellFace, CornerRadii, HollowShape } from '../utils/cellUtils';
+import { FACE_ROTATION_Y, getRoundedRectContourPoints } from '../utils/cellUtils';
 import { seededRandom } from '../utils/noise';
 
 /**
@@ -117,6 +118,169 @@ export function shapedBoxGeo(w: number, h: number, d: number, radii: CornerRadii
     geo.applyMatrix4(new THREE.Matrix4().makeTranslation(0, -h / 2, 0));
     geo.computeVertexNormals();
     return geo;
+  });
+}
+
+// ── Coque creuse : bloc − volume intérieur − ouvertures (CSG) ────────────────
+
+/** Épaisseur des murs d'un bloc creux. */
+export const WALL_T = 0.08;
+/** Épaisseur du plancher (et du plafond sous un toit) d'un bloc creux. */
+export const FLOOR_T = 0.06;
+/** Débord des volumes soustraits au-delà des faces, pour éviter les faces coplanaires en CSG. */
+const CSG_EPS = 0.02;
+
+export type OpeningKind = 'window' | 'door' | 'slit';
+
+/** Ouverture traversante sur une face extérieure ; `scale` rétrécit sa largeur (coins arrondis). */
+export interface OpeningSpec {
+  face: CellFace;
+  kind: OpeningKind;
+  scale: number;
+}
+
+/**
+ * Dimensions (largeur nominale, hauteur, centre Y) des ouvertures — les
+ * mêmes que les vitres/vantaux des builders, qui viennent s'y loger. La
+ * porte descend jusqu'au plancher.
+ *
+ * Les ouvertures sont percées à angles VIFS : un volume de découpe arrondi
+ * (12 segments par coin) faisait exploser le découpage CSG — ~14 000 sommets
+ * pour une coque à 4 fenêtres contre ~1 600 en rectangle. Côté rue, les coins
+ * sont de toute façon couverts par le cadre arrondi.
+ */
+export const OPENING_SIZES: Record<OpeningKind, { w: number; h: number; y: number }> = {
+  window: { w: 0.54, h: 0.44, y: 0 },
+  door: { w: 0.40, h: 0.71, y: -0.095 },
+  slit: { w: 0.08, h: 0.32, y: 0 },
+};
+
+type CornerName = 'backLeft' | 'backRight' | 'frontLeft' | 'frontRight';
+
+/**
+ * Section XZ (scène) du volume intérieur : rectangle borné à `0.5 − WALL_T`
+ * côté mur, prolongé au-delà de la cellule côté `open`, avec coins arrondis
+ * (rayon du mur − épaisseur) entre deux murs, ou entaillés d'un pilier
+ * d'angle (coin rentrant). Parcours BR → FR → FL → BL.
+ */
+function innerSectionXZ(shape: HollowShape, radii: CornerRadii): Array<[number, number]> {
+  const { sides, pillars } = shape;
+  const bound = (face: CellFace) => (sides[face] === 'open' ? 0.5 + CSG_EPS : 0.5 - WALL_T);
+  const xMax = bound('right');
+  const xMin = -bound('left');
+  const zMax = bound('front');
+  const zMin = -bound('back');
+  const inner = 0.5 - WALL_T;
+
+  const corners: Array<{ name: CornerName; sx: 1 | -1; sz: 1 | -1; xSide: CellFace; zSide: CellFace; incomingX: boolean }> = [
+    { name: 'backRight', sx: 1, sz: -1, xSide: 'right', zSide: 'back', incomingX: false },
+    { name: 'frontRight', sx: 1, sz: 1, xSide: 'right', zSide: 'front', incomingX: true },
+    { name: 'frontLeft', sx: -1, sz: 1, xSide: 'left', zSide: 'front', incomingX: false },
+    { name: 'backLeft', sx: -1, sz: -1, xSide: 'left', zSide: 'back', incomingX: true },
+  ];
+
+  const points: Array<[number, number]> = [];
+  for (const { name, sx, sz, xSide, zSide, incomingX } of corners) {
+    const cx = sx > 0 ? xMax : xMin;
+    const cz = sz > 0 ? zMax : zMin;
+    const bothClosed = sides[xSide] !== 'open' && sides[zSide] !== 'open';
+    const r = bothClosed ? Math.max(0, radii[name] - WALL_T) : 0;
+
+    if (pillars[name]) {
+      const px = sx * inner;
+      const pz = sz * inner;
+      points.push(...(incomingX
+        ? [[cx, pz], [px, pz], [px, cz]] as Array<[number, number]>
+        : [[px, cz], [px, pz], [cx, pz]] as Array<[number, number]>));
+    } else if (r > 0.001) {
+      // Arc du point tangent au côté X (direction (sx, 0)) au point tangent au côté Z (direction (0, sz)).
+      const ox = cx - sx * r;
+      const oz = cz - sz * r;
+      const aX = sx > 0 ? 0 : Math.PI;
+      const aZ = aX + (sx * sz > 0 ? Math.PI / 2 : -Math.PI / 2);
+      const [a0, a1] = incomingX ? [aX, aZ] : [aZ, aX];
+      const ARC_SEGS = 8;
+      for (let i = 0; i <= ARC_SEGS; i += 1) {
+        const a = a0 + ((a1 - a0) * i) / ARC_SEGS;
+        points.push([ox + Math.cos(a) * r, oz + Math.sin(a) * r]);
+      }
+    } else {
+      points.push([cx, cz]);
+    }
+  }
+  return points;
+}
+
+/** Prisme vertical de section `sectionXZ` (coordonnées scène), de y0 à y1. */
+function verticalPrism(sectionXZ: Array<[number, number]>, y0: number, y1: number): THREE.BufferGeometry {
+  const shape = new THREE.Shape();
+  // Plan de la shape XY → scène XZ avec z = −y (même convention que shapedBoxGeo).
+  sectionXZ.forEach(([x, z], i) => (i === 0 ? shape.moveTo(x, -z) : shape.lineTo(x, -z)));
+  shape.closePath();
+  const geo = new THREE.ExtrudeGeometry(shape, { depth: y1 - y0, bevelEnabled: false });
+  geo.applyMatrix4(new THREE.Matrix4().makeRotationX(-Math.PI / 2));
+  geo.applyMatrix4(new THREE.Matrix4().makeTranslation(0, y0, 0));
+  return geo;
+}
+
+/** Volume qui perce une ouverture de part en part dans le mur de la face `face`. */
+function openingCutter({ face, kind, scale }: OpeningSpec): THREE.BufferGeometry {
+  const { w, h, y } = OPENING_SIZES[kind];
+  const z0 = 0.5 - WALL_T - CSG_EPS;
+  const z1 = 0.5 + 0.06;
+  const geo = new THREE.BoxGeometry(w * scale, h, z1 - z0);
+  geo.applyMatrix4(new THREE.Matrix4().makeTranslation(0, y, (z0 + z1) / 2));
+  geo.applyMatrix4(new THREE.Matrix4().makeRotationY(FACE_ROTATION_Y[face]));
+  return geo;
+}
+
+const csgEvaluator = new Evaluator();
+csgEvaluator.attributes = ['position', 'normal'];
+csgEvaluator.useGroups = false;
+
+/** Brush CSG sur une COPIE des attributs : le CSG attache un BVH à sa géométrie, jamais à celle du cache. */
+function toBrush(geo: THREE.BufferGeometry): Brush {
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', geo.getAttribute('position').clone());
+  g.setAttribute('normal', geo.getAttribute('normal').clone());
+  if (geo.index) g.setIndex(geo.index.clone());
+  const brush = new Brush(g);
+  brush.updateMatrixWorld();
+  return brush;
+}
+
+const openingKey = (o: OpeningSpec) => `${o.face[0]}${o.kind[0]}${r3(o.scale)}`;
+
+/**
+ * Coque maçonnée d'un bloc creux : le corps plein (`shapedBoxGeo`, même
+ * contour qu'avant, pour que pierres et quoins restent alignés) moins le
+ * volume intérieur (plancher `FLOOR_T`, murs `WALL_T`, ouvert vers les
+ * voisins creux et vers le haut si le bloc du dessus est creux) moins les
+ * ouvertures traversantes. CSG calculé une seule fois par combinaison.
+ */
+export function hollowShellGeo(radii: CornerRadii, shape: HollowShape, openings: OpeningSpec[]): THREE.BufferGeometry {
+  const { sides, pillars, topOpen } = shape;
+  const sidesKey = (['front', 'back', 'left', 'right'] as const).map((f) => sides[f][0]).join('');
+  const pillarsKey = (['backLeft', 'backRight', 'frontLeft', 'frontRight'] as const).map((c) => (pillars[c] ? 1 : 0)).join('');
+  const openingsKey = openings.map(openingKey).sort().join(',');
+  const key = `hollow|${radiiKey(radii)}|${sidesKey}|${pillarsKey}|${topOpen ? 1 : 0}|${openingsKey}`;
+
+  return getGeo(key, () => {
+    const yTop = topOpen ? 0.5 + CSG_EPS : 0.5 - FLOOR_T;
+    const cutters = [verticalPrism(innerSectionXZ(shape, radii), -0.5 + FLOOR_T, yTop), ...openings.map(openingCutter)];
+    let result = toBrush(shapedBoxGeo(1, 1, 1, radii));
+    for (const cutter of cutters) {
+      const next = csgEvaluator.evaluate(result, toBrush(cutter), SUBTRACTION);
+      result.geometry.dispose();
+      result = next;
+      cutter.dispose();
+    }
+
+    const src = result.geometry.index ? result.geometry.toNonIndexed() : result.geometry;
+    const out = new THREE.BufferGeometry();
+    out.setAttribute('position', src.getAttribute('position'));
+    out.setAttribute('normal', src.getAttribute('normal'));
+    return out;
   });
 }
 
