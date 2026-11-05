@@ -186,6 +186,7 @@ export function VoxelScene({
       cancelled = true;
     };
   }, [aoEnabled, AmbientOcclusion]);
+  const showAo = aoEnabled && AmbientOcclusion !== null;
 
   // Position écran du pointerdown : le clic gauche/droit glissé sert aussi à
   // OrbitControls (rotation/pan), on n'agit donc qu'au pointerup, et
@@ -310,10 +311,16 @@ export function VoxelScene({
         minDistance={minDistance}
         maxDistance={maxDistance * scale}
       />
-      <EffectComposer>
+      {/* `key` : le composer est recréé quand la passe AO apparaît/disparaît.
+          N8AO réclame une depth texture ; ajoutée à un composer qui a déjà
+          rendu (chunk AO arrivé après les premières frames, ou AO réactivée),
+          le renderbuffer MSAA reste en DEPTH24 alors que la texture est en
+          DEPTH32F, et la résolution MSAA (blitFramebuffer) échoue à chaque
+          frame sur les pilotes stricts (Metal/macOS) : GL_INVALID_OPERATION. */}
+      <EffectComposer key={showAo ? 'ao' : 'plain'}>
         {/* Occlusion ambiante en premier : elle doit assombrir la scène avant
             que bloom/vignette ne s'appliquent. */}
-        {aoEnabled && AmbientOcclusion ? <AmbientOcclusion intensity={aoIntensity} radius={aoRadius} /> : <></>}
+        {showAo && AmbientOcclusion ? <AmbientOcclusion intensity={aoIntensity} radius={aoRadius} /> : <></>}
         {bloomEnabled ? (
           <Bloom
             mipmapBlur
