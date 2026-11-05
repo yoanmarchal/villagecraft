@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import * as THREE from 'three';
 import { VillageGrid } from '../villageGrid';
 import { buildVillage } from './buildVillage';
+import { WALL_T } from './geometryCache';
 import type { RenderSettings } from './renderSettings';
 
 const SETTINGS: RenderSettings = {
@@ -81,5 +82,38 @@ describe('buildVillage', () => {
 
     const allPositions = (groups: typeof base) => groups.flatMap((g) => attr(g.geometry, 'position'));
     expect(allPositions(taller)).not.toEqual(allPositions(base));
+  });
+
+  it('ne laisse rien dépasser à l’intérieur d’un bâtiment creux', () => {
+    // 6 × 6 de plain-pied : 16 cellules Foundation au milieu, des jonctions de
+    // façade partout. La dalle de fondation (à mi-hauteur) et les quoins plus
+    // profonds que le mur flottaient ou saillaient dans la pièce.
+    const grid = new VillageGrid(9, 10, 9);
+    for (let x = 0; x < 6; x += 1) for (let z = 0; z < 6; z += 1) grid.addBlockInColumn(x, z);
+    const meshes = build(grid, SETTINGS).map(
+      ({ geometry }) => new THREE.Mesh(geometry, new THREE.MeshBasicMaterial({ side: THREE.DoubleSide })),
+    );
+
+    const [x0, y0, z0] = grid.toWorldPosition(0, 0, 0);
+    const [x5, , z5] = grid.toWorldPosition(5, 0, 5);
+    const inner = 0.5 - WALL_T - 0.005;
+    const inside = (p: THREE.Vector3) =>
+      p.x > x0 - inner && p.x < x5 + inner && p.z > z0 - inner && p.z < z5 + inner;
+
+    const strays: string[] = [];
+    const ray = new THREE.Raycaster();
+    for (let i = 0; i < 6; i += 1) {
+      for (const offset of [-0.36, 0, 0.36]) {
+        for (const dy of [-0.32, 0, 0.32]) {
+          const [cx, , cz] = grid.toWorldPosition(i, 0, i);
+          // Le long de X puis le long de Z, à travers toute la rangée.
+          ray.set(new THREE.Vector3(x0 - 3, y0 + dy, cz + offset), new THREE.Vector3(1, 0, 0));
+          for (const hit of ray.intersectObjects(meshes)) if (inside(hit.point)) strays.push(hit.point.toArray().join(','));
+          ray.set(new THREE.Vector3(cx + offset, y0 + dy, z0 - 3), new THREE.Vector3(0, 0, 1));
+          for (const hit of ray.intersectObjects(meshes)) if (inside(hit.point)) strays.push(hit.point.toArray().join(','));
+        }
+      }
+    }
+    expect(strays).toEqual([]);
   });
 });

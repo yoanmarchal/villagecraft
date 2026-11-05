@@ -1,17 +1,17 @@
 /**
- * Mur plein / fondation — ex-StandardCell, porté en builder de parts.
+ * Mur sans ouverture / fondation (coque creuse) — ex-StandardCell, porté en builder de parts.
  */
 
 import { BlockType } from '../../types';
 import { FACE_ROTATION_Y } from '../../utils/cellUtils';
 import { shades } from '../../colorPalettes';
-import { roundedBoxGeo, shapedBoxGeo } from '../geometryCache';
+import { roundedBoxGeo } from '../geometryCache';
 import { mul, part, xform, type Part } from '../parts';
 import { shellParts } from './shellParts';
 import type { CellContext } from './context';
 
 export function standardCellParts(ctx: CellContext): Part[] {
-  const { cell, exposedFaces, radii, settings } = ctx;
+  const { cell, exposedFaces, settings } = ctx;
 
   const isFoundation = cell.type === BlockType.Foundation;
   const baseColor = settings.wallBaseColor;
@@ -30,10 +30,9 @@ export function standardCellParts(ctx: CellContext): Part[] {
     }
   }
 
-  // ── Dalle de fondation en pierre ───────────────────────────────────────────
-  if (isFoundation) {
-    parts.push(part(shapedBoxGeo(1.08, 0.02, 1.08, radii), '#7d7a70', { roughness: 0.96 }));
-  }
+  // (Plus de "dalle de fondation" : posée à mi-hauteur de la cellule, elle
+  // n'était qu'enfouie dans le bloc plein ; dans une coque creuse elle
+  // flottait au milieu de la pièce. Le plancher de la coque en tient lieu.)
 
   return parts;
 }
