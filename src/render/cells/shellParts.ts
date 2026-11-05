@@ -10,6 +10,7 @@
 import { hollowShellGeo, shapedBoxGeo, type OpeningSpec } from '../geometryCache';
 import { part, type Part } from '../parts';
 import { quoinParts } from './decorations';
+import { interiorParts } from './interiorParts';
 import type { CellContext } from './context';
 
 export function shellParts(ctx: CellContext, baseColor: string, openings: OpeningSpec[] = []): Part[] {
@@ -18,8 +19,10 @@ export function shellParts(ctx: CellContext, baseColor: string, openings: Openin
   // sert plus que de repli si un builder de mur reçoit un contexte sans forme.
   const body = ctx.hollow ? hollowShellGeo(ctx.radii, ctx.hollow, openings) : shapedBoxGeo(1.0, 1.0, 1.0, ctx.radii);
   return [
-    part(body, baseColor, { roughness }),
+    part(body, baseColor, { roughness, doubleSide: ctx.hollow !== null }),
     // Pierres d'angle : communes aux deux cell types
     ...quoinParts(ctx, baseColor),
+    // Parquet, plafond et poutre de la pièce
+    ...interiorParts(ctx),
   ];
 }

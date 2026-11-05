@@ -8,12 +8,11 @@ const TOWER: CornerRadii = { backLeft: 0.22, backRight: 0.22, frontLeft: 0.22, f
 
 function shape(
   sides: Partial<Record<'front' | 'back' | 'left' | 'right', HollowSideKind>> = {},
-  { topOpen = false, pillars = {} }: { topOpen?: boolean; pillars?: Partial<HollowShape['pillars']> } = {},
+  { pillars = {} }: { pillars?: Partial<HollowShape['pillars']> } = {},
 ): HollowShape {
   return {
     sides: { front: 'exterior', back: 'exterior', left: 'exterior', right: 'exterior', ...sides },
     pillars: { backLeft: false, backRight: false, frontLeft: false, frontRight: false, ...pillars },
-    topOpen,
   };
 }
 
@@ -40,12 +39,9 @@ describe('hollowShellGeo', () => {
     expect(hits(geo, [0, 0, 2], [0, 0, -1])).toEqual([1.5, 1.5 + WALL_T, 2.5 - WALL_T, 2.5]);
   });
 
-  it('a un plancher et, sous un toit, un plafond ; pas de plafond si le bloc du dessus est creux', () => {
-    const closed = hollowShellGeo(SQUARE, shape(), []);
-    expect(hits(closed, [0, 2, 0], [0, -1, 0])).toEqual([1.5, 1.5 + FLOOR_T, 2.5 - FLOOR_T, 2.5]);
-
-    const open = hollowShellGeo(SQUARE, shape({}, { topOpen: true }), []);
-    expect(hits(open, [0, 2, 0], [0, -1, 0])).toEqual([2.5 - FLOOR_T, 2.5]);
+  it('a toujours un plancher et un plafond (hauteur sous plafond uniforme)', () => {
+    const geo = hollowShellGeo(SQUARE, shape({ left: 'open', right: 'open' }), []);
+    expect(hits(geo, [0, 2, 0], [0, -1, 0])).toEqual([1.5, 1.5 + FLOOR_T, 2.5 - FLOOR_T, 2.5]);
   });
 
   it('n’a pas de mur du côté d’un voisin creux, mais un mur plein côté toit/arche', () => {
@@ -58,12 +54,13 @@ describe('hollowShellGeo', () => {
 
   it('garde un pilier au coin rentrant de deux côtés ouverts', () => {
     const sides = { front: 'open', right: 'open' } as const;
-    const corner: [number, number, number] = [0.5 - WALL_T / 2, 2, 0.5 - WALL_T / 2];
-    const withPillar = hollowShellGeo(SQUARE, shape(sides, { topOpen: true, pillars: { frontRight: true } }), []);
-    expect(hits(withPillar, corner, [0, -1, 0])[0]).toBeCloseTo(1.5);
+    // Rayon horizontal le long du mur de droite (x dans l'épaisseur du pilier), vers l'avant.
+    const start: [number, number, number] = [0.5 - WALL_T / 2, 0, 0];
+    const withPillar = hollowShellGeo(SQUARE, shape(sides, { pillars: { frontRight: true } }), []);
+    expect(hits(withPillar, start, [0, 0, 1])[0]).toBeCloseTo(0.5 - WALL_T);
 
-    const without = hollowShellGeo(SQUARE, shape(sides, { topOpen: true }), []);
-    expect(hits(without, corner, [0, -1, 0])[0]).toBeCloseTo(2.5 - FLOOR_T);
+    const without = hollowShellGeo(SQUARE, shape(sides), []);
+    expect(hits(without, start, [0, 0, 1])).toEqual([]);
   });
 
   it('perce les ouvertures de part en part', () => {

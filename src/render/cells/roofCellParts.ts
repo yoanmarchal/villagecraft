@@ -62,6 +62,10 @@ export function roofCellParts(ctx: CellContext): Part[] {
     axis: roofConfig.axis,
     gablePos: roofConfig.axis === 'z' ? !roofConfig.hasFront : !roofConfig.hasRight,
     gableNeg: roofConfig.axis === 'z' ? !roofConfig.hasBack : !roofConfig.hasLeft,
+    // Pans selon ±X local : monde ±X si faîtage selon Z ; si faîtage selon X
+    // (rotation de 90°), +X local = −Z monde (back), −X local = +Z (front).
+    eavePos: roofConfig.axis === 'z' ? !roofConfig.hasRight : !roofConfig.hasBack,
+    eaveNeg: roofConfig.axis === 'z' ? !roofConfig.hasLeft : !roofConfig.hasFront,
     // Cheminée déterministe : ~33 % des cellules.
     chimney: (cell.x + cell.z) % 3 === 0 ? (cell.x % 2 === 0 ? 0.14 : -0.14) : null,
   });
@@ -75,10 +79,18 @@ export function roofCellParts(ctx: CellContext): Part[] {
  */
 export function gableRoofParts(
   settings: RenderSettings,
-  { axis, gablePos, gableNeg, chimney = null, baseY = 0 }: {
+  { axis, gablePos, gableNeg, eavePos = true, eaveNeg = true, chimney = null, baseY = 0 }: {
     axis: 'x' | 'z';
     gablePos: boolean;
     gableNeg: boolean;
+    /**
+     * Bandeau d'égout côté +X / −X local. À omettre quand le pan bute contre
+     * un voisin (mur qui continue plus haut) : le bandeau pend 5 cm sous la
+     * base du toit et déborde dans la cellule voisine — invisible dans un
+     * bloc plein, mais il pendait dans les pièces des blocs creux.
+     */
+    eavePos?: boolean;
+    eaveNeg?: boolean;
     /** Décalage X local de la cheminée, ou null pour aucune. */
     chimney?: number | null;
     baseY?: number;
@@ -130,10 +142,8 @@ export function gableRoofParts(
 
   // ── Bandeaux d'égout (fascias) ──
   const eaveGeo = boxGeo(0.044, 0.064, PANEL_LEN + 0.06);
-  parts.push(
-    part(eaveGeo, colorDark, { roughness: 0.89 }, mul(G, xform([0.518, EAVE_Y - 0.020, 0]))),
-    part(eaveGeo, colorDark, { roughness: 0.89 }, mul(G, xform([-0.518, EAVE_Y - 0.020, 0]))),
-  );
+  if (eavePos) parts.push(part(eaveGeo, colorDark, { roughness: 0.89 }, mul(G, xform([0.518, EAVE_Y - 0.020, 0]))));
+  if (eaveNeg) parts.push(part(eaveGeo, colorDark, { roughness: 0.89 }, mul(G, xform([-0.518, EAVE_Y - 0.020, 0]))));
 
   // ── Pignons ──
   const bargeGeo = boxGeo(SLOPE_LEN, 0.04, 0.05);

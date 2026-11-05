@@ -4,6 +4,7 @@
  * change (add/remove de bloc), jamais par frame.
  */
 
+import * as THREE from 'three';
 import { useEffect, useMemo } from 'react';
 import { useFrame, useThree } from '@react-three/fiber';
 import { useShallow } from 'zustand/react/shallow';
@@ -58,6 +59,10 @@ export function VillageMeshes({ cells, toWorldPosition, gridWidth, gridDepth }: 
           transparent: mat.transparent ?? false,
           opacity: mat.opacity ?? 1,
           depthWrite: !mat.transparent,
+          side: mat.doubleSide ? THREE.DoubleSide : THREE.FrontSide,
+          // Ombres inchangées : comme un matériau FrontSide, la carte d'ombre
+          // ne rend que les faces arrière (sinon acné sur les murs fins).
+          shadowSide: mat.doubleSide ? THREE.BackSide : null,
         }),
       ),
     [groups],

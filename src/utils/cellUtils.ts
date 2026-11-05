@@ -475,8 +475,6 @@ export interface HollowShape {
    * un trou à leur rencontre.
    */
   pillars: { backLeft: boolean; backRight: boolean; frontLeft: boolean; frontRight: boolean };
-  /** Le bloc du dessus est creux : pas de plafond, son plancher en tient lieu. */
-  topOpen: boolean;
 }
 
 /** Forme de la coque d'un bloc creux, déduite de ses voisins (à recalculer à chaque rebuild). */
@@ -502,6 +500,5 @@ export function getHollowShape(lookup: CellLookup, cell: GridCell): HollowShape 
       frontLeft: pillar('left', 'front', -1, 1),
       frontRight: pillar('right', 'front', 1, 1),
     },
-    topOpen: isHollowAt(lookup, x, y + 1, z),
   };
 }

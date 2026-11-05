@@ -22,6 +22,12 @@ export interface MaterialSpec {
    * reçoit une émission chaude réglée par `windowGlow`, sans reconstruction.
    */
   glow?: boolean;
+  /**
+   * Dessine aussi le dos des faces. Réservé au corps des coques creuses :
+   * une caméra qui entre dans l'épaisseur d'un mur ou d'un plancher (8 / 6 cm,
+   * moins que le plan proche) verrait sinon à travers, faces arrière éliminées.
+   */
+  doubleSide?: boolean;
 }
 
 export interface Part {
@@ -55,7 +61,7 @@ const quantize = (v: number) => Math.round(v * 20) / 20;
 
 export function matKey(m: MaterialSpec): string {
   const t = m.transparent ? `t${m.opacity ?? 1}` : 'o';
-  return `${quantize(m.roughness)}|${quantize(m.metalness ?? 0)}|${t}${m.glow ? '|glow' : ''}`;
+  return `${quantize(m.roughness)}|${quantize(m.metalness ?? 0)}|${t}${m.glow ? '|glow' : ''}${m.doubleSide ? '|ds' : ''}`;
 }
 
 const _euler = new THREE.Euler();

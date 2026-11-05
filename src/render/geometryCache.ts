@@ -125,7 +125,14 @@ export function shapedBoxGeo(w: number, h: number, d: number, radii: CornerRadii
 
 /** Épaisseur des murs d'un bloc creux. */
 export const WALL_T = 0.08;
-/** Épaisseur du plancher (et du plafond sous un toit) d'un bloc creux. */
+/**
+ * Épaisseur du plancher et du plafond d'un bloc creux. Chaque bloc a les
+ * deux, même sous un autre bloc creux (dalle de 2 × FLOOR_T entre étages) :
+ * tous les plafonds d'un étage sont ainsi à la même hauteur. Un plafond
+ * ouvert sous les étages et fermé sous les toits faisait un ressaut de
+ * FLOOR_T, où pendaient les bords des toits adossés (égouts, pans) —
+ * enfouis jusque-là dans les blocs pleins.
+ */
 export const FLOOR_T = 0.06;
 /** Débord des volumes soustraits au-delà des faces, pour éviter les faces coplanaires en CSG. */
 const CSG_EPS = 0.02;
@@ -163,9 +170,9 @@ type CornerName = 'backLeft' | 'backRight' | 'frontLeft' | 'frontRight';
  * (rayon du mur − épaisseur) entre deux murs, ou entaillés d'un pilier
  * d'angle (coin rentrant). Parcours BR → FR → FL → BL.
  */
-function innerSectionXZ(shape: HollowShape, radii: CornerRadii): Array<[number, number]> {
+function innerSectionXZ(shape: HollowShape, radii: CornerRadii, openBound = 0.5 + CSG_EPS): Array<[number, number]> {
   const { sides, pillars } = shape;
-  const bound = (face: CellFace) => (sides[face] === 'open' ? 0.5 + CSG_EPS : 0.5 - WALL_T);
+  const bound = (face: CellFace) => (sides[face] === 'open' ? openBound : 0.5 - WALL_T);
   const xMax = bound('right');
   const xMin = -bound('left');
   const zMax = bound('front');
@@ -254,20 +261,19 @@ const openingKey = (o: OpeningSpec) => `${o.face[0]}${o.kind[0]}${r3(o.scale)}`;
 /**
  * Coque maçonnée d'un bloc creux : le corps plein (`shapedBoxGeo`, même
  * contour qu'avant, pour que pierres et quoins restent alignés) moins le
- * volume intérieur (plancher `FLOOR_T`, murs `WALL_T`, ouvert vers les
- * voisins creux et vers le haut si le bloc du dessus est creux) moins les
+ * volume intérieur (plancher et plafond `FLOOR_T`, murs `WALL_T`, ouvert
+ * vers les voisins creux) moins les
  * ouvertures traversantes. CSG calculé une seule fois par combinaison.
  */
 export function hollowShellGeo(radii: CornerRadii, shape: HollowShape, openings: OpeningSpec[]): THREE.BufferGeometry {
-  const { sides, pillars, topOpen } = shape;
+  const { sides, pillars } = shape;
   const sidesKey = (['front', 'back', 'left', 'right'] as const).map((f) => sides[f][0]).join('');
   const pillarsKey = (['backLeft', 'backRight', 'frontLeft', 'frontRight'] as const).map((c) => (pillars[c] ? 1 : 0)).join('');
   const openingsKey = openings.map(openingKey).sort().join(',');
-  const key = `hollow|${radiiKey(radii)}|${sidesKey}|${pillarsKey}|${topOpen ? 1 : 0}|${openingsKey}`;
+  const key = `hollow|${radiiKey(radii)}|${sidesKey}|${pillarsKey}|${openingsKey}`;
 
   return getGeo(key, () => {
-    const yTop = topOpen ? 0.5 + CSG_EPS : 0.5 - FLOOR_T;
-    const cutters = [verticalPrism(innerSectionXZ(shape, radii), -0.5 + FLOOR_T, yTop), ...openings.map(openingCutter)];
+    const cutters = [verticalPrism(innerSectionXZ(shape, radii), -0.5 + FLOOR_T, 0.5 - FLOOR_T), ...openings.map(openingCutter)];
     let result = toBrush(shapedBoxGeo(1, 1, 1, radii));
     for (const cutter of cutters) {
       const next = csgEvaluator.evaluate(result, toBrush(cutter), SUBTRACTION);
@@ -281,6 +287,24 @@ export function hollowShellGeo(radii: CornerRadii, shape: HollowShape, openings:
     out.setAttribute('position', src.getAttribute('position'));
     out.setAttribute('normal', src.getAttribute('normal'));
     return out;
+  });
+}
+
+/**
+ * Nappe horizontale épousant l'intérieur d'une coque creuse (contour arrondi
+ * des tours, piliers d'angle compris), arrêtée pile au bord de la cellule
+ * côté `open` pour se raccorder sans chevauchement à celle du voisin.
+ * Épaisseur `thickness`, de y = 0 à y = thickness. Sert au parquet et au
+ * plafond des intérieurs.
+ */
+export function hollowSheetGeo(radii: CornerRadii, shape: HollowShape, thickness: number): THREE.BufferGeometry {
+  const { sides, pillars } = shape;
+  const sidesKey = (['front', 'back', 'left', 'right'] as const).map((f) => sides[f][0]).join('');
+  const pillarsKey = (['backLeft', 'backRight', 'frontLeft', 'frontRight'] as const).map((c) => (pillars[c] ? 1 : 0)).join('');
+  return getGeo(`sheet|${radiiKey(radii)}|${sidesKey}|${pillarsKey}|${r3(thickness)}`, () => {
+    const geo = verticalPrism(innerSectionXZ(shape, radii, 0.5), 0, thickness);
+    geo.computeVertexNormals();
+    return geo;
   });
 }
 
