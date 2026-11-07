@@ -20,7 +20,7 @@ describe('growMaterial shader injection', () => {
 
     const vertex = shader.vertexShader;
     const grow = vertex.indexOf('growFallHeight');
-    const interior = vertex.indexOf('vInterior = 0.0');
+    const interior = vertex.indexOf('vInteriorMode = mod(aCell.w, 4.0)');
     const project = vertex.indexOf('#include <project_vertex>');
     expect(grow).toBeGreaterThan(0);
     expect(interior).toBeGreaterThan(grow);
@@ -29,7 +29,7 @@ describe('growMaterial shader injection', () => {
 
     const fragment = shader.fragmentShader;
     expect(fragment).toContain('uniform vec3 uInteriorLight');
-    expect(fragment.indexOf('uInteriorLight * vInterior')).toBeGreaterThan(fragment.indexOf('#include <emissivemap_fragment>'));
+    expect(fragment.indexOf('uInteriorLight * interiorLight')).toBeGreaterThan(fragment.indexOf('#include <emissivemap_fragment>'));
     expect(shader.uniforms.uInteriorLight).toBe(set.interiorLight);
   });
 

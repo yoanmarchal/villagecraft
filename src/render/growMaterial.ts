@@ -71,7 +71,7 @@ const GROW_APPLY = `
  * cavité de la coque) reçoivent `uInteriorLight` × albédo selon leur
  * orientation vers la lampe. Pierres, chaînages, cadres : jamais. Pas
  * d'ombre ni de vraie lumière three : un terme d'émission, calculé par
- * sommet, gratuit quel que soit le nombre de maisons.
+ * fragment, gratuit quel que soit le nombre de maisons.
  */
 /** Cavité de la coque : entre plancher et plafond, en deçà de la face intérieure des murs. */
 const CAVITY_HALF_HEIGHT = (0.5 - FLOOR_T + 0.005).toFixed(3);
@@ -81,38 +81,57 @@ const LAMP_Y = INTERIOR_LAMP_Y.toFixed(3);
 const LAMP_FALLOFF = '0.25';
 
 const INTERIOR_VERTEX_DECLARATIONS = `
-  varying float vInterior;
+  varying vec3 vInteriorLocal;
+  varying vec3 vInteriorLamp;
+  varying vec3 vInteriorNormal;
+  varying float vInteriorMode;
 `;
 
+// Le sommet ne fait que transmettre position (repère de la cellule), lampe,
+// normale et mode : tout le calcul est par fragment. Calculé par sommet puis
+// interpolé, l'éclairage suivait les grands triangles irréguliers que la CSG
+// laisse sur les murs (bandes et triangles plus clairs sur les murs intérieurs).
 const INTERIOR_VERTEX_APPLY = `
   {
     // Mode : 0 aucun, 1 coque (cavité seulement), 2 aménagement (voir InteriorKind).
-    float interiorMode = mod(aCell.w, 4.0);
-    vInterior = 0.0;
-    if (interiorMode > 0.5) {
-      vec3 interiorLocal = transformed - aCell.xyz * 0.5;
-      bool inCavity = abs(interiorLocal.y) < ${CAVITY_HALF_HEIGHT}
-        && max(abs(interiorLocal.x), abs(interiorLocal.z)) < ${CAVITY_HALF_WIDTH};
-      if (interiorMode > 1.5 || inCavity) {
-        // Chandelier de la pièce : décalage (en cases) codé dans aCell.w (voir mergeParts).
-        float lampCode = floor(aCell.w * 0.25);
-        vec3 lamp = vec3(floor(lampCode / 32.0) - 16.0, ${LAMP_Y}, mod(lampCode, 32.0) - 16.0);
-        vec3 toLamp = lamp - interiorLocal + vec3(1e-4);
-        float lampDistance = length(toLamp.xz);
-        vInterior = max(dot(normalize(objectNormal), normalize(toLamp)), 0.0)
-          / (1.0 + ${LAMP_FALLOFF} * lampDistance * lampDistance);
-      }
-    }
+    vInteriorMode = mod(aCell.w, 4.0);
+    vInteriorLocal = transformed - aCell.xyz * 0.5;
+    // Chandelier de la pièce : décalage (en cases) codé dans aCell.w (voir mergeParts).
+    float lampCode = floor(aCell.w * 0.25);
+    vInteriorLamp = vec3(floor(lampCode / 32.0) - 16.0, ${LAMP_Y}, mod(lampCode, 32.0) - 16.0);
+    vInteriorNormal = objectNormal;
   }
 `;
 
 const INTERIOR_FRAGMENT_DECLARATIONS = `
   uniform vec3 uInteriorLight;
-  varying float vInterior;
+  varying vec3 vInteriorLocal;
+  varying vec3 vInteriorLamp;
+  varying vec3 vInteriorNormal;
+  varying float vInteriorMode;
 `;
 
 const INTERIOR_FRAGMENT_APPLY = `
-  totalEmissiveRadiance += diffuseColor.rgb * uInteriorLight * vInterior;
+  if (vInteriorMode > 0.5) {
+    // Cavité testée selon l'axe de la normale seulement : face intérieure d'un
+    // mur (|z| < demi-cavité, quel que soit x), jamais sa face extérieure
+    // (|z| = 0.5). Tester x et z ensemble laissait dans le noir la bande de
+    // mur de 8 cm de chaque côté d'une jonction entre deux cellules d'une
+    // pièce (le mur file jusqu'au bord de la cellule le long d'un côté ouvert).
+    vec3 interiorAxis = abs(vInteriorNormal);
+    vec3 interiorPos = abs(vInteriorLocal);
+    float interiorDepth = interiorAxis.y > max(interiorAxis.x, interiorAxis.z)
+      ? 0.0 // plancher, plafond : seule la hauteur compte
+      : (interiorAxis.x > interiorAxis.z ? interiorPos.x : interiorPos.z);
+    bool inCavity = interiorPos.y < ${CAVITY_HALF_HEIGHT} && interiorDepth < ${CAVITY_HALF_WIDTH};
+    if (vInteriorMode > 1.5 || inCavity) {
+      vec3 toLamp = vInteriorLamp - vInteriorLocal + vec3(1e-4);
+      float lampDistance = length(toLamp.xz);
+      float interiorLight = max(dot(normalize(vInteriorNormal), normalize(toLamp)), 0.0)
+        / (1.0 + ${LAMP_FALLOFF} * lampDistance * lampDistance);
+      totalEmissiveRadiance += diffuseColor.rgb * uInteriorLight * interiorLight;
+    }
+  }
 `;
 
 function injectInterior(shader: THREE.WebGLProgramParametersWithUniforms, interiorLight: { value: THREE.Color }): void {
