@@ -185,12 +185,13 @@ describe('buildVillage', () => {
     expect(ceiling.equals(wall)).toBe(false);
   });
 
-  describe('arche entre une tour et une maison', () => {
-    // Tour de 4 niveaux en (2, 4), maison de 2 niveaux en (4, 4) : arche
-    // automatique en (3, 1, 4), coiffée d'un chemin de ronde crénelé.
+  describe('arche entre une tour et un bâtiment haut', () => {
+    // Tour en (2, 4), bâtiment de deux cases (z = 4, 5), 3 étages de murs +
+    // toit, en x = 4 : arche automatique en (3, 1, 4) ; au-dessus, les deux
+    // appuis ont un mur, d'où un chemin de ronde crénelé de l'un à l'autre.
     const grid = new VillageGrid(9, 10, 9);
     for (let i = 0; i < 4; i += 1) grid.addBlockInColumn(2, 4);
-    for (let i = 0; i < 2; i += 1) grid.addBlockInColumn(4, 4);
+    for (const bz of [4, 5]) for (let y = 0; y < 4; y += 1) grid.addBlock(4, y, bz);
     const meshes = build(grid, SETTINGS).map(
       ({ geometry, key }) => Object.assign(new THREE.Mesh(geometry, new THREE.MeshBasicMaterial({ side: THREE.DoubleSide })), { name: key }),
     );
@@ -234,5 +235,36 @@ describe('buildVillage', () => {
         expect(ray.intersectObjects(meshes).length).toBeGreaterThan(0);
       }
     });
+  });
+
+  it('prolonge le toit d’un appui qui arrive au niveau du dessus de l’arche, plutôt que des merlons', () => {
+    // Tour en (2, 4) ; maison de deux cases (z = 4, 5 — d'une seule case, son
+    // toit isolé serait une flèche de tour), 2 étages de murs, toit à deux
+    // pans au 3e niveau (y = 2), en x = 4. Le dessus de l'arche (y = 2)
+    // touche ce toit : un chemin de ronde y adosserait des merlons à des tuiles.
+    const grid = new VillageGrid(9, 10, 9);
+    for (let i = 0; i < 4; i += 1) grid.addBlockInColumn(2, 4);
+    for (const bz of [4, 5]) for (let y = 0; y < 3; y += 1) grid.addBlock(4, y, bz);
+    expect(grid.getCell({ x: 3, y: 1, z: 4 })?.type).toBe(BlockType.Arch);
+    expect(grid.getCell({ x: 4, y: 2, z: 4 })?.type).toBe(BlockType.Roof);
+
+    // Toits en vert pur pour les reconnaître.
+    const meshes = build(grid, { ...SETTINGS, roofBaseColor: '#00ff00' }).map(
+      ({ geometry, key }) => Object.assign(new THREE.Mesh(geometry, new THREE.MeshBasicMaterial({ side: THREE.DoubleSide })), { name: key }),
+    );
+    const [ax, ay, az] = grid.toWorldPosition(3, 1, 4);
+    const hit = new THREE.Raycaster(new THREE.Vector3(ax, ay + 5, az + 0.3), new THREE.Vector3(0, -1, 0)).intersectObjects(meshes)[0];
+    const colors = (hit.object as THREE.Mesh).geometry.getAttribute('color');
+    const [r, g, b] = [colors.getX(hit.face!.a), colors.getY(hit.face!.a), colors.getZ(hit.face!.a)];
+    expect(g).toBeGreaterThan(r + 0.2);
+    expect(g).toBeGreaterThan(b + 0.2);
+    // Et aucun merlon : rien au-dessus du toit à hauteur de créneau, à l'aplomb des merlons.
+    const merlonY = ay + 0.5 + WALKWAY_H + PARAPET_H + SETTINGS.merlonH / 2;
+    const across = new THREE.Raycaster(new THREE.Vector3(ax + 0.25 + 0.06, merlonY, az + 3), new THREE.Vector3(0, 0, -1));
+    across.far = 2.5;
+    expect(across.intersectObjects(meshes).every((h) => {
+      const c = (h.object as THREE.Mesh).geometry.getAttribute('color');
+      return c.getY(h.face!.a) > c.getX(h.face!.a) + 0.2;
+    })).toBe(true);
   });
 });

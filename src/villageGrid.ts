@@ -449,9 +449,9 @@ export class VillageGrid {
 
   /**
    * Arches automatiques. Une rue de 1 à MAX_ARCH_SPAN cases (jamais plus), ouverte au sol,
-   * entre deux bâtiments qui se font face avec au moins deux niveaux visibles
-   * (occupés en y = 0 et y = 1, cap de toit compris : une maison d'un clic
-   * suffit) est enjambée par une arche au premier étage. Une seule arche par
+   * entre deux bâtiments qui se font face avec un mur au premier étage
+   * (occupés en y = 0, 1 et 2 : le premier étage n'est pas leur toit) est
+   * enjambée par une arche au premier étage, à hauteur de leurs murs. Une seule arche par
    * tronçon de rue, au milieu, pour ne pas transformer la rue en tunnel.
    *
    * Comme les caps de toit, ce ne sont pas des blocs de l'utilisateur : elles
@@ -468,8 +468,12 @@ export class VillageGrid {
       return !!cell && cell.isOccupied && !cell.isAutoArch;
     };
 
-    // Porteur : bâti au sol et au premier étage. Passage : vide aux deux niveaux.
-    const support = (x: number, z: number) => solid(x, 0, z) && solid(x, ARCH_Y, z);
+    // Porteur : un MUR à hauteur de l'arche, donc bâti au sol, au premier étage
+    // et au-dessus (sinon le premier étage est le toit de la colonne). Une
+    // arche posée entre deux toits de maisons de plain-pied dépassait leurs
+    // murs d'un étage entier, avec son propre toit : une maçonnerie portée
+    // par des toitures. Passage : vide aux deux niveaux.
+    const support = (x: number, z: number) => solid(x, 0, z) && solid(x, ARCH_Y, z) && solid(x, ARCH_Y + 1, z);
     const open = (x: number, z: number) =>
       this.isValidCoordinate(x, 0, z) && !solid(x, 0, z) && !solid(x, ARCH_Y, z);
 
@@ -535,10 +539,11 @@ export class VillageGrid {
   }
 
   private recomputeProceduralLogic(): void {
-    // Toits → arches → toits : les arches s'appuient sur les caps de toit des
-    // maisons d'un étage (il faut qu'ils existent déjà), et une arche qui
-    // disparaît (passage bâti) doit laisser sa place au cap de la colonne
-    // dans la même passe — sinon le résultat dépendrait de l'ordre des clics.
+    // Toits → arches → toits : les caps sont à jour avant de chercher les
+    // appuis, et une arche qui disparaît (passage bâti au sol) doit laisser
+    // sa place au cap de la nouvelle colonne dans la même passe — sinon le
+    // résultat dépendrait de l'ordre des clics. (Les arches ne s'appuient plus
+    // sur les caps : il leur faut un mur au premier étage.)
     this.syncAutoRoofs();
     this.syncAutoArches();
     this.syncAutoRoofs();

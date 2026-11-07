@@ -150,10 +150,18 @@ describe('VillageGrid — arches automatiques', () => {
     expect(grid.getCell({ x: 1, y: 0, z: 1 })?.isOccupied).toBe(false); // le passage reste libre
   });
 
-  it("se forme dès deux maisons d'un seul clic (rez-de-chaussée + toit auto)", () => {
-    const grid = new VillageGrid(3, HEIGHT, 3);
-    for (const x of [0, 2]) grid.addBlock(x, grid.getNextPlacementY(x, 1)!, 1); // un clic chacune
-    expect(archesIn(grid).map(({ x, y, z }) => [x, y, z])).toEqual([[1, 1, 1]]);
+  it("ne s'appuie jamais sur un toit : pas d'arche entre maisons dont le 1er étage est le toit", () => {
+    // Un clic chacune : rez-de-chaussée + toit auto au 1er étage.
+    const oneClick = new VillageGrid(3, HEIGHT, 3);
+    for (const x of [0, 2]) oneClick.addBlock(x, oneClick.getNextPlacementY(x, 1)!, 1);
+    expect(archesIn(oneClick)).toHaveLength(0);
+
+    // Deux blocs réels chacune : le 1er étage est le sommet de la colonne, donc un toit.
+    expect(archesIn(twoRows(2))).toHaveLength(0);
+
+    // Un étage de mur de plus : l'arche s'appuie sur des murs, à leur niveau.
+    expect(archesIn(twoRows(3)).map(({ x, y, z }) => [x, y, z])).toEqual([[1, 1, 1]]);
+    expect(typeAt(twoRows(3), 0, 1, 1)).not.toBe(BlockType.Roof);
   });
 
   it("ne se forme pas avec un seul bâtiment, ni en diagonale", () => {
@@ -177,8 +185,8 @@ describe('VillageGrid — arches automatiques', () => {
   it("enjambe d'un seul tenant une rue de 2 cases, jamais plus", () => {
     const street = (width: number) => {
       const grid = new VillageGrid(6, HEIGHT, 3);
-      buildColumn(grid, 0, 1, 2);
-      buildColumn(grid, width + 1, 1, 2);
+      buildColumn(grid, 0, 1, 3);
+      buildColumn(grid, width + 1, 1, 3);
       return archesIn(grid).map(({ x, y, z }) => [x, y, z]);
     };
     expect(street(2)).toEqual([[1, 1, 1], [2, 1, 1]]);

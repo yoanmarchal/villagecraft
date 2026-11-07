@@ -8,10 +8,12 @@
  * calculé pour toute la portée. Conçue avec la portée selon X (passage selon
  * Z), tournée de 90° quand les murs porteurs sont de part et d'autre selon Z.
  * Claveaux en saillie sur les deux têtes, clé de voûte plus haute. Si rien
- * n'est bâti au-dessus, le dessus dépend des voisins de l'arche : chemin de
- * ronde crénelé si elle touche une tour, toit à deux pans (faîtage d'un
- * appui à l'autre) si au moins deux bâtiments voisins sont coiffés d'un toit
- * à deux pans, sinon simple tablier dallé.
+ * n'est bâti au-dessus, le dessus dépend des voisins de l'arche : le toit
+ * à deux pans d'un appui qui arrive à ce niveau se prolonge sur l'arche ;
+ * sinon chemin de ronde crénelé si elle touche une tour et que ses appuis
+ * ont des murs à ce niveau (il relie deux murs) ; sinon toit à deux pans
+ * (faîtage d'un appui à l'autre) si au moins deux bâtiments voisins en sont
+ * coiffés ; sinon simple tablier dallé.
  */
 
 import { BlockType } from '../../types';
@@ -102,19 +104,44 @@ export function archCellParts(ctx: CellContext): Part[] {
       }
     }
 
-    if (besideTower) {
+    // Ce qu'il y a, à hauteur du dessus de l'arche (y + 1), sur ses deux
+    // appuis (les cases au-delà des deux bouts de la portée).
+    let roofContinues = false; // un appui y a un toit à deux pans : il se prolonge sur l'arche
+    let walkwayBlocked = false; // un appui n'y a pas de mur : un chemin de ronde n'y mènerait nulle part
+    for (const k of [-before - 1, after + 1]) {
+      const above = getCell(lookup, x + dx * k, y + 1, z + dz * k);
+      if (!above?.isOccupied) {
+        walkwayBlocked = true;
+      } else if (above.type === BlockType.Roof) {
+        if (!isIsolatedBlock(lookup, above) && !isRampart(lookup, above)) {
+          roofContinues = true;
+          walkwayBlocked = true;
+        } else if (isIsolatedBlock(lookup, above)) {
+          walkwayBlocked = true; // pied de la flèche d'une tour, pas un mur
+        }
+      }
+    }
+
+    // Pignon aux bouts de l'arche seulement si rien n'est bâti contre, à hauteur du toit.
+    const endFree = (k: number) => !hasOccupiedCell(lookup, x + dx * k, y + 1, z + dz * k);
+    const archRoof = () => gableRoofParts(settings, {
+      axis: spanAlongX ? 'x' : 'z',
+      gablePos: after === 0 && endFree(1),
+      gableNeg: before === 0 && endFree(-1),
+      baseY: 1,
+    });
+
+    if (roofContinues) {
+      // Le toit de l'appui continue par-dessus l'arche (et bute contre une
+      // tour éventuelle) : pas de merlons de pierre adossés à des tuiles.
+      parts.push(...archRoof());
+    } else if (besideTower && !walkwayBlocked) {
+      // Chemin de ronde : il relie deux murs (tour, mur plus haut, courtine).
       parts.push(...crenellatedWalkwayParts(G, 0.5, settings));
       topY = 0.5 + WALKWAY_H + PARAPET_H;
     } else if (gabledColumns.size >= 2) {
-      // Faîtage d'un appui à l'autre ; pignon aux bouts de l'arche seulement
-      // si rien n'est bâti contre, à hauteur du toit.
-      const endFree = (k: number) => !hasOccupiedCell(lookup, x + dx * k, y + 1, z + dz * k);
-      parts.push(...gableRoofParts(settings, {
-        axis: spanAlongX ? 'x' : 'z',
-        gablePos: after === 0 && endFree(1),
-        gableNeg: before === 0 && endFree(-1),
-        baseY: 1,
-      }));
+      // Faîtage d'un appui à l'autre.
+      parts.push(...archRoof());
     } else {
       parts.push(...walkwayDeckParts(G, 0.5, settings.wallBaseColor));
       topY = 0.5 + WALKWAY_H;
