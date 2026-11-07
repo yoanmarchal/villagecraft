@@ -6,7 +6,7 @@
  */
 
 import type { GridCell } from '../../types';
-import type { CellFace, CellLookup, CornerRadii } from '../../utils/cellUtils';
+import type { CellFace, CellLookup, CornerRadii, HollowShape } from '../../utils/cellUtils';
 import type { RenderSettings } from '../renderSettings';
 
 export interface CellContext {
@@ -28,4 +28,21 @@ export interface CellContext {
    * ses murs des meurtrières au lieu de fenêtres.
    */
   isRampart: boolean;
+  /** Forme de la coque des blocs creux (murs, fondations) ; null pour les toits et arches. */
+  hollow: HollowShape | null;
+  /** La cellule porte le chandelier de sa pièce (voir assignRoomLamps) — un par pièce, pas par cellule. */
+  chandelier: boolean;
+  /** Face de la porte de la pièce (planDoors, une par zone de chandelier au rez-de-chaussée), ou null. */
+  doorFace: CellFace | null;
+  /**
+   * Mur qui porte la cheminée de la pièce (planFireplaces), ou null. S'il
+   * avait une fenêtre, elle est supprimée (openingKindsOf).
+   */
+  fireplaceFace: CellFace | null;
+  /**
+   * Toits : conduits de cheminée à faire sortir, en coordonnées de cellule
+   * (x, z), à l'aplomb des hottes des cheminées de la colonne (buildVillage).
+   * Vide ailleurs : plus de conduit sans cheminée dessous.
+   */
+  flues: Array<{ x: number; z: number }>;
 }

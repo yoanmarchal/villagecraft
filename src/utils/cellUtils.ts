@@ -1,4 +1,4 @@
-import type { GridCell } from '../types';
+import { BlockType, type GridCell } from '../types';
 
 export type CellLookup = Record<string, GridCell>;
 
@@ -155,6 +155,51 @@ export function getRoofConfig(lookup: CellLookup, cell: GridCell): {
   const axis = eastWest > northSouth ? 'x' : 'z';
 
   return { axis, hasLeft, hasRight, hasFront, hasBack, isCorner, isEnd };
+}
+
+/** Case coiffée d'un toit à deux pans (pas la flèche d'une tour, pas un chemin de ronde). */
+export function isGableRoofCell(lookup: CellLookup, cell: GridCell | null): boolean {
+  return !!cell?.isOccupied && cell.type === BlockType.Roof && !isIsolatedBlock(lookup, cell) && !isRampart(lookup, cell);
+}
+
+/**
+ * Axe du faîtage d'un toit à deux pans, cohérent à l'échelle du bâtiment :
+ * celui de la plus longue suite de toits à deux pans contigus (même niveau)
+ * qui traverse la case. Dans un bloc rectangulaire, tous les faîtages sont
+ * ainsi parallèles (au lieu d'un choix case par case, qui croisait les
+ * faîtages à l'intérieur des blocs) ; une aile d'une case de large suit sa
+ * longueur. À égalité (bloc carré…), on tranche pour tout le groupe de toits
+ * contigus à la fois — sa plus grande dimension, Z sinon — et jamais case
+ * par case : une case qui touchait en plus un mur plus haut prenait l'autre
+ * axe et croisait son faîtage au milieu du bloc. Une case de toit seule
+ * garde l'axe de ses voisins occupés, comme avant.
+ */
+export function getRidgeAxis(lookup: CellLookup, cell: GridCell): 'x' | 'z' {
+  const run = (dx: number, dz: number) => {
+    let n = 0;
+    for (let k = 1; isGableRoofCell(lookup, getCell(lookup, cell.x + dx * k, cell.y, cell.z + dz * k)); k += 1) n += 1;
+    return n;
+  };
+  const runX = 1 + run(1, 0) + run(-1, 0);
+  const runZ = 1 + run(0, 1) + run(0, -1);
+  if (runX !== runZ) return runX > runZ ? 'x' : 'z';
+
+  // Égalité : emprise du groupe de toits à deux pans contigus (même niveau).
+  const seen = new Set<string>([cellKey(cell.x, cell.y, cell.z)]);
+  const queue: GridCell[] = [cell];
+  let [minX, maxX, minZ, maxZ] = [cell.x, cell.x, cell.z, cell.z];
+  while (queue.length > 0) {
+    const current = queue.pop()!;
+    for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+      const next = getCell(lookup, current.x + dx, current.y, current.z + dz);
+      if (!next || seen.has(cellKey(next.x, next.y, next.z)) || !isGableRoofCell(lookup, next)) continue;
+      seen.add(cellKey(next.x, next.y, next.z));
+      queue.push(next);
+      [minX, maxX, minZ, maxZ] = [Math.min(minX, next.x), Math.max(maxX, next.x), Math.min(minZ, next.z), Math.max(maxZ, next.z)];
+    }
+  }
+  if (seen.size === 1) return getRoofConfig(lookup, cell).axis;
+  return maxX - minX > maxZ - minZ ? 'x' : 'z';
 }
 
 export type CellFace = 'front' | 'back' | 'left' | 'right';
@@ -440,4 +485,65 @@ export function sampleContourPerimeter(
   }
   const [x, y] = points[0];
   return { x, z: y, angle: Math.atan2(y, x) };
+}
+
+// ── Blocs creux ──────────────────────────────────────────────────────────────
+
+/**
+ * Types de blocs rendus comme une coque maçonnée creuse (murs épais,
+ * plancher à chaque étage, ouvertures traversantes). Les arches et les toits
+ * restent pleins. Source unique de vérité pour "bloc creux".
+ */
+export function isHollowType(type: BlockType): boolean {
+  return type === BlockType.Wall || type === BlockType.WallWithWindow || type === BlockType.Foundation;
+}
+
+function isHollowAt(lookup: CellLookup, x: number, y: number, z: number): boolean {
+  const cell = getCell(lookup, x, y, z);
+  return !!cell?.isOccupied && isHollowType(cell.type);
+}
+
+/**
+ * Nature d'un côté de coque creuse :
+ * - `exterior` : rien à côté → mur extérieur (fenêtres, porte…) ;
+ * - `open` : bloc creux voisin → pas de mur, les deux intérieurs se rejoignent ;
+ * - `partition` : voisin plein (toit, arche) → mur aveugle qui ferme le volume.
+ */
+export type HollowSideKind = 'exterior' | 'open' | 'partition';
+
+export interface HollowShape {
+  sides: Record<CellFace, HollowSideKind>;
+  /**
+   * Coin dont les deux côtés sont `open` mais dont le voisin diagonal n'est
+   * pas creux (coin rentrant d'un bâtiment en L) : le volume intérieur garde
+   * un pilier d'angle, sinon les murs extérieurs des deux voisins laisseraient
+   * un trou à leur rencontre.
+   */
+  pillars: { backLeft: boolean; backRight: boolean; frontLeft: boolean; frontRight: boolean };
+}
+
+/** Forme de la coque d'un bloc creux, déduite de ses voisins (à recalculer à chaque rebuild). */
+export function getHollowShape(lookup: CellLookup, cell: GridCell): HollowShape {
+  const { x, y, z } = cell;
+  const side = (nx: number, nz: number): HollowSideKind => {
+    if (!hasOccupiedCell(lookup, nx, y, nz)) return 'exterior';
+    return isHollowAt(lookup, nx, y, nz) ? 'open' : 'partition';
+  };
+  const sides: Record<CellFace, HollowSideKind> = {
+    front: side(x, z + 1),
+    back: side(x, z - 1),
+    left: side(x - 1, z),
+    right: side(x + 1, z),
+  };
+  const pillar = (sx: CellFace, sz: CellFace, dx: number, dz: number) =>
+    sides[sx] === 'open' && sides[sz] === 'open' && !isHollowAt(lookup, x + dx, y, z + dz);
+  return {
+    sides,
+    pillars: {
+      backLeft: pillar('left', 'back', -1, -1),
+      backRight: pillar('right', 'back', 1, -1),
+      frontLeft: pillar('left', 'front', -1, 1),
+      frontRight: pillar('right', 'front', 1, 1),
+    },
+  };
 }

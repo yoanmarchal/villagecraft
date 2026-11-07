@@ -8,19 +8,35 @@
  * calculé pour toute la portée. Conçue avec la portée selon X (passage selon
  * Z), tournée de 90° quand les murs porteurs sont de part et d'autre selon Z.
  * Claveaux en saillie sur les deux têtes, clé de voûte plus haute. Si rien
- * n'est bâti au-dessus, le dessus dépend des voisins de l'arche : chemin de
- * ronde crénelé si elle touche une tour, toit à deux pans (faîtage d'un
- * appui à l'autre) si au moins deux bâtiments voisins sont coiffés d'un toit
- * à deux pans, sinon simple tablier dallé.
+ * n'est bâti au-dessus, le dessus dépend des voisins de l'arche : le toit
+ * à deux pans d'un appui qui arrive à ce niveau se prolonge sur l'arche ;
+ * sinon chemin de ronde crénelé si elle touche une tour et que ses appuis
+ * ont des murs à ce niveau (il relie deux murs) ; sinon toit à deux pans
+ * (faîtage d'un appui à l'autre) si au moins deux bâtiments voisins en sont
+ * coiffés ; sinon simple tablier dallé.
  */
 
 import { BlockType } from '../../types';
-import { getColumnTop, getCell, hasOccupiedCell, isIsolatedBlock, isRampart, isTowerColumn } from '../../utils/cellUtils';
+import {
+  getColumnTop,
+  getCell,
+  getCornerRadii,
+  getRidgeAxis,
+  hasOccupiedCell,
+  isGableRoofCell,
+  isIsolatedBlock,
+  isRampart,
+  isTowerColumn,
+  type CellLookup,
+  type CornerRadii,
+} from '../../utils/cellUtils';
 import { shades } from '../../colorPalettes';
-import { archBodyGeo, archVoussoirGeo, archVoussoirMidX } from '../geometryCache';
+import { archBodyGeo, archVoussoirGeo, archVoussoirMidX, cornerFilletGeo } from '../geometryCache';
 import { mul, part, xform, type Part } from '../parts';
 import { gableRoofParts } from './roofCellParts';
-import { crenellatedWalkwayParts, walkwayDeckParts } from './walkwayParts';
+import { crenellatedWalkwayParts, PARAPET_H, WALKWAY_H, walkwayDeckParts } from './walkwayParts';
+import type { RenderSettings } from '../renderSettings';
+import type { GridCell } from '../../types';
 import type { CellContext } from './context';
 
 /** Montée de l'intrados selon la portée (en cases) : l'arc reste surbaissé et laisse une clé épaisse. */
@@ -72,6 +88,7 @@ export function archCellParts(ctx: CellContext): Part[] {
 
   // Rien au-dessus : le dessus dépend des colonnes voisines de l'arche
   // (toutes ses cases, pour un dessus uniforme).
+  let topY = 0.5;
   if (!hasOccupiedCell(lookup, x, y + 1, z)) {
     let besideTower = false;
     const gabledColumns = new Set<string>();
@@ -89,22 +106,102 @@ export function archCellParts(ctx: CellContext): Part[] {
       }
     }
 
-    if (besideTower) {
+    // Ce qu'il y a, à hauteur du dessus de l'arche (y + 1), sur ses deux
+    // appuis (les cases au-delà des deux bouts de la portée).
+    const spanAxis = spanAlongX ? 'x' : 'z';
+    // Axes des toits à deux pans d'appui qui arrivent à ce niveau.
+    const continuingAxes: Array<'x' | 'z'> = [];
+    let walkwayBlocked = false; // un appui n'y a pas de mur : un chemin de ronde n'y mènerait nulle part
+    for (const k of [-before - 1, after + 1]) {
+      const above = getCell(lookup, x + dx * k, y + 1, z + dz * k);
+      if (!above?.isOccupied) {
+        walkwayBlocked = true;
+      } else if (above.type === BlockType.Roof) {
+        if (isGableRoofCell(lookup, above)) {
+          continuingAxes.push(getRidgeAxis(lookup, above));
+          walkwayBlocked = true;
+        } else if (isIsolatedBlock(lookup, above)) {
+          walkwayBlocked = true; // pied de la flèche d'une tour, pas un mur
+        }
+      }
+    }
+
+    // Pignon aux bouts du toit seulement si rien n'est bâti contre, à hauteur
+    // du toit. Faîtage selon la portée : pignons aux bouts de l'arche (pas
+    // entre deux cases d'une même arche). Faîtage en travers : pignons sur
+    // les deux têtes de l'arche.
+    const endFree = (k: number) => !hasOccupiedCell(lookup, x + dx * k, y + 1, z + dz * k);
+    const headFree = (s: number) => !hasOccupiedCell(lookup, x + dz * s, y + 1, z + dx * s);
+    const archRoof = (axis: 'x' | 'z') => gableRoofParts(settings, axis === spanAxis
+      ? { axis, gablePos: after === 0 && endFree(1), gableNeg: before === 0 && endFree(-1), baseY: 1 }
+      : { axis, gablePos: headFree(1), gableNeg: headFree(-1), baseY: 1 });
+
+    if (continuingAxes.length > 0) {
+      // Le toit de l'appui continue par-dessus l'arche (et bute contre une
+      // tour éventuelle) : pas de merlons de pierre adossés à des tuiles.
+      // Même orientation que le toit de l'appui (celui qui suit la portée en
+      // priorité) : un toit d'arche en travers butait, bout ouvert, contre le
+      // pan descendant de ce toit — un trou.
+      parts.push(...archRoof(continuingAxes.includes(spanAxis) ? spanAxis : continuingAxes[0]));
+    } else if (besideTower && !walkwayBlocked) {
+      // Chemin de ronde : il relie deux murs (tour, mur plus haut, courtine).
       parts.push(...crenellatedWalkwayParts(G, 0.5, settings));
+      topY = 0.5 + WALKWAY_H + PARAPET_H;
     } else if (gabledColumns.size >= 2) {
-      // Faîtage d'un appui à l'autre ; pignon aux bouts de l'arche seulement
-      // si rien n'est bâti contre, à hauteur du toit.
-      const endFree = (k: number) => !hasOccupiedCell(lookup, x + dx * k, y + 1, z + dz * k);
-      parts.push(...gableRoofParts(settings, {
-        axis: spanAlongX ? 'x' : 'z',
-        gablePos: after === 0 && endFree(1),
-        gableNeg: before === 0 && endFree(-1),
-        baseY: 1,
-      }));
+      // Faîtage d'un appui à l'autre.
+      parts.push(...archRoof(spanAxis));
     } else {
       parts.push(...walkwayDeckParts(G, 0.5, settings.wallBaseColor));
+      topY = 0.5 + WALKWAY_H;
     }
   }
 
+  // Appuis : l'arche bute de toute sa largeur contre ses voisins, mais une
+  // tour garde ses coins arrondis sur toute sa hauteur — il resterait un jour
+  // vertical dans chaque coin. On les comble, jusqu'en haut du parapet.
+  if (before === 0) parts.push(...abutmentFillets(lookup, settings, cell, -dx, -dz, topY, stone));
+  if (after === 0) parts.push(...abutmentFillets(lookup, settings, cell, dx, dz, topY, stone));
+
+  return parts;
+}
+
+/**
+ * Raccords d'angle entre l'arche et son appui situé dans la direction
+ * (ddx, ddz) : pour chacun des deux coins de l'appui tournés vers l'arche,
+ * comble l'espace entre le plan de la face de l'arche et l'arrondi du coin
+ * (`cornerFilletGeo`), de y = −0.5 à `topY`. Ne déborde jamais du contour
+ * de l'appui vers l'intérieur : une tour est creuse.
+ */
+function abutmentFillets(
+  lookup: CellLookup,
+  settings: RenderSettings,
+  cell: GridCell,
+  ddx: number,
+  ddz: number,
+  topY: number,
+  mat: { roughness: number },
+): Part[] {
+  const support = getCell(lookup, cell.x + ddx, cell.y, cell.z + ddz);
+  if (!support?.isOccupied || support.type === BlockType.Arch || support.type === BlockType.Roof) return [];
+  const radii = getCornerRadii(lookup, support, settings);
+
+  const parts: Part[] = [];
+  // Les deux coins de l'appui sur sa face tournée vers l'arche, dans le
+  // repère de l'arche : (cx, cz), et la direction (sx, sz) vers laquelle le
+  // vide s'ouvre (vers l'appui, et vers le milieu de la face).
+  for (const t of [-1, 1] as const) {
+    const [cx, cz] = ddx !== 0 ? [ddx * 0.5, t * 0.5] : [t * 0.5, ddz * 0.5];
+    // Coin correspondant dans le repère de l'appui (côté opposé à la direction).
+    const [lx, lz] = ddx !== 0 ? [-ddx, t] : [t, -ddz];
+    const name = `${lz > 0 ? 'front' : 'back'}${lx > 0 ? 'Right' : 'Left'}` as keyof Omit<CornerRadii, 'max' | 'uniform'>;
+    const r = radii[name];
+    if (r < 0.01) continue;
+    const sx = ddx !== 0 ? ddx : -t;
+    const sz = ddx !== 0 ? -t : ddz;
+    // cornerFilletGeo s'étend vers (+X, +Z) : rotation qui l'envoie vers (sx, sz).
+    const rotation = sx > 0 ? (sz > 0 ? 0 : Math.PI / 2) : sz > 0 ? -Math.PI / 2 : Math.PI;
+    parts.push(part(cornerFilletGeo(r, +(topY + 0.5).toFixed(3)), settings.wallBaseColor, mat,
+      xform([cx, -0.5, cz], [0, rotation, 0])));
+  }
   return parts;
 }

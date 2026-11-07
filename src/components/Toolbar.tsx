@@ -158,10 +158,10 @@ export function Toolbar() {
       </div>
       <div className="toolbar" role="toolbar" aria-label="Village tools">
         <div className="tool-group tool-group--segmented">
-          <ToolButton label="Build (left click)" pressed={toolMode === 'build'} onClick={() => setToolMode('build')}>
+          <ToolButton label="Build (B)" pressed={toolMode === 'build'} onClick={() => setToolMode('build')}>
             <BuildIcon />
           </ToolButton>
-          <ToolButton label="Demolish (or right click)" pressed={toolMode === 'demolish'} onClick={() => setToolMode('demolish')}>
+          <ToolButton label="Demolish (D, or right click)" pressed={toolMode === 'demolish'} onClick={() => setToolMode('demolish')}>
             <DemolishIcon />
           </ToolButton>
         </div>

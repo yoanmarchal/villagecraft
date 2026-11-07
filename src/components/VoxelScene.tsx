@@ -9,9 +9,10 @@ import { GradientBackground } from './GradientBackground';
 import { GroundTile } from './GroundTile';
 import { Bloom, EffectComposer, Noise, Vignette } from '@react-three/postprocessing'
 import { useControlStore, type ControlState } from '../store/controlStore';
-import { lazy, Suspense, useEffect, useRef, useState, type ComponentType } from 'react';
+import { lazy, Suspense, useEffect, useMemo, useRef, useState, type ComponentType, type RefObject } from 'react';
 import { useUiStore } from '../store/uiStore';
-import { initialCameraScale, sceneScale, shadowCameraHalfSize } from '../config/gridConfig';
+import { GRID_HEIGHT, initialCameraScale, sceneScale, shadowCameraHalfSize } from '../config/gridConfig';
+import { raycastVoxels, targetColumn } from '../utils/voxelRaycast';
 
 // Chargé seulement quand le moniteur est activé (Debug) : hors du bundle initial.
 const Perf = lazy(() => import('r3f-perf').then((module) => ({ default: module.Perf })));
@@ -33,6 +34,54 @@ function initialCameraPosition(gridSize: number): [number, number, number] {
 
 /** Au-delà de ce déplacement (px) entre pointerdown et pointerup, c'est un drag caméra, pas un clic. */
 const CLICK_MAX_DRAG_PX = 5;
+
+/**
+ * Côté de la surface de clic invisible. Bien plus grande que la grille : un
+ * rayon qui touche un bâtiment (voir raycastVoxels) doit aussi rencontrer le
+ * plan, même quand il passe au ras d'une tour en bord de grille.
+ */
+const CLICK_PLANE_SIZE = 1000;
+
+/** Pointeurs enfoncés, et si le geste en cours en a compté plusieurs (pinch). */
+interface GestureState {
+  active: Set<number>;
+  multiTouch: boolean;
+}
+
+/**
+ * Suit les pointeurs enfoncés sur le canvas, en phase de capture sur
+ * `window` : passe avant les handlers R3F, et voit aussi les pointerup
+ * capturés par OrbitControls. Un geste à plusieurs doigts (pinch) n'est
+ * jamais un tap, même si l'un des doigts se relève là où il s'est posé.
+ */
+function GestureTracker({ gesture }: { gesture: RefObject<GestureState> }) {
+  const gl = useThree((state) => state.gl);
+
+  useEffect(() => {
+    const root = gl.domElement.parentElement ?? gl.domElement;
+    const onDown = (event: PointerEvent) => {
+      if (!(event.target instanceof Node) || !root.contains(event.target)) return;
+      const state = gesture.current;
+      if (state.active.size === 0) state.multiTouch = false;
+      state.active.add(event.pointerId);
+      if (state.active.size > 1) state.multiTouch = true;
+    };
+    const onUp = (event: PointerEvent) => gesture.current.active.delete(event.pointerId);
+    window.addEventListener('pointerdown', onDown, true);
+    window.addEventListener('pointerup', onUp, true);
+    window.addEventListener('pointercancel', onUp, true);
+    return () => {
+      window.removeEventListener('pointerdown', onDown, true);
+      window.removeEventListener('pointerup', onUp, true);
+      window.removeEventListener('pointercancel', onUp, true);
+    };
+  }, [gl, gesture]);
+
+  return null;
+}
+
+/** Clé numérique d'une case (côté ≤ 64 sur chaque axe). */
+const voxelKey = (x: number, y: number, z: number) => x + 64 * (y + 64 * z);
 
 interface VoxelSceneProps {
   cells: GridCell[];
@@ -186,42 +235,68 @@ export function VoxelScene({
       cancelled = true;
     };
   }, [aoEnabled, AmbientOcclusion]);
+  const showAo = aoEnabled && AmbientOcclusion !== null;
 
   // Position écran du pointerdown : le clic gauche/droit glissé sert aussi à
   // OrbitControls (rotation/pan), on n'agit donc qu'au pointerup, et
   // seulement si le pointeur n'a quasiment pas bougé entre-temps.
-  const pointerDownRef = useRef<{ x: number; y: number; button: number } | null>(null);
+  const pointerDownRef = useRef<{ x: number; y: number; button: number; pointerId: number } | null>(null);
+  const gestureRef = useRef<GestureState>({ active: new Set(), multiTouch: false });
 
-  const toGridCoords = (event: ThreeEvent<PointerEvent>) => ({
-    gridX: Math.floor(event.point.x + gridWidth / 2),
-    gridZ: Math.floor(event.point.z + gridDepth / 2),
-  });
+  // Cases occupées (caps de toit et arches auto compris), pour viser le bloc sous le curseur.
+  const solidCells = useMemo(() => new Set(cells.map(({ x, y, z }) => voxelKey(x, y, z))), [cells]);
+
+  /**
+   * Colonne visée : le premier bloc que traverse le rayon du pointeur (sur
+   * un flanc, en construction, la colonne voisine — on bâtit contre le mur) ;
+   * à défaut, la case du sol sous le pointeur.
+   */
+  const pickColumn = (event: ThreeEvent<PointerEvent>, build: boolean) => {
+    const { origin, direction } = event.ray;
+    const hit = raycastVoxels(
+      [origin.x + gridWidth / 2, origin.y, origin.z + gridDepth / 2],
+      [direction.x, direction.y, direction.z],
+      [gridWidth, GRID_HEIGHT, gridDepth],
+      (x, y, z) => solidCells.has(voxelKey(x, y, z)),
+    );
+    if (hit) {
+      const { x, z } = targetColumn(hit, build, gridWidth, gridDepth);
+      return { gridX: x, gridZ: z };
+    }
+    return {
+      gridX: Math.floor(event.point.x + gridWidth / 2),
+      gridZ: Math.floor(event.point.z + gridDepth / 2),
+    };
+  };
 
   const handlePointerMove = (event: ThreeEvent<PointerEvent>) => {
     event.stopPropagation();
-    const { gridX, gridZ } = toGridCoords(event);
+    const { gridX, gridZ } = pickColumn(event, toolMode === 'build');
     onPreviewMove(gridX, gridZ);
   };
 
   const handlePointerDown = (event: ThreeEvent<PointerEvent>) => {
     event.stopPropagation();
-    pointerDownRef.current = { x: event.nativeEvent.clientX, y: event.nativeEvent.clientY, button: event.button };
+    const { clientX, clientY, pointerId } = event.nativeEvent;
+    pointerDownRef.current = { x: clientX, y: clientY, button: event.button, pointerId };
   };
 
   const handlePointerUp = (event: ThreeEvent<PointerEvent>) => {
     event.stopPropagation();
     const down = pointerDownRef.current;
     pointerDownRef.current = null;
-    if (!down || down.button !== event.button) return;
+    if (!down || down.button !== event.button || down.pointerId !== event.nativeEvent.pointerId) return;
+    if (gestureRef.current.multiTouch) return;
 
     const dragDistance = Math.hypot(event.nativeEvent.clientX - down.x, event.nativeEvent.clientY - down.y);
     if (dragDistance > CLICK_MAX_DRAG_PX) return;
 
-    const { gridX, gridZ } = toGridCoords(event);
+    // Clic droit : toujours démolir. Clic gauche / tap : selon l'outil actif.
+    const demolish = event.button === 2 || (event.button === 0 && toolMode === 'demolish');
+    const { gridX, gridZ } = pickColumn(event, !demolish);
     onPreviewMove(gridX, gridZ);
 
-    // Clic droit : toujours démolir. Clic gauche / tap : selon l'outil actif.
-    if (event.button === 2 || (event.button === 0 && toolMode === 'demolish')) {
+    if (demolish) {
       onRemoveColumn(gridX, gridZ);
       return;
     }
@@ -275,6 +350,7 @@ export function VoxelScene({
         shadow-camera-far={100}
       />
       <ScreenshotBridge />
+      <GestureTracker gesture={gestureRef} />
       <GroundTile width={gridWidth} depth={gridDepth} grassColor={groundColor} roughness={groundRoughness} />
       {/* Quadrillage discret, juste au-dessus de l'herbe (évite le z-fighting). */}
       <gridHelper
@@ -284,7 +360,8 @@ export function VoxelScene({
         material-opacity={0.08}
         material-depthWrite={false}
       />
-      {/* Surface de clic : invisible (ni couleur ni profondeur), seulement raycastée. */}
+      {/* Surface de clic : invisible (ni couleur ni profondeur), seulement
+          raycastée — c'est son rayon qui sert ensuite à viser les blocs. */}
       <mesh
         rotation={[-Math.PI / 2, 0, 0]}
         onPointerMove={handlePointerMove}
@@ -292,7 +369,7 @@ export function VoxelScene({
         onPointerUp={handlePointerUp}
         onPointerOut={onPreviewLeave}
       >
-        <planeGeometry args={[gridWidth, gridDepth]} />
+        <planeGeometry args={[CLICK_PLANE_SIZE, CLICK_PLANE_SIZE]} />
         <meshBasicMaterial colorWrite={false} depthWrite={false} />
       </mesh>
       <VillageMeshes cells={cells} toWorldPosition={toWorldPosition} gridWidth={gridWidth} gridDepth={gridDepth} />
@@ -310,10 +387,16 @@ export function VoxelScene({
         minDistance={minDistance}
         maxDistance={maxDistance * scale}
       />
-      <EffectComposer>
+      {/* `key` : le composer est recréé quand la passe AO apparaît/disparaît.
+          N8AO réclame une depth texture ; ajoutée à un composer qui a déjà
+          rendu (chunk AO arrivé après les premières frames, ou AO réactivée),
+          le renderbuffer MSAA reste en DEPTH24 alors que la texture est en
+          DEPTH32F, et la résolution MSAA (blitFramebuffer) échoue à chaque
+          frame sur les pilotes stricts (Metal/macOS) : GL_INVALID_OPERATION. */}
+      <EffectComposer key={showAo ? 'ao' : 'plain'}>
         {/* Occlusion ambiante en premier : elle doit assombrir la scène avant
             que bloom/vignette ne s'appliquent. */}
-        {aoEnabled && AmbientOcclusion ? <AmbientOcclusion intensity={aoIntensity} radius={aoRadius} /> : <></>}
+        {showAo && AmbientOcclusion ? <AmbientOcclusion intensity={aoIntensity} radius={aoRadius} /> : <></>}
         {bloomEnabled ? (
           <Bloom
             mipmapBlur

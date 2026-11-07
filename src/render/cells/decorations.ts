@@ -105,15 +105,25 @@ export function quoinParts(ctx: CellContext, baseColor: string): Part[] {
     const r = radii[corner];
 
     if (r < SHARP_CORNER_RADIUS) {
-      const posX1 = dx * (0.5 + protrusion - w1x / 2);
+      // Bloc creux : le côté long d'une pierre qui file le long d'un côté
+      // ouvert (voisin creux) traverserait le mur et saillirait à l'intérieur.
+      // Ce côté n'est jamais visible de dehors : on le ramène à l'épaisseur du mur.
+      const xOpen = ctx.hollow?.sides[dx > 0 ? 'right' : 'left'] === 'open';
+      const zOpen = ctx.hollow?.sides[dz > 0 ? 'front' : 'back'] === 'open';
+      const ax = zOpen ? w1z : w1x; // pierre A : longue selon X
+      const bz = xOpen ? w2x : w2z; // pierre B : longue selon Z
+      const geoA = zOpen ? roundedBoxGeo(ax, 0.18, w1z, 0.01, 2) : geoSquareA;
+      const geoB = xOpen ? roundedBoxGeo(w2x, 0.18, bz, 0.01, 2) : geoSquareB;
+
+      const posX1 = dx * (0.5 + protrusion - ax / 2);
       const posZ1 = dz * (0.5 + protrusion - w1z / 2);
       const posX2 = dx * (0.5 + protrusion - w2x / 2);
-      const posZ2 = dz * (0.5 + protrusion - w2z / 2);
+      const posZ2 = dz * (0.5 + protrusion - bz / 2);
 
       parts.push(
-        part(geoSquareA, quoinColor, mat, xform([posX1, levels[0], posZ1])),
-        part(geoSquareB, quoinColor, mat, xform([posX2, levels[1], posZ2])),
-        part(geoSquareA, quoinColor, mat, xform([posX1, levels[2], posZ1])),
+        part(geoA, quoinColor, mat, xform([posX1, levels[0], posZ1])),
+        part(geoB, quoinColor, mat, xform([posX2, levels[1], posZ2])),
+        part(geoA, quoinColor, mat, xform([posX1, levels[2], posZ1])),
       );
       continue;
     }

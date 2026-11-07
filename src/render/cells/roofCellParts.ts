@@ -3,11 +3,15 @@
  * Cas 1 : tour isolée → toiture en ardoise à coyau épousant le contour du mur
  *         (ou, pour ~1 tour sur 3, couronnement crénelé sans toit).
  * Cas 1 bis : courtine entre deux tours → parapet crénelé + chemin de ronde.
- * Cas 2 : toit pentu à deux pans, faîtage le long de l'axe des voisins.
+ * Cas 2 : toit pentu à deux pans, faîtage selon le bâtiment (getRidgeAxis) ;
+ *         demi-toit d'aile où une aile perpendiculaire arrive (jonction).
  */
 
 import {
+  getCell,
+  getRidgeAxis,
   getRoofConfig,
+  isGableRoofCell,
   getRoundedRectContourPoints,
   hasOccupiedCell,
   sampleContourPerimeter,
@@ -39,6 +43,8 @@ import {
 const RUN = 0.5;                                      // course horizontale = demi-cellule
 const PANEL_LEN = 1.08;                               // longueur de pan le long du faîtage
 const PANEL_T = 0.055;                                // épaisseur de pan
+const GABLE_Z = 0.466;
+const FLUE_W = 0.14;                                  // section de la souche de cheminée                                // plan médian du remplissage de pignon
 
 // Décalages Z des liteaux (4 rangées de tuiles le long du faîtage)
 const RIB_OFFSETS = [-0.40, -0.13, 0.13, 0.40];
@@ -56,15 +62,57 @@ export function roofCellParts(ctx: CellContext): Part[] {
     return rampartParts(ctx);
   }
 
-  // CAS 2 — Toit pentu à deux pans, faîtage le long de l'axe des voisins.
-  const roofConfig = getRoofConfig(lookup, cell);
-  return gableRoofParts(settings, {
-    axis: roofConfig.axis,
-    gablePos: roofConfig.axis === 'z' ? !roofConfig.hasFront : !roofConfig.hasRight,
-    gableNeg: roofConfig.axis === 'z' ? !roofConfig.hasBack : !roofConfig.hasLeft,
-    // Cheminée déterministe : ~33 % des cellules.
-    chimney: (cell.x + cell.z) % 3 === 0 ? (cell.x % 2 === 0 ? 0.14 : -0.14) : null,
+  // CAS 2 — Toit pentu à deux pans. Faîtage selon le bâtiment (getRidgeAxis) :
+  // parallèles dans un bloc, le long d'une aile.
+  const { hasLeft, hasRight, hasFront, hasBack } = getRoofConfig(lookup, cell);
+  const axis = getRidgeAxis(lookup, cell);
+  const across = axis === 'x' ? 'z' : 'x';
+  // Demi-ailes : voisins perpendiculaires dont le faîtage pointe vers la case.
+  const stubSides = ([1, -1] as const).filter((side) => {
+    const [nx, nz] = across === 'x' ? [cell.x + side, cell.z] : [cell.x, cell.z + side];
+    const neighbour = getCell(lookup, nx, cell.y, nz);
+    return isGableRoofCell(lookup, neighbour) && getRidgeAxis(lookup, neighbour!) === across;
   });
+  const gablePos = axis === 'z' ? !hasFront : !hasRight;
+  const gableNeg = axis === 'z' ? !hasBack : !hasLeft;
+  const parts = gableRoofParts(settings, {
+    axis,
+    gablePos,
+    gableNeg,
+    // Pans selon ±X local : monde ±X si faîtage selon Z ; si faîtage selon X
+    // (rotation de 90°), +X local = −Z monde (back), −X local = +Z (front).
+    eavePos: axis === 'z' ? !hasRight : !hasBack,
+    eaveNeg: axis === 'z' ? !hasLeft : !hasFront,
+    // Conduits des cheminées de la colonne (buildVillage), à l'aplomb des hottes.
+    flues: ctx.flues,
+  });
+
+  // CAS 2 bis — Jonction : une aile perpendiculaire arrive sur un pan de la
+  // case (le faîtage du voisin pointe vers elle). Elle butait, bout ouvert à
+  // pleine hauteur, contre ce pan descendant : un trou. On prolonge l'aile
+  // jusqu'au faîtage de la case (demi-toit) ; leurs pans se coupent en noues.
+  // Rien de tel entre deux toits parallèles d'un même bloc.
+  // Pans de la demi-aile (±X local de son groupe) tournés vers un pignon du
+  // toit principal : faîtage d'aile selon Z → ±X local = ±X monde ; selon X
+  // (groupe tourné de 90°) → +X local = −Z monde.
+  const towardGablePos = across === 'z' ? gablePos : gableNeg;
+  const towardGableNeg = across === 'z' ? gableNeg : gablePos;
+  for (const side of stubSides) {
+    parts.push(...gableRoofParts(settings, {
+      axis: across,
+      extent: side > 0 ? 'pos' : 'neg',
+      gablePos: false,
+      gableNeg: false,
+      // Coin en L : côté pignon, le pan s'arrête dans l'épaisseur du pignon
+      // (sinon il passait devant son pied, liteaux et bandeau compris).
+      panRunPos: towardGablePos ? GABLE_Z - 0.03 : RUN,
+      panRunNeg: towardGableNeg ? GABLE_Z - 0.03 : RUN,
+      eavePos: !towardGablePos && (across === 'z' ? !hasRight : !hasBack),
+      eaveNeg: !towardGableNeg && (across === 'z' ? !hasLeft : !hasFront),
+    }));
+  }
+
+  return parts;
 }
 
 /**
@@ -75,12 +123,34 @@ export function roofCellParts(ctx: CellContext): Part[] {
  */
 export function gableRoofParts(
   settings: RenderSettings,
-  { axis, gablePos, gableNeg, chimney = null, baseY = 0 }: {
+  { axis, gablePos, gableNeg, eavePos = true, eaveNeg = true, flues = [], baseY = 0, extent = 'full', panRunPos = RUN, panRunNeg = RUN }: {
     axis: 'x' | 'z';
+    /**
+     * Portion de la cellule couverte le long du faîtage : toute la case, ou
+     * seulement la demi-case côté +axe / −axe — l'aile d'une jonction en T,
+     * qui s'arrête au faîtage du toit principal (voir roofCellParts).
+     */
+    extent?: 'full' | 'pos' | 'neg';
     gablePos: boolean;
     gableNeg: boolean;
-    /** Décalage X local de la cheminée, ou null pour aucune. */
-    chimney?: number | null;
+    /**
+     * Bandeau d'égout côté +X / −X local. À omettre quand le pan bute contre
+     * un voisin (mur qui continue plus haut) : le bandeau pend 5 cm sous la
+     * base du toit et déborde dans la cellule voisine — invisible dans un
+     * bloc plein, mais il pendait dans les pièces des blocs creux.
+     */
+    eavePos?: boolean;
+    eaveNeg?: boolean;
+    /**
+     * Portée horizontale du pan +X / −X local, depuis le faîtage (RUN = jusqu'à
+     * l'égout). Raccourcie, le pan s'arrête avant : la demi-aile d'un coin en
+     * L s'arrête dans l'épaisseur du pignon du toit principal, au lieu de
+     * passer devant son pied jusqu'à la façade.
+     */
+    panRunPos?: number;
+    panRunNeg?: number;
+    /** Conduits de cheminée, en coordonnées de cellule (non tournées). */
+    flues?: Array<{ x: number; z: number }>;
     baseY?: number;
   },
 ): Part[] {
@@ -102,23 +172,39 @@ export function gableRoofParts(
   const needGablePos = gablePos;
   const needGableNeg = gableNeg;
 
+  // Étendue le long du faîtage (Z local) : débord de (PANEL_LEN − 1) / 2 aux
+  // bords de la case, aucun au milieu (une demi-aile s'arrête au faîtage).
+  const OVERHANG = (PANEL_LEN - 1) / 2;
+  const z0 = extent === 'pos' ? 0 : -0.5;
+  const z1 = extent === 'neg' ? 0 : 0.5;
+  const zA = z0 - (z0 === -0.5 ? OVERHANG : 0);
+  const zB = z1 + (z1 === 0.5 ? OVERHANG : 0);
+  const panelLen = +(zB - zA).toFixed(4);
+  const zMid = (zA + zB) / 2;
+
   const parts: Part[] = [];
-  const panelGeo = boxGeo(SLOPE_LEN, PANEL_T, PANEL_LEN);
+  const panelGeo = boxGeo(SLOPE_LEN, PANEL_T, panelLen);
   const ribGeo = boxGeo(SLOPE_LEN, 0.022, 0.042);
 
   // ── Pans droit (+X) et gauche (−X) avec liteaux ──
   for (const side of [1, -1] as const) {
-    const panelM = mul(G, xform([side * RUN / 2, CENTER_Y, 0], [0, 0, -side * SLOPE_ANG]));
-    parts.push(part(panelGeo, side === 1 ? roofColor : colorLight, { roughness: 0.84 }, panelM));
+    const run = side === 1 ? panRunPos : panRunNeg;
+    const full = run >= RUN;
+    const slopeLen = full ? SLOPE_LEN : +(SLOPE_LEN * run / RUN).toFixed(4);
+    // Centre du pan : à mi-portée, depuis le faîtage.
+    const panelM = mul(G, xform([side * run / 2, RIDGE_Y - (RISE * run / RUN) / 2, zMid], [0, 0, -side * SLOPE_ANG]));
+    parts.push(part(full ? panelGeo : boxGeo(slopeLen, PANEL_T, panelLen), side === 1 ? roofColor : colorLight, { roughness: 0.84 }, panelM));
+    const sideRibGeo = full ? ribGeo : boxGeo(slopeLen, 0.022, 0.042);
     for (const z of RIB_OFFSETS) {
-      parts.push(part(ribGeo, colorDark, { roughness: 0.92 },
-        mul(panelM, xform([0, PANEL_T / 2 + 0.012, z]))));
+      if (z < z0 || z > z1) continue;
+      parts.push(part(sideRibGeo, colorDark, { roughness: 0.92 },
+        mul(panelM, xform([0, PANEL_T / 2 + 0.012, z - zMid]))));
     }
   }
 
   // ── Faîtage + embouts ──
-  parts.push(part(boxGeo(0.14, 0.056, PANEL_LEN + 0.02), colorDark, { roughness: 0.89 },
-    mul(G, xform([0, RIDGE_Y + 0.028, 0]))));
+  parts.push(part(boxGeo(0.14, 0.056, +(panelLen + 0.02).toFixed(4)), colorDark, { roughness: 0.89 },
+    mul(G, xform([0, RIDGE_Y + 0.028, zMid]))));
   if (needGablePos) {
     parts.push(part(boxGeo(0.14, 0.056, 0.06), colorDark, { roughness: 0.89 },
       mul(G, xform([0, RIDGE_Y + 0.028, PANEL_LEN / 2 + 0.01]))));
@@ -129,41 +215,57 @@ export function gableRoofParts(
   }
 
   // ── Bandeaux d'égout (fascias) ──
-  const eaveGeo = boxGeo(0.044, 0.064, PANEL_LEN + 0.06);
-  parts.push(
-    part(eaveGeo, colorDark, { roughness: 0.89 }, mul(G, xform([0.518, EAVE_Y - 0.020, 0]))),
-    part(eaveGeo, colorDark, { roughness: 0.89 }, mul(G, xform([-0.518, EAVE_Y - 0.020, 0]))),
-  );
+  // Même longueur que les pans : il arrive au nu du bandeau bas de pignon
+  // (0.54). Plus long de 6 cm, il dépassait de 3 cm à chaque angle de pignon.
+  const eaveGeo = boxGeo(0.044, 0.064, panelLen);
+  if (eavePos) parts.push(part(eaveGeo, colorDark, { roughness: 0.89 }, mul(G, xform([0.518, EAVE_Y - 0.020, zMid]))));
+  if (eaveNeg) parts.push(part(eaveGeo, colorDark, { roughness: 0.89 }, mul(G, xform([-0.518, EAVE_Y - 0.020, zMid]))));
 
   // ── Pignons ──
   const bargeGeo = boxGeo(SLOPE_LEN, 0.04, 0.05);
-  const gableBottomGeo = boxGeo(1.06, 0.064, 0.044);
+  // Bandeau bas de pignon : à la profondeur des bandeaux d'égout, 4 mm en
+  // avant (nu à 0.544). Pile au nu des pans et des bandeaux latéraux (0.54),
+  // leurs faces se confondaient et le coin du pan, taillé en biais, perçait
+  // le bandeau en pointe à chaque angle de pignon.
+  const BAND_Z = 0.522;
+  // Côté libre (bandeau d'égout présent) : il déborde comme lui ; côté voisin :
+  // il s'arrête au bord de la case, sans chevaucher le bandeau d'à côté.
+  const bandX0 = eaveNeg ? -0.53 : -0.5;
+  const bandX1 = eavePos ? 0.53 : 0.5;
+  const gableBottomGeo = boxGeo(+(bandX1 - bandX0).toFixed(4), 0.064, 0.044);
   const addGable = (sign: 1 | -1) => {
     const zEnd = sign * 0.502;
     parts.push(
       // Remplissage triangulaire
       part(gableGeo(EAVE_Y, RIDGE_Y), roofColor, { roughness: 0.88 },
-        mul(G, xform([0, 0, sign * 0.466], [0, sign === 1 ? 0 : Math.PI, 0]))),
+        mul(G, xform([0, 0, sign * GABLE_Z], [0, sign === 1 ? 0 : Math.PI, 0]))),
       // Rives (barge boards) le long des pentes
       part(bargeGeo, colorDark, { roughness: 0.91 },
         mul(G, xform([RUN / 2, CENTER_Y, zEnd], [0, 0, -SLOPE_ANG]))),
       part(bargeGeo, colorDark, { roughness: 0.91 },
         mul(G, xform([-RUN / 2, CENTER_Y, zEnd], [0, 0, SLOPE_ANG]))),
-      // Bandeau bas de pignon
-      part(gableBottomGeo, colorDark, { roughness: 0.89 },
-        mul(G, xform([0, EAVE_Y - 0.020, zEnd]))),
     );
+    // Bandeau bas de pignon
+    parts.push(part(gableBottomGeo, colorDark, { roughness: 0.89 },
+      mul(G, xform([(bandX0 + bandX1) / 2, EAVE_Y - 0.020, sign * BAND_Z]))));
   };
-  if (needGablePos) addGable(1);
-  if (needGableNeg) addGable(-1);
+  if (needGablePos && z1 === 0.5) addGable(1);
+  if (needGableNeg && z0 === -0.5) addGable(-1);
 
-  // ── Cheminée ──
-  if (chimney !== null) {
-    const C = mul(G, xform([chimney, RIDGE_Y - 0.06, 0.06]));
+  // ── Conduits de cheminée ──
+  // Souche à l'aplomb de la hotte : elle part sous le pan (au point le plus
+  // bas qu'elle traverse, côté égout) et dépasse le faîtage, comme une vraie
+  // souche. Jamais sous le plancher du toit (la pièce du dessous).
+  for (const { x, z } of flues) {
+    const acrossRidge = Math.min(Math.abs(axis === 'z' ? x : z) + FLUE_W / 2, RUN);
+    const bottom = Math.max(EAVE_Y + 0.01, RIDGE_Y - (RISE * acrossRidge) / RUN - 0.04);
+    const top = RIDGE_Y + 0.17;
+    const height = +(top - bottom).toFixed(3);
+    const C = xform([x, baseY + top - height / 2, z]);
     parts.push(
-      part(boxGeo(0.14, 0.46, 0.14), '#a09080', { roughness: 0.93 }, C.clone()),
-      part(boxGeo(0.19, 0.04, 0.19), '#7a6a5a', { roughness: 0.91 }, mul(C, xform([0, 0.25, 0]))),
-      part(cylinderGeo(0.034, 0.042, 0.09, 8), '#a05a42', { roughness: 0.82 }, mul(C, xform([0, 0.31, 0]))),
+      part(boxGeo(FLUE_W, height, FLUE_W), '#a09080', { roughness: 0.93 }, C.clone()),
+      part(boxGeo(0.19, 0.04, 0.19), '#7a6a5a', { roughness: 0.91 }, mul(C, xform([0, height / 2 + 0.02, 0]))),
+      part(cylinderGeo(0.034, 0.042, 0.09, 8), '#a05a42', { roughness: 0.82 }, mul(C, xform([0, height / 2 + 0.08, 0]))),
     );
   }
 

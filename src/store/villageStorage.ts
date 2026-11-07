@@ -17,6 +17,23 @@ export interface SavedVillage {
 const isSavedBlock = (value: unknown): value is SavedBlock =>
   Array.isArray(value) && value.length === 3 && value.every(Number.isInteger);
 
+/**
+ * Retire les blocs qui flotteraient : un clic empile toujours depuis le sol,
+ * donc un bloc réel a toute sa colonne occupée en dessous. Seuls un lien de
+ * partage forgé ou une sauvegarde abîmée peuvent en contenir. L'ordre de
+ * pose est conservé (il n'est pas forcément de bas en haut : un cap de toit
+ * promu en mur reçoit son numéro après le bloc posé dessus).
+ */
+export function dropFloatingBlocks(blocks: SavedBlock[]): SavedBlock[] {
+  const occupied = new Set(blocks.map((block) => block.join(',')));
+  return blocks.filter(([x, y, z]) => {
+    for (let below = 0; below < y; below += 1) {
+      if (!occupied.has(`${x},${below},${z}`)) return false;
+    }
+    return true;
+  });
+}
+
 export function loadVillage(): SavedVillage | null {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
@@ -25,7 +42,7 @@ export function loadVillage(): SavedVillage | null {
     if (data?.version !== VERSION || !Number.isInteger(data.gridSize) || !Array.isArray(data.blocks)) {
       return null;
     }
-    return { gridSize: data.gridSize, blocks: data.blocks.filter(isSavedBlock) };
+    return { gridSize: data.gridSize, blocks: dropFloatingBlocks(data.blocks.filter(isSavedBlock)) };
   } catch {
     return null;
   }
