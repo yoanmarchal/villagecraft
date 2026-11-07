@@ -26,9 +26,11 @@ function hits(geo: THREE.BufferGeometry, origin: [number, number, number], dir: 
 }
 
 describe('hollowShellGeo', () => {
-  it('produit une géométrie non indexée avec seulement position + normal, partagée par clé', () => {
+  it('produit une géométrie indexée avec seulement position + normal, partagée par clé', () => {
     const geo = hollowShellGeo(SQUARE, shape(), []);
-    expect(geo.index).toBeNull();
+    // Sommets soudés (getGeo) : chaque sommet sert en moyenne à plusieurs triangles.
+    expect(geo.index).not.toBeNull();
+    expect(geo.index!.count).toBeGreaterThan(geo.getAttribute('position').count);
     expect(Object.keys(geo.attributes).sort()).toEqual(['normal', 'position']);
     expect(geo.getAttribute('position').count).toBeGreaterThan(0);
     expect(hollowShellGeo(SQUARE, shape(), [])).toBe(geo);

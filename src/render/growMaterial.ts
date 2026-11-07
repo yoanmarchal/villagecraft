@@ -4,10 +4,10 @@
  *
  * Le mesh du village est un seul BufferGeometry fusionné (voir buildVillage.ts),
  * donc on ne peut pas animer chaque bloc via sa transform d'objet : chaque
- * vertex porte à la place le pivot (`aCellCenter`), l'horodatage (`aSpawn`)
- * et la hauteur de chute (`aFallHeight`) de sa cellule.
+ * vertex porte à la place le pivot et la hauteur de chute de sa cellule
+ * (`aCell`, entiers compacts) et son horodatage (`aSpawn`).
  *
- * Deux variantes selon `aFallHeight` :
+ * Deux variantes selon la hauteur de chute :
  *  - 0 (murs/fondations/arches) : scale uniforme depuis le pivot de la
  *    cellule, normales inchangées. Part d'`WALL_MIN_SCALE` plutôt que 0 —
  *    un scale depuis un point rendait le pop trop violent.
@@ -30,10 +30,10 @@ export const ROOF_DROP_HEIGHT = 0.6;
 /** Échelle de départ des murs — 0 (point) rendait le pop trop violent. */
 const WALL_MIN_SCALE = 0.65;
 
+// aCell : Int16 (non normalisé, lu en flottants) = pivot × 2, hauteur de chute × 100 (voir mergeParts).
 const GROW_DECLARATIONS = `
-  attribute vec3 aCellCenter;
+  attribute vec4 aCell;
   attribute float aSpawn;
-  attribute float aFallHeight;
   uniform float uTime;
   uniform float uEnabled;
 
@@ -46,11 +46,12 @@ const GROW_APPLY = `
   {
     float growAge = clamp((uTime - aSpawn) / ${POP_DURATION.toFixed(3)}, 0.0, 1.0);
     float growT = uEnabled > 0.5 ? growEaseOut(growAge) : 1.0;
-    if (aFallHeight > 0.0) {
-      transformed.y += (1.0 - growT) * aFallHeight;
+    float growFallHeight = aCell.w * 0.01;
+    if (growFallHeight > 0.0) {
+      transformed.y += (1.0 - growT) * growFallHeight;
     } else {
       float growScale = mix(${WALL_MIN_SCALE.toFixed(3)}, 1.0, growT);
-      transformed = mix(aCellCenter, transformed, growScale);
+      transformed = mix(aCell.xyz * 0.5, transformed, growScale);
     }
   }
 `;

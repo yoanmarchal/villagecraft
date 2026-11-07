@@ -6,13 +6,15 @@
  * parts qui en ont besoin (le merge clone les attributs, jamais la géométrie).
  *
  * Toutes les géométries sont :
- *  - non-indexées (mergeables trivialement entre elles),
+ *  - indexées, sommets soudés (`toIndexed` dans `getGeo`) — le merge recopie
+ *    l'index en le décalant,
  *  - centrées sur l'origine,
  *  - munies de position + normal (les matériaux n'utilisent pas de texture).
  */
 
 import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three-stdlib';
+import { mergeVertices } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { Brush, Evaluator, SUBTRACTION } from 'three-bvh-csg';
 import type { CellFace, CornerRadii, HollowShape } from '../utils/cellUtils';
 import { FACE_ROTATION_Y, getRoundedRectContourPoints } from '../utils/cellUtils';
@@ -31,13 +33,26 @@ const MAX_CACHED_GEOMETRIES = 1500;
 // Map = ordre d'insertion : la première clé est la moins récemment utilisée.
 const cache = new Map<string, THREE.BufferGeometry>();
 
+/**
+ * Ne garde que position + normal (les UV des primitives three ne servent
+ * pas) et soude les sommets identiques : seuls ~36 % des sommets d'un village
+ * sont uniques, le reste étant des coins de triangles répétés. Les arêtes
+ * vives restent vives (normales différentes → sommets distincts).
+ */
+function toIndexed(geo: THREE.BufferGeometry): THREE.BufferGeometry {
+  const lean = new THREE.BufferGeometry();
+  lean.setAttribute('position', geo.getAttribute('position'));
+  lean.setAttribute('normal', geo.getAttribute('normal'));
+  if (geo.index) lean.setIndex(geo.index);
+  return mergeVertices(lean);
+}
+
 function getGeo(key: string, build: () => THREE.BufferGeometry): THREE.BufferGeometry {
   let geo = cache.get(key);
   if (geo) {
     cache.delete(key);
   } else {
-    geo = build();
-    if (geo.index) geo = geo.toNonIndexed();
+    geo = toIndexed(build());
   }
   cache.set(key, geo);
 

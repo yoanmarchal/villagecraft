@@ -3,6 +3,7 @@ import * as THREE from 'three';
 import { VillageGrid } from '../villageGrid';
 import { buildVillage, CHUNK_SIZE, VillageChunkCache } from './buildVillage';
 import { FLOOR_T, WALL_T } from './geometryCache';
+import { ROOF_DROP_HEIGHT } from './growMaterial';
 import { PARAPET_H, WALKWAY_H } from './cells/walkwayParts';
 import { BlockType } from '../types';
 import { getRidgeAxis, makeCellLookup } from '../utils/cellUtils';
@@ -442,5 +443,30 @@ describe('VillageChunkCache', () => {
 
     expect([...rebuiltChunks]).toEqual(['0,0']);
     expect(CHUNK_SIZE).toBeLessThan(SIZE);
+  });
+});
+
+describe('compact vertex format', () => {
+  it('decodes cell pivots, fall heights and normals exactly enough', () => {
+    const grid = sampleVillage();
+    const groups = build(grid, SETTINGS);
+    const centers = new Map(
+      grid.getOccupiedCells().map((cell) => [grid.toWorldPosition(cell.x, cell.y, cell.z).join(','), cell.type]),
+    );
+
+    for (const { geometry } of groups) {
+      const cell = geometry.getAttribute('aCell') as THREE.BufferAttribute;
+      const normal = geometry.getAttribute('normal') as THREE.BufferAttribute;
+      expect(cell.array).toBeInstanceOf(Int16Array);
+      expect(normal.normalized).toBe(true);
+      for (let i = 0; i < cell.count; i += 97) {
+        const pivot = [cell.getX(i) * 0.5, cell.getY(i) * 0.5, cell.getZ(i) * 0.5].join(',');
+        const type = centers.get(pivot);
+        expect(type).toBeDefined();
+        expect(cell.getW(i) * 0.01).toBeCloseTo(type === BlockType.Roof ? ROOF_DROP_HEIGHT : 0, 5);
+        const length = Math.hypot(normal.getX(i), normal.getY(i), normal.getZ(i));
+        expect(Math.abs(length - 1)).toBeLessThan(0.02);
+      }
+    }
   });
 });

@@ -236,11 +236,6 @@ function collectVillageParts(
   return collected;
 }
 
-/**
- * Fusionne des parts en un BufferGeometry unique, en écrivant directement
- * dans des Float32Array (pas de clone de géométrie intermédiaire).
- * Les géométries sources (cache) sont non-indexées avec position + normal.
- */
 /** Un part avec une matrice non-finie (NaN/Infinity) corromprait tout le groupe fusionné. */
 function isFinitePart(p: Part): boolean {
   const e = p.matrix.elements;
@@ -250,6 +245,21 @@ function isFinitePart(p: Part): boolean {
   return true;
 }
 
+/**
+ * Fusionne des parts en un BufferGeometry unique, en écrivant directement
+ * dans des tableaux typés (pas de clone de géométrie intermédiaire). Les
+ * géométries sources (cache) sont indexées avec position + normal : leur
+ * index est recopié, décalé.
+ *
+ * Format compact — 33 octets par sommet au lieu de 56 :
+ *  - position : Float32 × 3 ;
+ *  - normal   : Int8 normalisé × 3 (précision 1/127, invisible à l'éclairage) ;
+ *  - color    : Uint8 normalisé × 3 (couleurs plates par part) ;
+ *  - aCell    : Int16 × 4 = (pivot de la cellule × 2, hauteur de chute × 100).
+ *    Les pivots sont toujours sur des demi-unités (toWorldPosition), donc
+ *    exacts ; lu en flottants par le shader (growMaterial.ts) ;
+ *  - aSpawn   : Float32 (horodatage en secondes, a besoin de la précision).
+ */
 function mergeParts(allParts: PositionedPart[]): THREE.BufferGeometry {
   const parts = allParts.filter(isFinitePart);
   if (parts.length !== allParts.length) {
@@ -257,14 +267,20 @@ function mergeParts(allParts: PositionedPart[]): THREE.BufferGeometry {
   }
 
   let total = 0;
-  for (const p of parts) total += p.geo.attributes.position.count;
+  let indexTotal = 0;
+  for (const p of parts) {
+    const count = p.geo.attributes.position.count;
+    total += count;
+    indexTotal += p.geo.index?.count ?? count;
+  }
 
+  // Index 16 bits tant qu'il suffit (chunks modestes), 32 sinon.
+  const indices = total <= 0xffff ? new Uint16Array(indexTotal) : new Uint32Array(indexTotal);
   const positions = new Float32Array(total * 3);
-  const normals = new Float32Array(total * 3);
-  const colors = new Float32Array(total * 3);
-  const cellCenters = new Float32Array(total * 3);
+  const normals = new Int8Array(total * 3);
+  const colors = new Uint8Array(total * 3);
+  const cellData = new Int16Array(total * 4);
   const spawns = new Float32Array(total);
-  const fallHeights = new Float32Array(total);
 
   const v = new THREE.Vector3();
   const n = new THREE.Vector3();
@@ -272,13 +288,30 @@ function mergeParts(allParts: PositionedPart[]): THREE.BufferGeometry {
   const normalMatrix = new THREE.Matrix3();
 
   let offset = 0;
+  let indexOffset = 0;
   for (const p of parts) {
     const posAttr = p.geo.attributes.position;
     const norAttr = p.geo.attributes.normal;
     const count = posAttr.count;
 
+    const index = p.geo.index;
+    if (index) {
+      for (let i = 0; i < index.count; i++) indices[indexOffset + i] = offset + index.getX(i);
+      indexOffset += index.count;
+    } else {
+      for (let i = 0; i < count; i++) indices[indexOffset + i] = offset + i;
+      indexOffset += count;
+    }
+
     normalMatrix.getNormalMatrix(p.matrix);
     color.set(p.color);
+    const r = Math.round(color.r * 255);
+    const g = Math.round(color.g * 255);
+    const b = Math.round(color.b * 255);
+    const cx = Math.round(p.cellCenter.x * 2);
+    const cy = Math.round(p.cellCenter.y * 2);
+    const cz = Math.round(p.cellCenter.z * 2);
+    const fall = Math.round(p.fallHeight * 100);
 
     for (let i = 0; i < count; i++) {
       const o = (offset + i) * 3;
@@ -289,30 +322,31 @@ function mergeParts(allParts: PositionedPart[]): THREE.BufferGeometry {
       positions[o + 2] = v.z;
 
       n.fromBufferAttribute(norAttr as THREE.BufferAttribute, i).applyMatrix3(normalMatrix).normalize();
-      normals[o] = n.x;
-      normals[o + 1] = n.y;
-      normals[o + 2] = n.z;
+      normals[o] = Math.round(n.x * 127);
+      normals[o + 1] = Math.round(n.y * 127);
+      normals[o + 2] = Math.round(n.z * 127);
 
-      colors[o] = color.r;
-      colors[o + 1] = color.g;
-      colors[o + 2] = color.b;
+      colors[o] = r;
+      colors[o + 1] = g;
+      colors[o + 2] = b;
 
-      cellCenters[o] = p.cellCenter.x;
-      cellCenters[o + 1] = p.cellCenter.y;
-      cellCenters[o + 2] = p.cellCenter.z;
+      const c = (offset + i) * 4;
+      cellData[c] = cx;
+      cellData[c + 1] = cy;
+      cellData[c + 2] = cz;
+      cellData[c + 3] = fall;
 
       spawns[offset + i] = p.spawn;
-      fallHeights[offset + i] = p.fallHeight;
     }
     offset += count;
   }
 
   const geometry = new THREE.BufferGeometry();
+  geometry.setIndex(new THREE.BufferAttribute(indices, 1));
   geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-  geometry.setAttribute('normal', new THREE.BufferAttribute(normals, 3));
-  geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
-  geometry.setAttribute('aCellCenter', new THREE.BufferAttribute(cellCenters, 3));
+  geometry.setAttribute('normal', new THREE.BufferAttribute(normals, 3, true));
+  geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3, true));
+  geometry.setAttribute('aCell', new THREE.BufferAttribute(cellData, 4));
   geometry.setAttribute('aSpawn', new THREE.BufferAttribute(spawns, 1));
-  geometry.setAttribute('aFallHeight', new THREE.BufferAttribute(fallHeights, 1));
   return geometry;
 }
