@@ -30,4 +30,6 @@ export interface CellContext {
   isRampart: boolean;
   /** Forme de la coque des blocs creux (murs, fondations) ; null pour les toits et arches. */
   hollow: HollowShape | null;
+  /** La cellule porte le chandelier de sa pièce (voir assignRoomLamps) — un par pièce, pas par cellule. */
+  chandelier: boolean;
 }

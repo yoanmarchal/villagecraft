@@ -19,7 +19,8 @@ export function shellParts(ctx: CellContext, baseColor: string, openings: Openin
   // sert plus que de repli si un builder de mur reçoit un contexte sans forme.
   const body = ctx.hollow ? hollowShellGeo(ctx.radii, ctx.hollow, openings) : shapedBoxGeo(1.0, 1.0, 1.0, ctx.radii);
   return [
-    part(body, baseColor, { roughness, doubleSide: ctx.hollow !== null }),
+    // Coque : seules ses faces de cavité reçoivent la lumière de la pièce.
+    { ...part(body, baseColor, { roughness, doubleSide: ctx.hollow !== null }), interior: 'shell' },
     // Pierres d'angle : communes aux deux cell types
     ...quoinParts(ctx, baseColor),
     // Parquet, plafond et poutre de la pièce

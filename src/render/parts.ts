@@ -30,6 +30,18 @@ export interface MaterialSpec {
   doubleSide?: boolean;
 }
 
+/**
+ * Part éclairé par la lampe de la pièce (voir growMaterial.ts), dans une
+ * cellule creuse seulement :
+ *  - `room`  : aménagement intérieur (parquet, plafond, poutre, chandelier,
+ *    mobilier) — toutes ses faces tournées vers la lampe ;
+ *  - `shell` : la coque, qui a aussi des faces extérieures — seules celles
+ *    de la cavité (hors épaisseur des murs) sont éclairées.
+ * Tout le reste (pierres, chaînages, cadres…) ne l'est jamais : une face
+ * extérieure n'a pas à recevoir la lumière d'une pièce.
+ */
+export type InteriorKind = 'room' | 'shell';
+
 export interface Part {
   /** Géométrie issue du cache (geometryCache.ts) — ne JAMAIS la muter. */
   geo: THREE.BufferGeometry;
@@ -37,6 +49,13 @@ export interface Part {
   matrix: THREE.Matrix4;
   color: string;
   mat: MaterialSpec;
+  interior?: InteriorKind;
+}
+
+/** Marque des parts comme intérieurs (voir `InteriorKind`). */
+export function asInterior(kind: InteriorKind, parts: Part[]): Part[] {
+  for (const p of parts) p.interior = kind;
+  return parts;
 }
 
 /**
@@ -49,6 +68,14 @@ export interface PositionedPart extends Part {
   spawn: number;
   /** > 0 pour les toits : tombe de cette hauteur au lieu de "gonfler" depuis le pivot. */
   fallHeight: number;
+  /**
+   * Éclairage de la pièce (growMaterial.ts) : 0 aucun, 1 coque (cavité
+   * seulement), 2 aménagement. Non nul seulement dans une cellule creuse.
+   */
+  interiorMode: 0 | 1 | 2;
+  /** Décalage (en cases) vers la cellule du chandelier qui éclaire la pièce (voir roomLamps.ts). */
+  lampDx: number;
+  lampDz: number;
 }
 
 export type Vec3 = [number, number, number];

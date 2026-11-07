@@ -4,9 +4,10 @@ import { VillageGrid } from '../villageGrid';
 import { buildVillage, CHUNK_SIZE, VillageChunkCache } from './buildVillage';
 import { FLOOR_T, WALL_T } from './geometryCache';
 import { ROOF_DROP_HEIGHT } from './growMaterial';
+import { INTERIOR_LAMP_Y } from './cells/interiorParts';
 import { PARAPET_H, WALKWAY_H } from './cells/walkwayParts';
 import { BlockType } from '../types';
-import { getRidgeAxis, makeCellLookup } from '../utils/cellUtils';
+import { getRidgeAxis, isHollowType, makeCellLookup } from '../utils/cellUtils';
 import type { RenderSettings } from './renderSettings';
 
 const SETTINGS: RenderSettings = {
@@ -94,15 +95,23 @@ describe('buildVillage', () => {
     // profonds que le mur flottaient ou saillaient dans la pièce.
     const grid = new VillageGrid(9, 10, 9);
     for (let x = 0; x < 6; x += 1) for (let z = 0; z < 6; z += 1) grid.addBlockInColumn(x, z);
-    const meshes = build(grid, SETTINGS).map(
-      ({ geometry }) => new THREE.Mesh(geometry, new THREE.MeshBasicMaterial({ side: THREE.DoubleSide })),
+    const meshes = build(grid, SETTINGS).map(({ geometry, mat }) =>
+      Object.assign(new THREE.Mesh(geometry, new THREE.MeshBasicMaterial({ side: THREE.DoubleSide })), { userData: { glow: !!mat.glow } }),
     );
 
     const [x0, y0, z0] = grid.toWorldPosition(0, 0, 0);
     const [x5, , z5] = grid.toWorldPosition(5, 0, 5);
     const inner = 0.5 - WALL_T - 0.005;
-    const inside = (p: THREE.Vector3) =>
-      p.x > x0 - inner && p.x < x5 + inner && p.z > z0 - inner && p.z < z5 + inner;
+    // L'aménagement (chandelier, mobilier : parts "room") et les flammes ont
+    // leur place dans la pièce ; seule la maçonnerie ne doit pas y saillir.
+    const isFurnishing = (hit: THREE.Intersection) => {
+      const mesh = hit.object as THREE.Mesh;
+      return mesh.userData.glow || mesh.geometry.getAttribute('aCell').getW(hit.face!.a) % 4 === 2;
+    };
+    const inside = (hit: THREE.Intersection) => {
+      const p = hit.point;
+      return !isFurnishing(hit) && p.x > x0 - inner && p.x < x5 + inner && p.z > z0 - inner && p.z < z5 + inner;
+    };
 
     const strays: string[] = [];
     const ray = new THREE.Raycaster();
@@ -112,9 +121,9 @@ describe('buildVillage', () => {
           const [cx, , cz] = grid.toWorldPosition(i, 0, i);
           // Le long de X puis le long de Z, à travers toute la rangée.
           ray.set(new THREE.Vector3(x0 - 3, y0 + dy, cz + offset), new THREE.Vector3(1, 0, 0));
-          for (const hit of ray.intersectObjects(meshes)) if (inside(hit.point)) strays.push(hit.point.toArray().join(','));
+          for (const hit of ray.intersectObjects(meshes)) if (inside(hit)) strays.push(hit.point.toArray().join(','));
           ray.set(new THREE.Vector3(cx + offset, y0 + dy, z0 - 3), new THREE.Vector3(0, 0, 1));
-          for (const hit of ray.intersectObjects(meshes)) if (inside(hit.point)) strays.push(hit.point.toArray().join(','));
+          for (const hit of ray.intersectObjects(meshes)) if (inside(hit)) strays.push(hit.point.toArray().join(','));
         }
       }
     }
@@ -463,10 +472,85 @@ describe('compact vertex format', () => {
         const pivot = [cell.getX(i) * 0.5, cell.getY(i) * 0.5, cell.getZ(i) * 0.5].join(',');
         const type = centers.get(pivot);
         expect(type).toBeDefined();
-        expect(cell.getW(i) * 0.01).toBeCloseTo(type === BlockType.Roof ? ROOF_DROP_HEIGHT : 0, 5);
+        const w = cell.getW(i);
+        if (!isHollowType(type!)) expect(w % 4).toBe(0);
+        // Hors pièce, le code est la chute ; dans une pièce, le décalage vers le chandelier.
+        if (w % 4 === 0) expect(Math.floor(w / 4) * 0.01).toBeCloseTo(type === BlockType.Roof ? ROOF_DROP_HEIGHT : 0, 5);
         const length = Math.hypot(normal.getX(i), normal.getY(i), normal.getZ(i));
         expect(Math.abs(length - 1)).toBeLessThan(0.02);
       }
     }
+  });
+});
+
+describe('interior light', () => {
+  /** Sommets d'un village, avec leur position relative au pivot et leur mode d'éclairage intérieur. */
+  function vertices(grid: VillageGrid) {
+    const out: Array<{ world: THREE.Vector3; local: THREE.Vector3; mode: number; code: number; glow: boolean }> = [];
+    for (const { geometry, mat } of build(grid, SETTINGS)) {
+      const position = geometry.getAttribute('position');
+      const cell = geometry.getAttribute('aCell');
+      for (let i = 0; i < position.count; i += 1) {
+        const pivot = new THREE.Vector3(cell.getX(i), cell.getY(i), cell.getZ(i)).multiplyScalar(0.5);
+        const world = new THREE.Vector3(position.getX(i), position.getY(i), position.getZ(i));
+        const w = cell.getW(i);
+        out.push({ world, local: world.clone().sub(pivot), mode: w % 4, code: Math.floor(w / 4), glow: !!mat.glow });
+      }
+    }
+    return out;
+  }
+
+  it('never lights exterior decorations: room parts stay inside the shell cavity', () => {
+    // Maison de deux étages : pierres, chaînages, cadres sur toutes les faces.
+    const grid = new VillageGrid(5, 10, 5);
+    for (let i = 0; i < 3; i += 1) grid.addBlockInColumn(2, 2);
+    const inner = 0.5 - WALL_T + 0.001;
+
+    for (const { local, mode } of vertices(grid)) {
+      if (mode === 2) {
+        expect(Math.max(Math.abs(local.x), Math.abs(local.z))).toBeLessThan(inner);
+        expect(Math.abs(local.y)).toBeLessThan(0.5 - FLOOR_T + 0.001);
+      }
+      // Tout ce qui dépasse de la coque (pierres, cadres…) n'est ni "room" ni "shell".
+      if (Math.max(Math.abs(local.x), Math.abs(local.z)) > 0.5 + 0.001) expect(mode).toBe(0);
+    }
+  });
+
+  it('hangs one chandelier per room, not per cell, lighting the whole room from it', () => {
+    const grid = new VillageGrid(7, 10, 7);
+    for (let x = 2; x < 5; x += 1) for (let z = 2; z < 5; z += 1) grid.addBlockInColumn(x, z);
+    const all = vertices(grid);
+
+    const tips = all.filter(({ glow, local }) => glow && local.y > INTERIOR_LAMP_Y + 0.011 && Math.abs(local.y) < 0.5);
+    const tipPositions = new Set(tips.map(({ world }) => world.toArray().map((v) => v.toFixed(3)).join(',')));
+    expect(tipPositions.size).toBe(4); // un chandelier, 4 bougies
+    const [cx, , cz] = grid.toWorldPosition(3, 0, 3);
+    for (const { world } of tips) expect(Math.hypot(world.x - cx, world.z - cz)).toBeLessThan(0.15);
+
+    // Tous les sommets éclairés de la pièce visent la cellule centrale.
+    for (const { world, local, mode, code } of all) {
+      if (mode === 0) continue;
+      const lampX = Math.floor(code / 32) - 16;
+      const lampZ = (code % 32) - 16;
+      const pivotX = world.x - local.x;
+      const pivotZ = world.z - local.z;
+      expect([pivotX + lampX, pivotZ + lampZ]).toEqual([cx, cz]);
+    }
+  });
+
+  it('hangs a chandelier in every storey, flames at the lamp height', () => {
+    const grid = new VillageGrid(5, 10, 5);
+    for (let i = 0; i < 3; i += 1) grid.addBlockInColumn(2, 2);
+    const hollowCells = grid.getOccupiedCells().filter((cell) => isHollowType(cell.type)).length;
+
+    const flames = vertices(grid).filter(({ glow, local }) => glow && Math.abs(local.x) < 0.2 && Math.abs(local.z) < 0.2);
+    const flameLevels = new Set(flames.map(({ local }) => Math.round(local.y * 100)));
+    expect(hollowCells).toBeGreaterThan(0);
+    for (const level of flameLevels) {
+      expect(Math.abs(level / 100 - INTERIOR_LAMP_Y)).toBeLessThan(0.02);
+    }
+    // 4 flammes par chandelier, une pointe (sommet du cône) chacune.
+    const tips = flames.filter(({ local }) => local.y > INTERIOR_LAMP_Y + 0.011);
+    expect(new Set(tips.map(({ world }) => world.toArray().map((v) => v.toFixed(3)).join(','))).size).toBe(4 * hollowCells);
   });
 });

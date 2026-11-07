@@ -25,10 +25,8 @@ import { stoneParts } from './stoneParts';
 import { isQuoinProtected } from './decorations';
 import type { CellContext } from './context';
 
-/** Opacité de jour des vitres : assez faible pour voir l'intérieur depuis la rue. */
+/** Opacité des vitres : assez faible pour voir l'intérieur depuis la rue, de jour comme de nuit. */
 export const WINDOW_GLASS_OPACITY = 0.3;
-/** Opacité des vitres à `windowGlow` = 1 : la lueur du soir reste franche (bloom). */
-export const WINDOW_GLASS_LIT_OPACITY = 0.85;
 
 export function wallWindowCellParts(ctx: CellContext): Part[] {
   const { cell, lookup, exposedFaces, radii, isIsolated, isRampart, settings } = ctx;
@@ -38,8 +36,8 @@ export function wallWindowCellParts(ctx: CellContext): Part[] {
 
   const baseColor = settings.wallBaseColor;
   // Verre clair, à peine teinté : l'intérieur (et demain son mobilier) doit
-  // se voir depuis la rue. Le soir, VillageMeshes remonte son opacité avec
-  // `windowGlow` pour que la lueur reste franche.
+  // se voir depuis la rue. Le soir, la lumière vient de la pièce elle-même
+  // (growMaterial.ts) ; la vitre n'ajoute qu'un voile chaud.
   const windowGlassColor = '#c4dbe6';
   const { windowFrameColor, doorColor } = shades(baseColor, { windowFrameColor: -0.15, doorColor: -0.20 });
   const doorFrameColor = windowFrameColor; // même teinte que le cadre de fenêtre

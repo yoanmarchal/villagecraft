@@ -1,6 +1,7 @@
 /**
  * Finitions intérieures d'un bloc creux : parquet en bois (lames de 25 cm,
- * joints sombres), plafond enduit et une poutre par cellule. Sans elles, sol,
+ * joints sombres), plafond enduit, une poutre par cellule et un chandelier
+ * par pièce (source de sa lumière le soir, voir roomLamps.ts). Sans elles, sol,
  * murs et plafond ont la teinte de la maçonnerie et l'intérieur se lit comme
  * une boîte uniforme.
  *
@@ -11,8 +12,8 @@
 
 import type { CornerRadii, HollowShape } from '../../utils/cellUtils';
 import { varyColorBrightness } from '../../colorPalettes';
-import { boxGeo, FLOOR_T, hollowSheetGeo, WALL_T } from '../geometryCache';
-import { part, xform, type Part } from '../parts';
+import { boxGeo, cylinderGeo, FLOOR_T, hollowSheetGeo, torusArcGeo, WALL_T } from '../geometryCache';
+import { asInterior, part, xform, type Part } from '../parts';
 import type { CellContext } from './context';
 
 const WOOD = '#9a6b43';
@@ -23,6 +24,48 @@ const CEILING_T = 0.006;
 const SEAM_Z = [-0.375, -0.125, 0.125, 0.375];
 const BEAM_W = 0.06;
 const BEAM_H = 0.05;
+
+// ── Chandelier ────────────────────────────────────────────────────────────
+const IRON = '#2b2622';
+const WAX = '#efe6d2';
+/** Mèche : sombre le jour ; le soir, son émission (groupe "glow") en fait une flamme. */
+const FLAME = '#4a3420';
+const CHANDELIER_RING_Y = 0.18;
+const CHANDELIER_RING_R = 0.09;
+const CANDLE_R = 0.011;
+const CANDLE_H = 0.045;
+const FLAME_H = 0.024;
+/**
+ * Hauteur (y local de la cellule) des flammes du chandelier — c'est là que
+ * growMaterial.ts place la lampe qui éclaire la pièce le soir.
+ */
+export const INTERIOR_LAMP_Y = CHANDELIER_RING_Y + 0.006 + CANDLE_H + FLAME_H / 2;
+
+/**
+ * Chandelier en fer suspendu à la poutre, au centre de la cellule : une
+ * chaîne, une couronne et quatre bougies. ~250 sommets (soudés) — un par
+ * pièce, ou par zone d'une grande salle.
+ */
+function chandelierParts(ceilingBottomY: number): { structure: Part[]; flames: Part[] } {
+  const chainH = +(ceilingBottomY - CHANDELIER_RING_Y).toFixed(3);
+  const structure: Part[] = [
+    part(boxGeo(0.008, chainH, 0.008), IRON, { roughness: 0.6, metalness: 0.4 },
+      xform([0, CHANDELIER_RING_Y + chainH / 2, 0])),
+    part(torusArcGeo(CHANDELIER_RING_R, 0.006, 4, 16, Math.PI * 2), IRON, { roughness: 0.6, metalness: 0.4 },
+      xform([0, CHANDELIER_RING_Y, 0], [Math.PI / 2, 0, 0])),
+  ];
+  const flames: Part[] = [];
+  for (let i = 0; i < 4; i += 1) {
+    const angle = (i * Math.PI) / 2 + Math.PI / 4;
+    const x = Math.cos(angle) * CHANDELIER_RING_R;
+    const z = Math.sin(angle) * CHANDELIER_RING_R;
+    const candleY = CHANDELIER_RING_Y + 0.006 + CANDLE_H / 2;
+    structure.push(part(cylinderGeo(CANDLE_R, CANDLE_R, CANDLE_H, 6), WAX, { roughness: 0.7 }, xform([x, candleY, z])));
+    flames.push(part(cylinderGeo(0, 0.007, FLAME_H, 5), FLAME, { roughness: 1, glow: true },
+      xform([x, candleY + CANDLE_H / 2 + FLAME_H / 2, z])));
+  }
+  return { structure, flames };
+}
 
 /**
  * Demi-étendue intérieure le long de X (côté `sx`) à la profondeur `z` :
@@ -100,5 +143,12 @@ export function interiorParts(ctx: CellContext): Part[] {
       xform([(x0 + x1) / 2, beamY, 0])));
   }
 
-  return parts;
+  // Chandelier sous la poutre, dans la cellule désignée de la pièce
+  // (assignRoomLamps). Ses flammes ne sont pas "éclairées par la pièce" :
+  // ce sont elles la source (émission du groupe glow, le soir).
+  if (!ctx.chandelier) return asInterior('room', parts);
+  const chandelier = chandelierParts(beamY - BEAM_H / 2);
+  parts.push(...chandelier.structure);
+
+  return [...asInterior('room', parts), ...chandelier.flames];
 }

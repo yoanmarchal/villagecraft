@@ -22,5 +22,6 @@ export const registerLightingControls = (pane: Pane) =>
       ['shadowRadius', { min: 0, max: 10, step: 0.5 }],
       ['shadowBias', { min: -0.01, max: 0.01, step: 0.0001 }],
       ['windowGlow', { label: 'window glow', min: 0, max: 1, step: 0.01 }],
+      ['interiorFill', { label: 'interior light', min: 0, max: 1.5, step: 0.01 }],
     ],
   });

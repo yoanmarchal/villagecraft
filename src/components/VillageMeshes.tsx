@@ -13,14 +13,18 @@ import type { GridCell } from '../types';
 import { VillageChunkCache } from '../render/buildVillage';
 import { createGrowMaterialSet, disposeGrowMaterialSet, POP_DURATION, updateGrowTime, type GrowMaterialSet } from '../render/growMaterial';
 import { matKey, type MaterialSpec } from '../render/parts';
-import { pickRenderSettings } from '../render/renderSettings';
-import { WINDOW_GLASS_LIT_OPACITY } from '../render/cells/wallWindowCellParts';
-import { useControlStore } from '../store/controlStore';
+import { pickRenderSettings } from '../render/renderSettings';import { useControlStore } from '../store/controlStore';
 
 /** Teinte des fenêtres allumées (lumière de bougie / lampe). */
 const WINDOW_GLOW_COLOR = '#ffb45c';
 /** Intensité d'émission à `windowGlow` = 1 — assez pour passer le seuil du bloom. */
 const WINDOW_GLOW_INTENSITY = 2.2;
+/** Lueur des vitres une fois fondue (après opacité), à `windowGlow` = 1. */
+const GLASS_GLOW_INTENSITY = 0.9;
+/** Teinte de l'appoint de jour des pièces : lumière du ciel entrée par les fenêtres. */
+const INTERIOR_DAY_COLOR = '#fff3e3';
+/** Intensité de la lampe des pièces à `windowGlow` = 1 (× albédo des surfaces). */
+const INTERIOR_LAMP_INTENSITY = 1.3;
 
 interface VillageMeshesProps {
   cells: GridCell[];
@@ -50,6 +54,7 @@ export function VillageMeshes({ cells, toWorldPosition, gridWidth, gridDepth }: 
   const settings = useControlStore(useShallow(pickRenderSettings));
   const blockTransitionEnabled = useControlStore((state) => state.blockTransitionEnabled);
   const windowGlow = useControlStore((state) => state.windowGlow);
+  const interiorFill = useControlStore((state) => state.interiorFill);
   const invalidate = useThree((state) => state.invalidate);
 
   // Cache des chunks fusionnés, propre à cette instance (survit aux rendus).
@@ -107,17 +112,25 @@ export function VillageMeshes({ cells, toWorldPosition, gridWidth, gridDepth }: 
       const set = materials.get(matKey(mat));
       if (!set) continue;
       set.material.emissive.set(WINDOW_GLOW_COLOR);
-      set.material.emissiveIntensity = windowGlow * WINDOW_GLOW_INTENSITY;
-      // Vitres : claires de jour (on voit l'intérieur), plus couvrantes une
-      // fois allumées — l'opacité atténue aussi l'émission, la lueur serait
-      // sinon trop faible pour le bloom.
-      if (mat.transparent) {
-        const day = mat.opacity ?? 1;
-        set.material.opacity = day + (Math.max(day, WINDOW_GLASS_LIT_OPACITY) - day) * windowGlow;
-      }
+      // Vitres : le mélange alpha multiplie aussi l'émission par l'opacité ;
+      // on la compense pour qu'une fois fondue, la lueur vaille
+      // GLASS_GLOW_INTENSITY — un voile chaud, la pièce éclairée restant
+      // visible derrière (la vraie lumière vient de l'intérieur).
+      const intensity = mat.transparent ? GLASS_GLOW_INTENSITY / (mat.opacity ?? 1) : WINDOW_GLOW_INTENSITY;
+      set.material.emissiveIntensity = windowGlow * intensity;
     }
     invalidate();
   }, [groups, materials, windowGlow, invalidate]);
+
+  // Lumière des pièces (voir growMaterial.ts) : appoint neutre le jour,
+  // lampe chaude le soir — le fondu suit `windowGlow`.
+  useEffect(() => {
+    const light = new THREE.Color(INTERIOR_DAY_COLOR)
+      .multiplyScalar(interiorFill * (1 - windowGlow))
+      .add(new THREE.Color(WINDOW_GLOW_COLOR).multiplyScalar(windowGlow * INTERIOR_LAMP_INTENSITY));
+    for (const set of materials.values()) set.interiorLight.value.copy(light);
+    invalidate();
+  }, [materials, interiorFill, windowGlow, invalidate]);
 
   // Le canvas rend à la demande (frameloop="demand") : tant qu'une cellule
   // est en pleine animation d'apparition, on redemande une frame à chaque

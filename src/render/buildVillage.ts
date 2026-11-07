@@ -27,6 +27,7 @@ import {
   isTowerColumn,
   makeCellLookup,
 } from '../utils/cellUtils';
+import { assignRoomLamps, type RoomLamp } from '../utils/roomLamps';
 import { matKey, type MaterialSpec, type Part, type PositionedPart } from './parts';
 import { ROOF_DROP_HEIGHT } from './growMaterial';
 import type { CellContext } from './cells/context';
@@ -152,6 +153,9 @@ function hashParts(parts: CollectedPart[]): string {
     num(p.cellCenter.z);
     num(p.spawn);
     num(p.fallHeight);
+    num(p.interiorMode);
+    num(p.lampDx);
+    num(p.lampDz);
   }
   return `${parts.length}:${(h1 >>> 0).toString(36)}:${(h2 >>> 0).toString(36)}`;
 }
@@ -168,6 +172,8 @@ function collectVillageParts(
 ): CollectedPart[] {
   const lookup = makeCellLookup(cells);
   const collected: CollectedPart[] = [];
+  // Un chandelier par pièce (ou par zone d'une grande salle), pas par cellule.
+  const roomLamps = assignRoomLamps(cells, lookup);
 
   const translation = new THREE.Matrix4();
 
@@ -178,14 +184,19 @@ function collectVillageParts(
     cellCenter: THREE.Vector3,
     spawn: number,
     fallHeight: number,
+    lamp: RoomLamp | undefined,
   ) => {
     for (const p of parts) {
       p.matrix.premultiply(translation);
-      collected.push({ ...p, x, z, key: matKey(p.mat), cellCenter, spawn, fallHeight });
+      const interiorMode = !lamp || !p.interior ? 0 : p.interior === 'shell' ? 1 : 2;
+      const lampDx = lamp?.dx ?? 0;
+      const lampDz = lamp?.dz ?? 0;
+      collected.push({ ...p, x, z, key: matKey(p.mat), cellCenter, spawn, fallHeight, interiorMode, lampDx, lampDz });
     }
   };
 
   for (const cell of cells) {
+    const lamp = roomLamps.get(cell);
     const ctx: CellContext = {
       cell,
       lookup,
@@ -197,6 +208,7 @@ function collectVillageParts(
       isIsolated: cell.type === BlockType.Roof ? isIsolatedBlock(lookup, cell) : isTowerColumn(lookup, cell),
       isRampart: isRampart(lookup, getColumnTop(lookup, cell)),
       hollow: isHollowType(cell.type) ? getHollowShape(lookup, cell) : null,
+      chandelier: lamp !== undefined && lamp.dx === 0 && lamp.dz === 0,
     };
 
     let cellParts: Part[];
@@ -221,7 +233,7 @@ function collectVillageParts(
     const spawn = cell.spawnedAt ?? 0;
     const fallHeight = cell.type === BlockType.Roof ? ROOF_DROP_HEIGHT : 0;
 
-    addParts(cellParts, cell.x, cell.z, cellCenter, spawn, fallHeight);
+    addParts(cellParts, cell.x, cell.z, cellCenter, spawn, fallHeight, lamp);
   }
 
   if (ground) {
@@ -229,7 +241,7 @@ function collectVillageParts(
       const [wx, , wz] = toWorldPosition(x, 0, z);
       translation.makeTranslation(wx, 0, wz);
       // spawn = 0 : les pavés sont déjà "posés", sans animation d'apparition.
-      addParts(parts, x, z, new THREE.Vector3(wx, 0, wz), 0, 0);
+      addParts(parts, x, z, new THREE.Vector3(wx, 0, wz), 0, 0, undefined);
     }
   }
 
@@ -255,7 +267,10 @@ function isFinitePart(p: Part): boolean {
  *  - position : Float32 × 3 ;
  *  - normal   : Int8 normalisé × 3 (précision 1/127, invisible à l'éclairage) ;
  *  - color    : Uint8 normalisé × 3 (couleurs plates par part) ;
- *  - aCell    : Int16 × 4 = (pivot de la cellule × 2, hauteur de chute × 100).
+ *  - aCell    : Int16 × 4 = (pivot de la cellule × 2, w) avec
+ *    w = code × 4 + mode d'éclairage intérieur (0, 1 coque, 2 aménagement) ;
+ *    code = hauteur de chute × 100 (mode 0) ou décalage vers le chandelier
+ *    de la pièce, (dx + 16) × 32 + (dz + 16) (mode > 0 : une pièce ne tombe pas).
  *    Les pivots sont toujours sur des demi-unités (toWorldPosition), donc
  *    exacts ; lu en flottants par le shader (growMaterial.ts) ;
  *  - aSpawn   : Float32 (horodatage en secondes, a besoin de la précision).
@@ -311,7 +326,13 @@ function mergeParts(allParts: PositionedPart[]): THREE.BufferGeometry {
     const cx = Math.round(p.cellCenter.x * 2);
     const cy = Math.round(p.cellCenter.y * 2);
     const cz = Math.round(p.cellCenter.z * 2);
-    const fall = Math.round(p.fallHeight * 100);
+    // w = code × 4 + mode d'éclairage intérieur (décodé dans growMaterial.ts).
+    // Code : hauteur de chute × 100 hors pièces (seuls les toits tombent) ;
+    // dans une pièce, le décalage vers son chandelier ((dx+16) × 32 + dz+16).
+    const fall =
+      p.interiorMode > 0
+        ? ((p.lampDx + 16) * 32 + (p.lampDz + 16)) * 4 + p.interiorMode
+        : Math.round(p.fallHeight * 100) * 4;
 
     for (let i = 0; i < count; i++) {
       const o = (offset + i) * 3;

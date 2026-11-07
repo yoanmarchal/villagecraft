@@ -16,6 +16,11 @@ export interface LightingState {
   shadowBias: number;
   /** 0 = fenêtres éteintes, 1 = pleinement éclairées (soirée, nuit). */
   windowGlow: number;
+  /**
+   * Éclairage d'appoint de jour des pièces (lumière qui entre par les
+   * fenêtres) ; le soir, `windowGlow` le remplace par la lampe, plus chaude.
+   */
+  interiorFill: number;
 }
 
 export interface SkyFogState {
@@ -135,6 +140,7 @@ const DEFAULT_STATE: GridState &
   shadowRadius: 4,
   shadowBias: -0.0001,
   windowGlow: 0,
+  interiorFill: 0.45,
 
   skyTopColor: '#7fb6e8',
   skyHorizonColor: '#dcebf5',
