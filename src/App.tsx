@@ -1,7 +1,12 @@
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { lazy, Suspense, useState, useEffect, useMemo, useCallback } from 'react';
 import { VillageGrid } from './villageGrid';
 import { VoxelScene } from './components/VoxelScene';
-import { TweakpanePanel } from './components/TweakpanePanel';
+
+// Tweakpane (~30 kB gzip) hors du chemin critique : le panneau, replié par
+// défaut, arrive juste après le premier rendu de la scène.
+const TweakpanePanel = lazy(() =>
+  import('./components/TweakpanePanel').then((module) => ({ default: module.TweakpanePanel })),
+);
 import { Toolbar } from './components/Toolbar';
 import { HintCard } from './components/HintCard';
 import { useControlStore } from './store/controlStore';
@@ -86,10 +91,18 @@ export function App() {
     useGridControllerStore.getState().setOnMutate(refreshScene);
   }, [grid, refreshScene]);
 
-  // Raccourcis globaux : Ctrl+O (panneau), Ctrl+Z (annuler), Ctrl+Y / Ctrl+Shift+Z (rétablir).
+  // Raccourcis globaux : B / D (outils), Ctrl+O (panneau), Ctrl+Z (annuler),
+  // Ctrl+Y / Ctrl+Shift+Z (rétablir). Jamais pendant la saisie dans un champ.
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
+      if (isEditableTarget(event.target)) return;
       const key = event.key.toLowerCase();
+
+      if (!event.ctrlKey && !event.metaKey && !event.altKey) {
+        if (key === 'b') useUiStore.getState().setToolMode('build');
+        else if (key === 'd') useUiStore.getState().setToolMode('demolish');
+        return;
+      }
 
       if (event.ctrlKey && key === 'o') {
         event.preventDefault();
@@ -97,7 +110,6 @@ export function App() {
         return;
       }
 
-      if (!(event.ctrlKey || event.metaKey) || isEditableTarget(event.target)) return;
       const controller = useGridControllerStore.getState();
       if (key === 'z' && !event.shiftKey) {
         event.preventDefault();
@@ -157,7 +169,9 @@ export function App() {
       </div>
       <HintCard />
       <Toolbar />
-      <TweakpanePanel />
+      <Suspense fallback={null}>
+        <TweakpanePanel />
+      </Suspense>
     </div>
   );
 }

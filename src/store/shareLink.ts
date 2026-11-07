@@ -9,7 +9,7 @@
 
 import { GRID_HEIGHT, GRID_SIZE_MAX, GRID_SIZE_MIN } from '../config/gridConfig';
 import { useControlStore } from './controlStore';
-import { loadVillage, saveVillage, type SavedBlock, type SavedVillage } from './villageStorage';
+import { dropFloatingBlocks, loadVillage, saveVillage, type SavedBlock, type SavedVillage } from './villageStorage';
 
 const HASH_KEY = 'v';
 const FORMAT_VERSION = 1;
@@ -76,16 +76,17 @@ export function consumeSharedVillageLink(): void {
 
   window.history.replaceState(null, '', window.location.pathname + window.location.search);
 
-  const shared = decodeVillage(code);
-  if (!shared) {
-    console.warn('Lien de partage invalide, ignoré.');
+  const decoded = decodeVillage(code);
+  if (!decoded) {
+    console.warn('Invalid share link, ignored.');
     return;
   }
+  const shared = { ...decoded, blocks: dropFloatingBlocks(decoded.blocks) };
 
   const existing = loadVillage();
   const isSame = existing !== null && encodeVillage(existing) === encodeVillage(shared);
   if (existing && existing.blocks.length > 0 && !isSame) {
-    const replace = window.confirm('Ce lien contient un village partagé. Remplacer votre village actuel ?');
+    const replace = window.confirm('This link contains a shared village. Replace your current village?');
     if (!replace) return;
   }
 

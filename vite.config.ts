@@ -21,6 +21,14 @@ export default defineConfig({
   plugins: [react()],
   build: {
     rolldownOptions: {
+      treeshake: {
+        // @react-three/postprocessing réexporte son effet N8AO, qui importe
+        // `n8ao` ; ce paquet ne déclare pas `sideEffects: false`, donc l'import
+        // restait dans le chunk "r3f" même inutilisé — et ~83 kB gzip étaient
+        // préchargés et exécutés au démarrage. n8ao est un module unique sans
+        // effet de bord : seul l'import dynamique d'AmbientOcclusion le charge.
+        moduleSideEffects: [{ test: /[\\/]node_modules[\\/]n8ao[\\/]/, sideEffects: false }],
+      },
       output: {
         // Dépendances lourdes et stables dans leurs propres chunks : elles
         // restent en cache navigateur quand seul le code de l'app change.
