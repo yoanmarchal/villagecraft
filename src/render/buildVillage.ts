@@ -5,12 +5,13 @@
  *    radii, isolement) UNE fois, dispatch vers le builder du BlockType,
  *    et pré-multiplie la position monde sur chaque part.
  * 2. Groupe tous les parts par spec de matériau (roughness/metalness/
- *    transparence quantifiés).
+ *    transparence quantifiés) — et, pour `VillageChunkCache`, par chunk de
+ *    colonnes.
  * 3. Fusionne chaque groupe en un seul BufferGeometry non-indexé
  *    (position + normal + couleur par vertex).
  *
- * → une dizaine de draw calls pour tout le village, reconstruits uniquement
- *   quand la grille change.
+ * → une dizaine de draw calls par chunk, reconstruits uniquement quand la
+ *   grille change, et seulement pour les chunks touchés.
  */
 
 import * as THREE from 'three';
@@ -48,27 +49,139 @@ export interface GroundExtent {
   depth: number;
 }
 
+type ToWorld = (x: number, y: number, z: number) => [number, number, number];
+
+/** Part positionné dans le monde, avec la colonne de grille qui l'a émis (pour le découpage en chunks). */
+interface CollectedPart extends PositionedPart {
+  x: number;
+  z: number;
+  key: string;
+}
+
 export function buildVillage(
   cells: GridCell[],
-  toWorldPosition: (x: number, y: number, z: number) => [number, number, number],
+  toWorldPosition: ToWorld,
   settings: RenderSettings,
   ground?: GroundExtent,
 ): MergedGroup[] {
-  const lookup = makeCellLookup(cells);
   const groups = new Map<string, { mat: MaterialSpec; parts: PositionedPart[] }>();
+  for (const p of collectVillageParts(cells, toWorldPosition, settings, ground)) {
+    let group = groups.get(p.key);
+    if (!group) {
+      group = { mat: p.mat, parts: [] };
+      groups.set(p.key, group);
+    }
+    group.parts.push(p);
+  }
+
+  const merged: MergedGroup[] = [];
+  for (const [key, { mat, parts }] of groups) {
+    merged.push({ key, mat, geometry: mergeParts(parts) });
+  }
+  return merged;
+}
+
+/** Côté (en colonnes) d'un chunk de `VillageChunkCache`. */
+export const CHUNK_SIZE = 4;
+
+/**
+ * Reconstruction incrémentale : même résultat que `buildVillage`, mais
+ * découpé en chunks de CHUNK_SIZE × CHUNK_SIZE colonnes × groupe de matériau,
+ * et chaque chunk n'est refusionné que si ses parts ont changé.
+ *
+ * Les builders tournent toujours pour toute la grille (~20 % du coût) : la
+ * forme d'une cellule dépend de cases parfois lointaines (faîtage d'un bloc
+ * entier, courtines, portée des arches), donc deviner ce qu'un clic touche
+ * serait fragile. On compare plutôt leur *sortie* : une empreinte de chaque
+ * chunk (géométrie, matrice, couleur, horodatage d'apparition de chaque part).
+ * Identique → on réutilise la géométrie fusionnée, et le GPU n'a rien à
+ * recharger. Un clic ne refusionne ainsi qu'un ou deux chunks.
+ */
+export class VillageChunkCache {
+  private chunks = new Map<string, { hash: string; group: MergedGroup }>();
+
+  build(cells: GridCell[], toWorldPosition: ToWorld, settings: RenderSettings, ground?: GroundExtent): MergedGroup[] {
+    const buckets = new Map<string, CollectedPart[]>();
+    for (const p of collectVillageParts(cells, toWorldPosition, settings, ground)) {
+      const id = `${Math.floor(p.x / CHUNK_SIZE)},${Math.floor(p.z / CHUNK_SIZE)}|${p.key}`;
+      let bucket = buckets.get(id);
+      if (!bucket) {
+        bucket = [];
+        buckets.set(id, bucket);
+      }
+      bucket.push(p);
+    }
+
+    const next = new Map<string, { hash: string; group: MergedGroup }>();
+    for (const [id, parts] of buckets) {
+      const hash = hashParts(parts);
+      const previous = this.chunks.get(id);
+      const group =
+        previous && previous.hash === hash
+          ? previous.group
+          : { key: id, mat: parts[0].mat, geometry: mergeParts(parts) };
+      next.set(id, { hash, group });
+    }
+    this.chunks = next;
+    return [...next.values()].map(({ group }) => group);
+  }
+}
+
+/** Empreinte (2 × 32 bits, FNV-1a et variante) de tout ce que `mergeParts` lit dans les parts. */
+function hashParts(parts: CollectedPart[]): string {
+  let h1 = 0x811c9dc5;
+  let h2 = 0x01000193;
+  const f64 = new Float64Array(1);
+  const words = new Uint32Array(f64.buffer);
+  const mix = (word: number) => {
+    h1 = Math.imul(h1 ^ word, 0x01000193);
+    h2 = Math.imul(h2 ^ word, 0x5bd1e995) ^ (h2 >>> 15);
+  };
+  const num = (value: number) => {
+    f64[0] = value;
+    mix(words[0]);
+    mix(words[1]);
+  };
+
+  for (const p of parts) {
+    num(p.geo.id);
+    for (const e of p.matrix.elements) num(e);
+    for (let i = 0; i < p.color.length; i += 1) mix(p.color.charCodeAt(i));
+    num(p.cellCenter.x);
+    num(p.cellCenter.y);
+    num(p.cellCenter.z);
+    num(p.spawn);
+    num(p.fallHeight);
+  }
+  return `${parts.length}:${(h1 >>> 0).toString(36)}:${(h2 >>> 0).toString(36)}`;
+}
+
+/**
+ * Étape 1 : CellContext + builder de chaque cellule (et pavés du sol),
+ * parts placés dans le monde.
+ */
+function collectVillageParts(
+  cells: GridCell[],
+  toWorldPosition: ToWorld,
+  settings: RenderSettings,
+  ground?: GroundExtent,
+): CollectedPart[] {
+  const lookup = makeCellLookup(cells);
+  const collected: CollectedPart[] = [];
 
   const translation = new THREE.Matrix4();
 
-  const addParts = (parts: Part[], cellCenter: THREE.Vector3, spawn: number, fallHeight: number) => {
+  const addParts = (
+    parts: Part[],
+    x: number,
+    z: number,
+    cellCenter: THREE.Vector3,
+    spawn: number,
+    fallHeight: number,
+  ) => {
     for (const p of parts) {
       p.matrix.premultiply(translation);
-      const key = matKey(p.mat);
-      let group = groups.get(key);
-      if (!group) {
-        group = { mat: p.mat, parts: [] };
-        groups.set(key, group);
-      }
-      group.parts.push({ ...p, cellCenter, spawn, fallHeight });
+      collected.push({ ...p, x, z, key: matKey(p.mat), cellCenter, spawn, fallHeight });
     }
   };
 
@@ -108,7 +221,7 @@ export function buildVillage(
     const spawn = cell.spawnedAt ?? 0;
     const fallHeight = cell.type === BlockType.Roof ? ROOF_DROP_HEIGHT : 0;
 
-    addParts(cellParts, cellCenter, spawn, fallHeight);
+    addParts(cellParts, cell.x, cell.z, cellCenter, spawn, fallHeight);
   }
 
   if (ground) {
@@ -116,15 +229,11 @@ export function buildVillage(
       const [wx, , wz] = toWorldPosition(x, 0, z);
       translation.makeTranslation(wx, 0, wz);
       // spawn = 0 : les pavés sont déjà "posés", sans animation d'apparition.
-      addParts(parts, new THREE.Vector3(wx, 0, wz), 0, 0);
+      addParts(parts, x, z, new THREE.Vector3(wx, 0, wz), 0, 0);
     }
   }
 
-  const merged: MergedGroup[] = [];
-  for (const [key, { mat, parts }] of groups) {
-    merged.push({ key, mat, geometry: mergeParts(parts) });
-  }
-  return merged;
+  return collected;
 }
 
 /**

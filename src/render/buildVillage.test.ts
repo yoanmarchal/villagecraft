@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import * as THREE from 'three';
 import { VillageGrid } from '../villageGrid';
-import { buildVillage } from './buildVillage';
+import { buildVillage, CHUNK_SIZE, VillageChunkCache } from './buildVillage';
 import { FLOOR_T, WALL_T } from './geometryCache';
 import { PARAPET_H, WALKWAY_H } from './cells/walkwayParts';
 import { BlockType } from '../types';
@@ -391,5 +391,56 @@ describe('buildVillage', () => {
       const ridge = roofHeight(meshes, cx + 0.2, cz)!;
       expect(roofHeight(meshes, cx + 0.2, cz - 0.4)!).toBeLessThan(ridge - 0.4);
     });
+  });
+});
+
+describe('VillageChunkCache', () => {
+  const SIZE = 8;
+  const ground = { width: SIZE, depth: SIZE };
+  const vertexCount = (groups: ReturnType<typeof buildVillage>) =>
+    groups.reduce((sum, { geometry }) => sum + geometry.getAttribute('position').count, 0);
+
+  function bigVillage(): VillageGrid {
+    const grid = new VillageGrid(SIZE, 10, SIZE);
+    grid.generateTerrain(SIZE, 7);
+    return grid;
+  }
+
+  const run = (cache: VillageChunkCache, grid: VillageGrid) =>
+    cache.build(grid.getOccupiedCells(), (x, y, z) => grid.toWorldPosition(x, y, z), SETTINGS, ground);
+
+  it('produces the same geometry as a full build, split by chunk', () => {
+    const grid = bigVillage();
+    const full = buildVillage(grid.getOccupiedCells(), (x, y, z) => grid.toWorldPosition(x, y, z), SETTINGS, ground);
+    const chunked = run(new VillageChunkCache(), grid);
+
+    expect(chunked.length).toBeGreaterThan(full.length);
+    expect(vertexCount(chunked)).toBe(vertexCount(full));
+    expect(new Set(chunked.map(({ key }) => key)).size).toBe(chunked.length);
+  });
+
+  it('reuses every merged geometry when nothing changed', () => {
+    const grid = bigVillage();
+    const cache = new VillageChunkCache();
+    const first = run(cache, grid);
+    const second = run(cache, grid);
+
+    expect(second.map(({ geometry }) => geometry)).toEqual(first.map(({ geometry }) => geometry));
+  });
+
+  it('only re-merges the chunks around a new block', () => {
+    const grid = new VillageGrid(SIZE, 10, SIZE);
+    for (let x = 0; x < SIZE; x += 2) for (let z = 0; z < SIZE; z += 2) grid.addBlockInColumn(x, z);
+    const cache = new VillageChunkCache();
+    const before = new Map(run(cache, grid).map((group) => [group.key, group.geometry]));
+
+    grid.addBlockInColumn(0, 0);
+    const after = run(cache, grid);
+    const rebuiltChunks = new Set(
+      after.filter(({ key, geometry }) => before.get(key) !== geometry).map(({ key }) => key.split('|')[0]),
+    );
+
+    expect([...rebuiltChunks]).toEqual(['0,0']);
+    expect(CHUNK_SIZE).toBeLessThan(SIZE);
   });
 });

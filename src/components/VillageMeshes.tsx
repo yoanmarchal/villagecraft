@@ -1,16 +1,18 @@
 /**
- * Rend le village entier en quelques meshes fusionnés (un par groupe de
- * matériau), avec couleurs par vertex. Reconstruit uniquement quand `cells`
- * change (add/remove de bloc), jamais par frame.
+ * Rend le village en meshes fusionnés (un par chunk de colonnes × groupe de
+ * matériau, voir VillageChunkCache), avec couleurs par vertex. Reconstruit
+ * quand `cells` change (add/remove de bloc), jamais par frame — et seuls les
+ * chunks dont le contenu a changé sont refusionnés.
  */
 
 import * as THREE from 'three';
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useFrame, useThree } from '@react-three/fiber';
 import { useShallow } from 'zustand/react/shallow';
 import type { GridCell } from '../types';
-import { buildVillage } from '../render/buildVillage';
-import { createGrowMaterialSet, disposeGrowMaterialSet, POP_DURATION, updateGrowTime } from '../render/growMaterial';
+import { VillageChunkCache } from '../render/buildVillage';
+import { createGrowMaterialSet, disposeGrowMaterialSet, POP_DURATION, updateGrowTime, type GrowMaterialSet } from '../render/growMaterial';
+import { matKey, type MaterialSpec } from '../render/parts';
 import { pickRenderSettings } from '../render/renderSettings';
 import { useControlStore } from '../store/controlStore';
 
@@ -27,6 +29,21 @@ interface VillageMeshesProps {
   gridDepth: number;
 }
 
+function createMaterialSet(mat: MaterialSpec): GrowMaterialSet {
+  return createGrowMaterialSet({
+    vertexColors: true,
+    roughness: mat.roughness,
+    metalness: mat.metalness ?? 0,
+    transparent: mat.transparent ?? false,
+    opacity: mat.opacity ?? 1,
+    depthWrite: !mat.transparent,
+    side: mat.doubleSide ? THREE.DoubleSide : THREE.FrontSide,
+    // Ombres inchangées : comme un matériau FrontSide, la carte d'ombre
+    // ne rend que les faces arrière (sinon acné sur les murs fins).
+    shadowSide: mat.doubleSide ? THREE.BackSide : null,
+  });
+}
+
 export function VillageMeshes({ cells, toWorldPosition, gridWidth, gridDepth }: VillageMeshesProps) {
   // Référence stable tant qu'aucune valeur ne change (useShallow).
   const settings = useControlStore(useShallow(pickRenderSettings));
@@ -34,57 +51,65 @@ export function VillageMeshes({ cells, toWorldPosition, gridWidth, gridDepth }: 
   const windowGlow = useControlStore((state) => state.windowGlow);
   const invalidate = useThree((state) => state.invalidate);
 
+  // Cache des chunks fusionnés, propre à cette instance (survit aux rendus).
+  const [chunkCache] = useState(() => new VillageChunkCache());
   const groups = useMemo(
-    () => buildVillage(cells, toWorldPosition, settings, { width: gridWidth, depth: gridDepth }),
-    [cells, toWorldPosition, settings, gridWidth, gridDepth],
+    () => chunkCache.build(cells, toWorldPosition, settings, { width: gridWidth, depth: gridDepth }),
+    [chunkCache, cells, toWorldPosition, settings, gridWidth, gridDepth],
   );
 
-  // Libère les géométries fusionnées quand elles sont remplacées
+  // Un jeu de matériaux "grow" (voir growMaterial.ts) par groupe de
+  // matériau, partagé par tous les chunks de ce groupe. Ceux qui servent
+  // encore sont repris tels quels : leur shader n'est pas recompilé.
+  const materialsRef = useRef(new Map<string, GrowMaterialSet>());
+  const [materials, setMaterials] = useState(() => new Map<string, GrowMaterialSet>());
+  const neededKeys = useMemo(() => [...new Set(groups.map(({ mat }) => matKey(mat)))].sort().join(';'), [groups]);
+  if (neededKeys !== [...materials.keys()].sort().join(';')) {
+    const next = new Map<string, GrowMaterialSet>();
+    for (const { mat } of groups) {
+      const key = matKey(mat);
+      if (!next.has(key)) next.set(key, materials.get(key) ?? createMaterialSet(mat));
+    }
+    setMaterials(next);
+  }
+
+  // Libère les matériaux qui ne servent plus (et tous au démontage).
   useEffect(() => {
-    return () => {
-      for (const g of groups) g.geometry.dispose();
-    };
+    const previous = materialsRef.current;
+    for (const [key, set] of previous) if (!materials.has(key)) disposeGrowMaterialSet(set);
+    materialsRef.current = materials;
+  }, [materials]);
+
+  // Libère les géométries fusionnées remplacées ; les chunks inchangés
+  // gardent la leur (même objet), donc rien à recharger sur le GPU.
+  const geometriesRef = useRef(new Set<THREE.BufferGeometry>());
+  useEffect(() => {
+    const current = new Set(groups.map(({ geometry }) => geometry));
+    for (const geometry of geometriesRef.current) if (!current.has(geometry)) geometry.dispose();
+    geometriesRef.current = current;
   }, [groups]);
 
-  // Un jeu de matériaux "grow" par groupe (voir growMaterial.ts), reconstruit
-  // seulement quand les groupes le sont — la transition qu'ils pilotent
-  // avance ensuite uniquement via l'uniform de temps, à chaque frame.
-  const materialSets = useMemo(
-    () =>
-      groups.map(({ mat }) =>
-        createGrowMaterialSet({
-          vertexColors: true,
-          roughness: mat.roughness,
-          metalness: mat.metalness ?? 0,
-          transparent: mat.transparent ?? false,
-          opacity: mat.opacity ?? 1,
-          depthWrite: !mat.transparent,
-          side: mat.doubleSide ? THREE.DoubleSide : THREE.FrontSide,
-          // Ombres inchangées : comme un matériau FrontSide, la carte d'ombre
-          // ne rend que les faces arrière (sinon acné sur les murs fins).
-          shadowSide: mat.doubleSide ? THREE.BackSide : null,
-        }),
-      ),
-    [groups],
-  );
+  useEffect(() => {
+    const geometries = geometriesRef;
+    const materialSets = materialsRef;
+    return () => {
+      for (const geometry of geometries.current) geometry.dispose();
+      for (const set of materialSets.current.values()) disposeGrowMaterialSet(set);
+    };
+  }, []);
 
-  // Fenêtres allumées : réglage de l'émission des groupes "glow" en place,
+  // Fenêtres allumées : réglage de l'émission des matériaux "glow" en place,
   // sans toucher à la géométrie. Changement impératif → frame à demander.
   useEffect(() => {
-    groups.forEach(({ mat }, i) => {
-      if (!mat.glow) return;
-      const { material } = materialSets[i];
-      material.emissive.set(WINDOW_GLOW_COLOR);
-      material.emissiveIntensity = windowGlow * WINDOW_GLOW_INTENSITY;
-    });
+    for (const { mat } of groups) {
+      if (!mat.glow) continue;
+      const set = materials.get(matKey(mat));
+      if (!set) continue;
+      set.material.emissive.set(WINDOW_GLOW_COLOR);
+      set.material.emissiveIntensity = windowGlow * WINDOW_GLOW_INTENSITY;
+    }
     invalidate();
-  }, [groups, materialSets, windowGlow, invalidate]);
-
-  useEffect(() => {
-    return () => {
-      for (const set of materialSets) disposeGrowMaterialSet(set);
-    };
-  }, [materialSets]);
+  }, [groups, materials, windowGlow, invalidate]);
 
   // Le canvas rend à la demande (frameloop="demand") : tant qu'une cellule
   // est en pleine animation d'apparition, on redemande une frame à chaque
@@ -97,23 +122,27 @@ export function VillageMeshes({ cells, toWorldPosition, gridWidth, gridDepth }: 
   useFrame(({ invalidate }) => {
     // Même horloge que `cell.spawnedAt` (villageGrid.ts), pas celle du canvas.
     const time = performance.now() / 1000;
-    for (const set of materialSets) updateGrowTime(set, time, blockTransitionEnabled);
+    for (const set of materials.values()) updateGrowTime(set, time, blockTransitionEnabled);
     if (blockTransitionEnabled && time - latestSpawn < POP_DURATION) invalidate();
   });
 
   return (
     <>
-      {groups.map(({ key, geometry }, i) => (
-        <mesh
-          key={key}
-          name={`village-${key}`}
-          geometry={geometry}
-          material={materialSets[i].material}
-          customDepthMaterial={materialSets[i].depthMaterial}
-          castShadow
-          receiveShadow
-        />
-      ))}
+      {groups.map(({ key, mat, geometry }) => {
+        const set = materials.get(matKey(mat));
+        if (!set) return null;
+        return (
+          <mesh
+            key={key}
+            name={`village-${key}`}
+            geometry={geometry}
+            material={set.material}
+            customDepthMaterial={set.depthMaterial}
+            castShadow
+            receiveShadow
+          />
+        );
+      })}
     </>
   );
 }
