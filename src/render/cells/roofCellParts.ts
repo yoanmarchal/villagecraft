@@ -43,7 +43,8 @@ import {
 const RUN = 0.5;                                      // course horizontale = demi-cellule
 const PANEL_LEN = 1.08;                               // longueur de pan le long du faîtage
 const PANEL_T = 0.055;                                // épaisseur de pan
-const GABLE_Z = 0.466;                                // plan médian du remplissage de pignon
+const GABLE_Z = 0.466;
+const FLUE_W = 0.14;                                  // section de la souche de cheminée                                // plan médian du remplissage de pignon
 
 // Décalages Z des liteaux (4 rangées de tuiles le long du faîtage)
 const RIB_OFFSETS = [-0.40, -0.13, 0.13, 0.40];
@@ -82,8 +83,8 @@ export function roofCellParts(ctx: CellContext): Part[] {
     // (rotation de 90°), +X local = −Z monde (back), −X local = +Z (front).
     eavePos: axis === 'z' ? !hasRight : !hasBack,
     eaveNeg: axis === 'z' ? !hasLeft : !hasFront,
-    // Cheminée déterministe : ~33 % des cellules.
-    chimney: (cell.x + cell.z) % 3 === 0 ? (cell.x % 2 === 0 ? 0.14 : -0.14) : null,
+    // Conduits des cheminées de la colonne (buildVillage), à l'aplomb des hottes.
+    flues: ctx.flues,
   });
 
   // CAS 2 bis — Jonction : une aile perpendiculaire arrive sur un pan de la
@@ -122,7 +123,7 @@ export function roofCellParts(ctx: CellContext): Part[] {
  */
 export function gableRoofParts(
   settings: RenderSettings,
-  { axis, gablePos, gableNeg, eavePos = true, eaveNeg = true, chimney = null, baseY = 0, extent = 'full', panRunPos = RUN, panRunNeg = RUN }: {
+  { axis, gablePos, gableNeg, eavePos = true, eaveNeg = true, flues = [], baseY = 0, extent = 'full', panRunPos = RUN, panRunNeg = RUN }: {
     axis: 'x' | 'z';
     /**
      * Portion de la cellule couverte le long du faîtage : toute la case, ou
@@ -148,8 +149,8 @@ export function gableRoofParts(
      */
     panRunPos?: number;
     panRunNeg?: number;
-    /** Décalage X local de la cheminée, ou null pour aucune. */
-    chimney?: number | null;
+    /** Conduits de cheminée, en coordonnées de cellule (non tournées). */
+    flues?: Array<{ x: number; z: number }>;
     baseY?: number;
   },
 ): Part[] {
@@ -251,13 +252,20 @@ export function gableRoofParts(
   if (needGablePos && z1 === 0.5) addGable(1);
   if (needGableNeg && z0 === -0.5) addGable(-1);
 
-  // ── Cheminée ──
-  if (chimney !== null) {
-    const C = mul(G, xform([chimney, RIDGE_Y - 0.06, 0.06]));
+  // ── Conduits de cheminée ──
+  // Souche à l'aplomb de la hotte : elle part sous le pan (au point le plus
+  // bas qu'elle traverse, côté égout) et dépasse le faîtage, comme une vraie
+  // souche. Jamais sous le plancher du toit (la pièce du dessous).
+  for (const { x, z } of flues) {
+    const acrossRidge = Math.min(Math.abs(axis === 'z' ? x : z) + FLUE_W / 2, RUN);
+    const bottom = Math.max(EAVE_Y + 0.01, RIDGE_Y - (RISE * acrossRidge) / RUN - 0.04);
+    const top = RIDGE_Y + 0.17;
+    const height = +(top - bottom).toFixed(3);
+    const C = xform([x, baseY + top - height / 2, z]);
     parts.push(
-      part(boxGeo(0.14, 0.46, 0.14), '#a09080', { roughness: 0.93 }, C.clone()),
-      part(boxGeo(0.19, 0.04, 0.19), '#7a6a5a', { roughness: 0.91 }, mul(C, xform([0, 0.25, 0]))),
-      part(cylinderGeo(0.034, 0.042, 0.09, 8), '#a05a42', { roughness: 0.82 }, mul(C, xform([0, 0.31, 0]))),
+      part(boxGeo(FLUE_W, height, FLUE_W), '#a09080', { roughness: 0.93 }, C.clone()),
+      part(boxGeo(0.19, 0.04, 0.19), '#7a6a5a', { roughness: 0.91 }, mul(C, xform([0, height / 2 + 0.02, 0]))),
+      part(cylinderGeo(0.034, 0.042, 0.09, 8), '#a05a42', { roughness: 0.82 }, mul(C, xform([0, height / 2 + 0.08, 0]))),
     );
   }
 

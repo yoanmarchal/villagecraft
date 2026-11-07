@@ -23,7 +23,7 @@ export function shellParts(ctx: CellContext, baseColor: string, openings: Openin
     { ...part(body, baseColor, { roughness, doubleSide: ctx.hollow !== null }), interior: 'shell' },
     // Pierres d'angle : communes aux deux cell types
     ...quoinParts(ctx, baseColor),
-    // Parquet, plafond et poutre de la pièce
-    ...interiorParts(ctx),
+    // Parquet, plafond, poutre, chandelier et mobilier de la pièce
+    ...interiorParts(ctx, openings),
   ];
 }

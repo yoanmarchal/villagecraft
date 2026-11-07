@@ -10,10 +10,11 @@
  * la cellule côté `open`, pour se raccorder au voisin sans chevauchement.
  */
 
-import type { CornerRadii, HollowShape } from '../../utils/cellUtils';
+import type { CellFace, CornerRadii, HollowShape } from '../../utils/cellUtils';
 import { varyColorBrightness } from '../../colorPalettes';
-import { boxGeo, cylinderGeo, FLOOR_T, hollowSheetGeo, torusArcGeo, WALL_T } from '../geometryCache';
+import { boxGeo, cylinderGeo, FLOOR_T, hollowSheetGeo, torusArcGeo, WALL_T, type OpeningSpec } from '../geometryCache';
 import { asInterior, part, xform, type Part } from '../parts';
+import { furnitureParts, HOOD_REACH } from './furnitureParts';
 import type { CellContext } from './context';
 
 const WOOD = '#9a6b43';
@@ -99,7 +100,7 @@ function innerExtentZ(hollow: HollowShape, radii: CornerRadii, sz: 1 | -1, x: nu
   return inner - ri + Math.sqrt(Math.max(0, ri * ri - dx * dx));
 }
 
-export function interiorParts(ctx: CellContext): Part[] {
+export function interiorParts(ctx: CellContext, openings: OpeningSpec[] = []): Part[] {
   const { hollow, radii, cell, settings } = ctx;
   if (!hollow) return [];
 
@@ -131,17 +132,23 @@ export function interiorParts(ctx: CellContext): Part[] {
   // selon X et se prolonge de cellule en cellule.
   const alongZ = hollow.sides.front !== 'open' && hollow.sides.back !== 'open';
   const beamY = ceilingY - CEILING_T - BEAM_H / 2;
+  // Une poutre qui aboutit au mur de la cheminée s'arrête contre sa hotte
+  // (qui monte jusqu'au plafond), 5 mm dedans pour ne pas laisser de jour.
+  const hoodStop = (face: CellFace) => (ctx.fireplaceFace === face ? HOOD_REACH - 0.005 : 0);
   if (alongZ) {
-    const z0 = -innerExtentZ(hollow, radii, -1, 0);
-    const z1 = innerExtentZ(hollow, radii, 1, 0);
+    const z0 = -innerExtentZ(hollow, radii, -1, 0) + hoodStop('back');
+    const z1 = innerExtentZ(hollow, radii, 1, 0) - hoodStop('front');
     parts.push(part(boxGeo(BEAM_W, BEAM_H, +(z1 - z0).toFixed(3)), BEAM_WOOD, { roughness: 0.9 },
       xform([0, beamY, (z0 + z1) / 2])));
   } else {
-    const x0 = -innerExtentX(hollow, radii, -1, 0);
-    const x1 = innerExtentX(hollow, radii, 1, 0);
+    const x0 = -innerExtentX(hollow, radii, -1, 0) + hoodStop('left');
+    const x1 = innerExtentX(hollow, radii, 1, 0) - hoodStop('right');
     parts.push(part(boxGeo(+(x1 - x0).toFixed(3), BEAM_H, BEAM_W), BEAM_WOOD, { roughness: 0.9 },
       xform([(x0 + x1) / 2, beamY, 0])));
   }
+
+  // Mobilier (furnitureParts.ts) : éclairé par la pièce comme le reste.
+  parts.push(...furnitureParts(ctx, openings));
 
   // Chandelier sous la poutre, dans la cellule désignée de la pièce
   // (assignRoomLamps). Ses flammes ne sont pas "éclairées par la pièce" :

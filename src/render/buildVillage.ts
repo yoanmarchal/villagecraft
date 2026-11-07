@@ -19,6 +19,7 @@ import { BlockType, type GridCell } from '../types';
 import {
   getCornerRadii,
   getExposedFaces,
+  FACE_ROTATION_Y,
   getColumnTop,
   getHollowShape,
   isHollowType,
@@ -36,6 +37,8 @@ import { wallWindowCellParts } from './cells/wallWindowCellParts';
 import { roofCellParts } from './cells/roofCellParts';
 import { archCellParts } from './cells/archCellParts';
 import { pavingParts } from './cells/pavingParts';
+import { FLUE_OFFSET, planFireplaces } from './cells/furnitureParts';
+import { planDoors } from './cells/openings';
 import type { RenderSettings } from './renderSettings';
 
 export interface MergedGroup {
@@ -195,9 +198,11 @@ function collectVillageParts(
     }
   };
 
-  for (const cell of cells) {
+  // Contextes d'abord : les cheminées se décident par pièce, avant les murs
+  // (elles peuvent prendre la place d'une fenêtre).
+  const contexts = cells.map((cell): CellContext => {
     const lamp = roomLamps.get(cell);
-    const ctx: CellContext = {
+    return {
       cell,
       lookup,
       settings,
@@ -209,7 +214,30 @@ function collectVillageParts(
       isRampart: isRampart(lookup, getColumnTop(lookup, cell)),
       hollow: isHollowType(cell.type) ? getHollowShape(lookup, cell) : null,
       chandelier: lamp !== undefined && lamp.dx === 0 && lamp.dz === 0,
+      doorFace: null,
+      fireplaceFace: null,
+      flues: [],
     };
+  });
+  const doors = planDoors(contexts, roomLamps);
+  for (const ctx of contexts) ctx.doorFace = doors.get(ctx.cell) ?? null;
+  const fireplaces = planFireplaces(contexts, roomLamps);
+  // Conduit de chaque cheminée : il sort du toit de sa colonne, à l'aplomb
+  // de la hotte (planFireplaces exige un toit à deux pans au sommet).
+  const contextOf = new Map(contexts.map((ctx) => [ctx.cell, ctx]));
+  for (const ctx of contexts) {
+    const face = (ctx.fireplaceFace = fireplaces.get(ctx.cell) ?? null);
+    if (!face) continue;
+    const roof = contextOf.get(getColumnTop(lookup, ctx.cell));
+    const angle = FACE_ROTATION_Y[face];
+    const flue = { x: +(FLUE_OFFSET * Math.sin(angle)).toFixed(4), z: +(FLUE_OFFSET * Math.cos(angle)).toFixed(4) };
+    // Deux cheminées superposées sur le même mur partagent leur conduit.
+    if (roof && !roof.flues.some((f) => f.x === flue.x && f.z === flue.z)) roof.flues.push(flue);
+  }
+
+  for (const ctx of contexts) {
+    const { cell } = ctx;
+    const lamp = roomLamps.get(cell);
 
     let cellParts: Part[];
     switch (cell.type) {

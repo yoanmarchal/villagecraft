@@ -17,10 +17,12 @@ import {
   OPENING_SIZES,
   roundedBoxGeo,
   WALL_T,
+  type OpeningKind,
   type OpeningSpec,
 } from '../geometryCache';
 import { mul, part, xform, type Part } from '../parts';
 import { shellParts } from './shellParts';
+import { openingKindsOf } from './openings';
 import { stoneParts } from './stoneParts';
 import { isQuoinProtected } from './decorations';
 import type { CellContext } from './context';
@@ -48,11 +50,8 @@ export function wallWindowCellParts(ctx: CellContext): Part[] {
   const windowRadius = Math.min(0.025, avgRadius * 0.9);
   const glassRadius = Math.min(0.02, avgRadius * 0.8);
 
-  // ── Porte au rez-de-chaussée uniquement ────────────────────────────────
-  const isGroundFloor = cell.y === 0;
-  const doorFaceHash = Math.abs(cell.x * 31 + cell.z * 17) % Math.max(exposedFaces.length, 1);
-  // Pas de porte au pied des courtines : un mur défensif ne s'ouvre pas à chaque case.
-  const doorFace = isGroundFloor && !isRampart && exposedFaces.length > 0 ? exposedFaces[doorFaceHash] : null;
+  // ── Porte : une par pièce au rez-de-chaussée (planDoors, openings.ts) ──
+  const doorFace = ctx.doorFace;
 
   const hasBands = exposedFaces.length > 0;
 
@@ -70,12 +69,13 @@ export function wallWindowCellParts(ctx: CellContext): Part[] {
   };
 
   // ── Ouverture de chaque face exposée : porte, meurtrière ou fenêtre ──────
-  const openingOf = (face: CellFace): OpeningSpec => {
-    if (face === doorFace) return { face, kind: 'door', scale: openingScale(face, 0.48) };
-    if (hasArrowSlits) return { face, kind: 'slit', scale: openingScale(face, 0.14) };
-    return { face, kind: 'window', scale: openingScale(face, 0.6) };
-  };
-  const openings = exposedFaces.map(openingOf);
+  // (le mur d'une cheminée, `ctx.fireplaceFace`, reste plein).
+  const NOMINAL_WIDTH: Record<OpeningKind, number> = { door: 0.48, slit: 0.14, window: 0.6 };
+  const openings: OpeningSpec[] = [...openingKindsOf(ctx, ctx.fireplaceFace)].map(([face, kind]) => ({
+    face,
+    kind,
+    scale: openingScale(face, NOMINAL_WIDTH[kind]),
+  }));
 
   // Coque creuse percée de ses ouvertures : fenêtres, porte et meurtrières
   // traversent réellement le mur ; vitres et vantaux se logent dans l'épaisseur.
@@ -116,14 +116,16 @@ export function wallWindowCellParts(ctx: CellContext): Part[] {
         },
         // 🔒 Zone protégée propre à WallWithWindowCell
         isInProtectedZone: (face, x, y, w, h) => {
-          let area = WINDOW_PROTECTED_AREAS.window;
-          if (face === doorFace) {
-            area = WINDOW_PROTECTED_AREAS.door;
-          } else if (hasArrowSlits) {
-            area = WINDOW_PROTECTED_AREAS.arrowSlit;
+          // Mur de cheminée : plein, pas d'ouverture à dégager.
+          if (face !== ctx.fireplaceFace || face === doorFace) {
+            let area = WINDOW_PROTECTED_AREAS.window;
+            if (face === doorFace) {
+              area = WINDOW_PROTECTED_AREAS.door;
+            } else if (hasArrowSlits) {
+              area = WINDOW_PROTECTED_AREAS.arrowSlit;
+            }
+            if (isInProtectedArea(area, x, y, w, h)) return true;
           }
-
-          if (isInProtectedArea(area, x, y, w, h)) return true;
 
           if (hasBands) {
             if (isInProtectedArea(WINDOW_PROTECTED_AREAS.bandTop, x, y, w, h)) return true;
