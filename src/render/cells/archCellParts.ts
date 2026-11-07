@@ -15,12 +15,24 @@
  */
 
 import { BlockType } from '../../types';
-import { getColumnTop, getCell, hasOccupiedCell, isIsolatedBlock, isRampart, isTowerColumn } from '../../utils/cellUtils';
+import {
+  getColumnTop,
+  getCell,
+  getCornerRadii,
+  hasOccupiedCell,
+  isIsolatedBlock,
+  isRampart,
+  isTowerColumn,
+  type CellLookup,
+  type CornerRadii,
+} from '../../utils/cellUtils';
 import { shades } from '../../colorPalettes';
-import { archBodyGeo, archVoussoirGeo, archVoussoirMidX } from '../geometryCache';
+import { archBodyGeo, archVoussoirGeo, archVoussoirMidX, cornerFilletGeo } from '../geometryCache';
 import { mul, part, xform, type Part } from '../parts';
 import { gableRoofParts } from './roofCellParts';
-import { crenellatedWalkwayParts, walkwayDeckParts } from './walkwayParts';
+import { crenellatedWalkwayParts, PARAPET_H, WALKWAY_H, walkwayDeckParts } from './walkwayParts';
+import type { RenderSettings } from '../renderSettings';
+import type { GridCell } from '../../types';
 import type { CellContext } from './context';
 
 /** Montée de l'intrados selon la portée (en cases) : l'arc reste surbaissé et laisse une clé épaisse. */
@@ -72,6 +84,7 @@ export function archCellParts(ctx: CellContext): Part[] {
 
   // Rien au-dessus : le dessus dépend des colonnes voisines de l'arche
   // (toutes ses cases, pour un dessus uniforme).
+  let topY = 0.5;
   if (!hasOccupiedCell(lookup, x, y + 1, z)) {
     let besideTower = false;
     const gabledColumns = new Set<string>();
@@ -91,6 +104,7 @@ export function archCellParts(ctx: CellContext): Part[] {
 
     if (besideTower) {
       parts.push(...crenellatedWalkwayParts(G, 0.5, settings));
+      topY = 0.5 + WALKWAY_H + PARAPET_H;
     } else if (gabledColumns.size >= 2) {
       // Faîtage d'un appui à l'autre ; pignon aux bouts de l'arche seulement
       // si rien n'est bâti contre, à hauteur du toit.
@@ -103,8 +117,56 @@ export function archCellParts(ctx: CellContext): Part[] {
       }));
     } else {
       parts.push(...walkwayDeckParts(G, 0.5, settings.wallBaseColor));
+      topY = 0.5 + WALKWAY_H;
     }
   }
 
+  // Appuis : l'arche bute de toute sa largeur contre ses voisins, mais une
+  // tour garde ses coins arrondis sur toute sa hauteur — il resterait un jour
+  // vertical dans chaque coin. On les comble, jusqu'en haut du parapet.
+  if (before === 0) parts.push(...abutmentFillets(lookup, settings, cell, -dx, -dz, topY, stone));
+  if (after === 0) parts.push(...abutmentFillets(lookup, settings, cell, dx, dz, topY, stone));
+
+  return parts;
+}
+
+/**
+ * Raccords d'angle entre l'arche et son appui situé dans la direction
+ * (ddx, ddz) : pour chacun des deux coins de l'appui tournés vers l'arche,
+ * comble l'espace entre le plan de la face de l'arche et l'arrondi du coin
+ * (`cornerFilletGeo`), de y = −0.5 à `topY`. Ne déborde jamais du contour
+ * de l'appui vers l'intérieur : une tour est creuse.
+ */
+function abutmentFillets(
+  lookup: CellLookup,
+  settings: RenderSettings,
+  cell: GridCell,
+  ddx: number,
+  ddz: number,
+  topY: number,
+  mat: { roughness: number },
+): Part[] {
+  const support = getCell(lookup, cell.x + ddx, cell.y, cell.z + ddz);
+  if (!support?.isOccupied || support.type === BlockType.Arch || support.type === BlockType.Roof) return [];
+  const radii = getCornerRadii(lookup, support, settings);
+
+  const parts: Part[] = [];
+  // Les deux coins de l'appui sur sa face tournée vers l'arche, dans le
+  // repère de l'arche : (cx, cz), et la direction (sx, sz) vers laquelle le
+  // vide s'ouvre (vers l'appui, et vers le milieu de la face).
+  for (const t of [-1, 1] as const) {
+    const [cx, cz] = ddx !== 0 ? [ddx * 0.5, t * 0.5] : [t * 0.5, ddz * 0.5];
+    // Coin correspondant dans le repère de l'appui (côté opposé à la direction).
+    const [lx, lz] = ddx !== 0 ? [-ddx, t] : [t, -ddz];
+    const name = `${lz > 0 ? 'front' : 'back'}${lx > 0 ? 'Right' : 'Left'}` as keyof Omit<CornerRadii, 'max' | 'uniform'>;
+    const r = radii[name];
+    if (r < 0.01) continue;
+    const sx = ddx !== 0 ? ddx : -t;
+    const sz = ddx !== 0 ? -t : ddz;
+    // cornerFilletGeo s'étend vers (+X, +Z) : rotation qui l'envoie vers (sx, sz).
+    const rotation = sx > 0 ? (sz > 0 ? 0 : Math.PI / 2) : sz > 0 ? -Math.PI / 2 : Math.PI;
+    parts.push(part(cornerFilletGeo(r, +(topY + 0.5).toFixed(3)), settings.wallBaseColor, mat,
+      xform([cx, -0.5, cz], [0, rotation, 0])));
+  }
   return parts;
 }

@@ -3,6 +3,8 @@ import * as THREE from 'three';
 import { VillageGrid } from '../villageGrid';
 import { buildVillage } from './buildVillage';
 import { FLOOR_T, WALL_T } from './geometryCache';
+import { PARAPET_H, WALKWAY_H } from './cells/walkwayParts';
+import { BlockType } from '../types';
 import type { RenderSettings } from './renderSettings';
 
 const SETTINGS: RenderSettings = {
@@ -181,5 +183,56 @@ describe('buildVillage', () => {
     expect(floor.g).toBeGreaterThan(floor.b);
     expect(floor.getHSL({ h: 0, s: 0, l: 0 }).l).toBeLessThan(wall.getHSL({ h: 0, s: 0, l: 0 }).l - 0.2);
     expect(ceiling.equals(wall)).toBe(false);
+  });
+
+  describe('arche entre une tour et une maison', () => {
+    // Tour de 4 niveaux en (2, 4), maison de 2 niveaux en (4, 4) : arche
+    // automatique en (3, 1, 4), coiffée d'un chemin de ronde crénelé.
+    const grid = new VillageGrid(9, 10, 9);
+    for (let i = 0; i < 4; i += 1) grid.addBlockInColumn(2, 4);
+    for (let i = 0; i < 2; i += 1) grid.addBlockInColumn(4, 4);
+    const meshes = build(grid, SETTINGS).map(
+      ({ geometry, key }) => Object.assign(new THREE.Mesh(geometry, new THREE.MeshBasicMaterial({ side: THREE.DoubleSide })), { name: key }),
+    );
+    const [ax, ay, az] = grid.toWorldPosition(3, 1, 4);
+
+    it('est bien une arche', () => {
+      expect(grid.getOccupiedCells().find((c) => c.x === 3 && c.y === 1 && c.z === 4)?.type).toBe(BlockType.Arch);
+    });
+
+    it('épouse les coins arrondis de la tour, jusqu’en haut du parapet', () => {
+      // Juste dans la case de la tour, le long de la face de l'arche : sans
+      // raccord, le coin arrondi de la tour laisse un jour de ~11 cm.
+      for (const dy of [-0.3, 0, 0.3, 0.6]) {
+        for (const side of [1, -1]) {
+          const ray = new THREE.Raycaster(new THREE.Vector3(ax - 0.53, ay + dy, az + side * 3), new THREE.Vector3(0, 0, -side));
+          const hit = ray.intersectObjects(meshes)[0];
+          expect(Math.abs(hit.point.z - az)).toBeGreaterThanOrEqual(0.495);
+        }
+      }
+    });
+
+    it('n’a pas de rainure ouverte entre la corniche et le parapet', () => {
+      // Entre le dessus de la corniche (0.03) et le dessus des dalles (0.06).
+      for (const side of [1, -1]) {
+        const ray = new THREE.Raycaster(new THREE.Vector3(ax, ay + 0.5 + 0.045, az + side * 3), new THREE.Vector3(0, 0, -side));
+        const hit = ray.intersectObjects(meshes)[0];
+        // Le parapet (nu extérieur à 0.52) arrête le rayon, pas le bord des dalles (0.40).
+        expect(Math.abs(hit.point.z - az)).toBeGreaterThan(0.5);
+      }
+    });
+
+    it('a des archères qui traversent les merlons', () => {
+      // Merlons à x = ±0.25 ; fente centrée un peu sous le milieu du merlon.
+      const slitY = 0.5 + WALKWAY_H + PARAPET_H + SETTINGS.merlonH / 2 - SETTINGS.merlonH * 0.05;
+      for (const x of [-0.25, 0.25]) {
+        const ray = new THREE.Raycaster(new THREE.Vector3(ax + x, ay + slitY, az + 3), new THREE.Vector3(0, 0, -1));
+        ray.far = 6;
+        expect(ray.intersectObjects(meshes)).toEqual([]);
+        // À côté de la fente, le merlon est bien plein.
+        ray.set(new THREE.Vector3(ax + x + 0.06, ay + slitY, az + 3), new THREE.Vector3(0, 0, -1));
+        expect(ray.intersectObjects(meshes).length).toBeGreaterThan(0);
+      }
+    });
   });
 });

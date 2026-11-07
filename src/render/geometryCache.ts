@@ -308,6 +308,33 @@ export function hollowSheetGeo(radii: CornerRadii, shape: HollowShape, thickness
   });
 }
 
+// ── Raccord d'angle : comble le coin arrondi d'un voisin ─────────────────────
+
+/**
+ * Prisme vertical (y de 0 à `height`) dont la section est le "coin" laissé
+ * par un arrondi de rayon `r` : le carré [0, r]² moins le quart de disque
+ * centré en (r, r). Le coin carré est à l'origine, le prisme s'étend vers +X
+ * et +Z. Sert à faire épouser à une maçonnerie plate (arche, parapet) le
+ * contour arrondi d'une tour contre laquelle elle s'appuie.
+ */
+export function cornerFilletGeo(r: number, height: number): THREE.BufferGeometry {
+  return getGeo(`fillet|${r3(r)}|${r3(height)}`, () => {
+    const section: Array<[number, number]> = [[0, 0], [r, 0]];
+    // Même découpage que getRoundedRectContourPoints (10 segments par quart) :
+    // l'arc du raccord tombe pile sur les sommets du contour de la tour.
+    const ARC_SEGS = 10;
+    // Arc du point (r, 0) au point (0, r), côté de l'origine (angles 270° → 180°).
+    for (let i = 1; i < ARC_SEGS; i += 1) {
+      const a = (3 * Math.PI) / 2 - (Math.PI / 2) * (i / ARC_SEGS);
+      section.push([r + Math.cos(a) * r, r + Math.sin(a) * r]);
+    }
+    section.push([0, r]);
+    const geo = verticalPrism(section, 0, height);
+    geo.computeVertexNormals();
+    return geo;
+  });
+}
+
 // ── Toiture de tour : surfaces entre anneaux homothétiques du contour ───────
 
 /**
