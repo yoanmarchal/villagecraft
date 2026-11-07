@@ -5,6 +5,7 @@ import { buildVillage } from './buildVillage';
 import { FLOOR_T, WALL_T } from './geometryCache';
 import { PARAPET_H, WALKWAY_H } from './cells/walkwayParts';
 import { BlockType } from '../types';
+import { getRidgeAxis, makeCellLookup } from '../utils/cellUtils';
 import type { RenderSettings } from './renderSettings';
 
 const SETTINGS: RenderSettings = {
@@ -266,5 +267,129 @@ describe('buildVillage', () => {
       const c = (h.object as THREE.Mesh).geometry.getAttribute('color');
       return c.getY(h.face!.a) > c.getX(h.face!.a) + 0.2;
     })).toBe(true);
+  });
+
+  describe('jonction de toits perpendiculaires', () => {
+    /** Hauteur du premier toit rencontré par un rayon vertical en (x, z) monde. */
+    const roofHeight = (meshes: THREE.Object3D[], x: number, z: number) =>
+      new THREE.Raycaster(new THREE.Vector3(x, 10, z), new THREE.Vector3(0, -1, 0)).intersectObjects(meshes)[0]?.point.y;
+    const meshesOf = (grid: VillageGrid) =>
+      build(grid, SETTINGS).map(({ geometry }) => new THREE.Mesh(geometry, new THREE.MeshBasicMaterial({ side: THREE.DoubleSide })));
+    /**
+     * De part et d'autre de la frontière entre la case de jonction `c` et son
+     * aile (direction `d`), sur l'axe de l'aile : le toit doit être continu.
+     * Avant, l'aile butait, bout ouvert à pleine hauteur de faîtage, contre le
+     * pan descendant de la jonction (trou de ~0.6).
+     */
+    const jumpAtBoundary = (grid: VillageGrid, meshes: THREE.Object3D[], c: [number, number], d: [number, number]) => {
+      const [cx, , cz] = grid.toWorldPosition(c[0], 1, c[1]);
+      const inside = roofHeight(meshes, cx + d[0] * 0.45, cz + d[1] * 0.45)!;
+      const beyond = roofHeight(meshes, cx + d[0] * 0.55, cz + d[1] * 0.55)!;
+      return Math.abs(inside - beyond);
+    };
+
+    it('fusionne les toits d’un coin en L', () => {
+      // Maisons de plain-pied en (2, 2), (3, 2) et (2, 3) : coin en (2, 2).
+      const grid = new VillageGrid(9, 10, 9);
+      for (const [x, z] of [[2, 2], [3, 2], [2, 3]]) grid.addBlockInColumn(x, z);
+      const meshes = meshesOf(grid);
+      expect(jumpAtBoundary(grid, meshes, [2, 2], [1, 0])).toBeLessThan(0.1);
+      expect(jumpAtBoundary(grid, meshes, [2, 2], [0, 1])).toBeLessThan(0.1);
+    });
+
+    it('garde des faîtages parallèles dans un bloc large, sans les croiser', () => {
+      // Bloc de plain-pied 4 × 2 (x = 2..5, z = 2..3) : toutes les cases ont
+      // des voisins sur les deux axes, mais ce n'est pas une jonction d'ailes.
+      const grid = new VillageGrid(9, 10, 9);
+      for (let x = 2; x < 6; x += 1) for (let z = 2; z < 4; z += 1) grid.addBlockInColumn(x, z);
+      const meshes = meshesOf(grid);
+      const [x3, , z2] = grid.toWorldPosition(3, 1, 2);
+      const ridge = roofHeight(meshes, x3 + 0.2, z2)!;
+      // Faîtage continu selon X (le long du bloc), y compris d'une case à l'autre…
+      expect(Math.abs(roofHeight(meshes, x3 + 0.5, z2)! - ridge)).toBeLessThan(0.1);
+      // …et une noue entre les deux rangées, pas un faîtage croisé selon Z.
+      expect(roofHeight(meshes, x3 + 0.2, z2 + 0.5)!).toBeLessThan(ridge - 0.4);
+    });
+
+    it('oriente tout un bloc carré de la même façon, même contre un mur plus haut', () => {
+      // Bloc 2 × 2 de plain-pied, mur de 3 niveaux contre (3, 2) : à égalité,
+      // cette case prenait l'axe de ses voisins (X) et croisait les autres (Z).
+      const grid = new VillageGrid(9, 10, 9);
+      for (let x = 2; x < 4; x += 1) for (let z = 2; z < 4; z += 1) grid.addBlockInColumn(x, z);
+      for (let y = 0; y < 3; y += 1) grid.addBlock(4, y, 2);
+      const lookup = makeCellLookup(grid.getOccupiedCells());
+      const axes = new Set(
+        grid.getOccupiedCells().filter((c) => c.y === 1 && c.x < 4).map((c) => getRidgeAxis(lookup, c)),
+      );
+      expect(axes.size).toBe(1);
+    });
+
+    it('prolonge sur une arche le toit de l’appui dans son orientation', () => {
+      // Tour en (1, 2) ; maison en rangée selon X (x = 1..3, z = 4), toit à
+      // y = 2, faîtage selon X ; arche en (1, 1, 3), portée selon Z. Son toit
+      // suivait la portée (Z) et butait, bout ouvert, contre le pan de la maison.
+      const grid = new VillageGrid(9, 10, 9);
+      for (let y = 0; y < 3; y += 1) grid.addBlock(1, y, 2);
+      for (let x = 1; x < 4; x += 1) for (let y = 0; y < 3; y += 1) grid.addBlock(x, y, 4);
+      expect(grid.getCell({ x: 1, y: 1, z: 3 })?.type).toBe(BlockType.Arch);
+      const meshes = meshesOf(grid);
+      const [ax, , az] = grid.toWorldPosition(1, 1, 3);
+      const ridge = roofHeight(meshes, ax + 0.3, az)!;
+      // Faîtage selon X : même hauteur le long de X, pans qui descendent selon Z…
+      expect(Math.abs(roofHeight(meshes, ax - 0.3, az)! - ridge)).toBeLessThan(0.1);
+      expect(roofHeight(meshes, ax, az - 0.4)!).toBeLessThan(ridge - 0.4);
+      // …et continu avec le toit de la maison au-delà de l'appui.
+      expect(jumpAtBoundary(grid, meshes, [1, 3], [0, 1])).toBeLessThan(0.45);
+    });
+
+    it('arrête la demi-aile d’un coin en L contre le pignon, sans rien devant son pied', () => {
+      // Aile selon Z (x = 3, z = 0..3), aile selon X (x = 1..2, z = 3) : le
+      // coin (3, 3) suit l'aile la plus longue (Z), pignon en façade (+Z) ;
+      // l'aile X y entre par une demi-aile. Son pan avant passait devant le
+      // pied du pignon jusqu'à la façade, liteaux et bandeau d'égout compris.
+      const grid = new VillageGrid(9, 10, 9);
+      for (const [x, z] of [[3, 0], [3, 1], [3, 2], [3, 3], [1, 3], [2, 3]]) grid.addBlockInColumn(x, z);
+      const meshes = meshesOf(grid);
+      const [cx, cy, cz] = grid.toWorldPosition(3, 1, 3);
+      // Juste au-dessus de l'égout, côté de la demi-aile, à l'aplomb d'un liteau.
+      const hit = new THREE.Raycaster(new THREE.Vector3(cx - 0.4, cy - 0.47, cz + 3), new THREE.Vector3(0, 0, -1)).intersectObjects(meshes)[0];
+      expect(hit.point.z - cz).toBeLessThanOrEqual(0.505); // la face du pignon (0.501), rien devant
+      // Et le toit reste continu entre l'aile X et le coin.
+      expect(jumpAtBoundary(grid, meshes, [3, 3], [-1, 0])).toBeLessThan(0.1);
+    });
+
+    it('ne laisse rien dépasser au pied d’un pignon', () => {
+      // Maison de plain-pied en rangée selon X (x = 2..4, z = 4) : pignons à
+      // ±X. Près de l'égout, rien ne doit dépasser le nu du bandeau bas de
+      // pignon (0.544) — le bandeau d'égout latéral allait jusqu'à 0.57.
+      const grid = new VillageGrid(9, 10, 9);
+      for (const x of [2, 3, 4]) grid.addBlockInColumn(x, 4);
+      const meshes = meshesOf(grid);
+      const [ex, ey, ez] = grid.toWorldPosition(4, 1, 4);
+      for (const dz of [-0.52, 0.52]) {
+        const hit = new THREE.Raycaster(new THREE.Vector3(ex + 3, ey - 0.52, ez + dz), new THREE.Vector3(-1, 0, 0)).intersectObjects(meshes)[0];
+        expect(hit.point.x - ex).toBeLessThanOrEqual(0.545);
+      }
+      // Le bandeau bas du pignon couvre le bout des pans et des bandeaux
+      // latéraux (nu à 0.54) : sa face est devant, pas dans le même plan.
+      for (const dz of [-0.48, 0, 0.48]) {
+        const hit = new THREE.Raycaster(new THREE.Vector3(ex + 3, ey - 0.495, ez + dz), new THREE.Vector3(-1, 0, 0)).intersectObjects(meshes)[0];
+        expect(hit.point.x - ex).toBeGreaterThan(0.542);
+      }
+    });
+
+    it('fusionne l’aile d’une jonction en T sans pignon au dos', () => {
+      // Rangée (1..3, 2) et aile en (2, 3) : jonction en (2, 2).
+      const grid = new VillageGrid(9, 10, 9);
+      for (const [x, z] of [[1, 2], [2, 2], [3, 2], [2, 3]]) grid.addBlockInColumn(x, z);
+      const meshes = meshesOf(grid);
+      expect(jumpAtBoundary(grid, meshes, [2, 2], [0, 1])).toBeLessThan(0.1);
+      expect(jumpAtBoundary(grid, meshes, [2, 2], [1, 0])).toBeLessThan(0.1);
+      // Au dos (côté sans aile), le pan du toit principal descend normalement :
+      // pas de pignon d'aile qui dépasse au milieu du pan.
+      const [cx, , cz] = grid.toWorldPosition(2, 1, 2);
+      const ridge = roofHeight(meshes, cx + 0.2, cz)!;
+      expect(roofHeight(meshes, cx + 0.2, cz - 0.4)!).toBeLessThan(ridge - 0.4);
+    });
   });
 });

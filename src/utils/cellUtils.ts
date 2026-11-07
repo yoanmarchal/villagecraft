@@ -157,6 +157,51 @@ export function getRoofConfig(lookup: CellLookup, cell: GridCell): {
   return { axis, hasLeft, hasRight, hasFront, hasBack, isCorner, isEnd };
 }
 
+/** Case coiffée d'un toit à deux pans (pas la flèche d'une tour, pas un chemin de ronde). */
+export function isGableRoofCell(lookup: CellLookup, cell: GridCell | null): boolean {
+  return !!cell?.isOccupied && cell.type === BlockType.Roof && !isIsolatedBlock(lookup, cell) && !isRampart(lookup, cell);
+}
+
+/**
+ * Axe du faîtage d'un toit à deux pans, cohérent à l'échelle du bâtiment :
+ * celui de la plus longue suite de toits à deux pans contigus (même niveau)
+ * qui traverse la case. Dans un bloc rectangulaire, tous les faîtages sont
+ * ainsi parallèles (au lieu d'un choix case par case, qui croisait les
+ * faîtages à l'intérieur des blocs) ; une aile d'une case de large suit sa
+ * longueur. À égalité (bloc carré…), on tranche pour tout le groupe de toits
+ * contigus à la fois — sa plus grande dimension, Z sinon — et jamais case
+ * par case : une case qui touchait en plus un mur plus haut prenait l'autre
+ * axe et croisait son faîtage au milieu du bloc. Une case de toit seule
+ * garde l'axe de ses voisins occupés, comme avant.
+ */
+export function getRidgeAxis(lookup: CellLookup, cell: GridCell): 'x' | 'z' {
+  const run = (dx: number, dz: number) => {
+    let n = 0;
+    for (let k = 1; isGableRoofCell(lookup, getCell(lookup, cell.x + dx * k, cell.y, cell.z + dz * k)); k += 1) n += 1;
+    return n;
+  };
+  const runX = 1 + run(1, 0) + run(-1, 0);
+  const runZ = 1 + run(0, 1) + run(0, -1);
+  if (runX !== runZ) return runX > runZ ? 'x' : 'z';
+
+  // Égalité : emprise du groupe de toits à deux pans contigus (même niveau).
+  const seen = new Set<string>([cellKey(cell.x, cell.y, cell.z)]);
+  const queue: GridCell[] = [cell];
+  let [minX, maxX, minZ, maxZ] = [cell.x, cell.x, cell.z, cell.z];
+  while (queue.length > 0) {
+    const current = queue.pop()!;
+    for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+      const next = getCell(lookup, current.x + dx, current.y, current.z + dz);
+      if (!next || seen.has(cellKey(next.x, next.y, next.z)) || !isGableRoofCell(lookup, next)) continue;
+      seen.add(cellKey(next.x, next.y, next.z));
+      queue.push(next);
+      [minX, maxX, minZ, maxZ] = [Math.min(minX, next.x), Math.max(maxX, next.x), Math.min(minZ, next.z), Math.max(maxZ, next.z)];
+    }
+  }
+  if (seen.size === 1) return getRoofConfig(lookup, cell).axis;
+  return maxX - minX > maxZ - minZ ? 'x' : 'z';
+}
+
 export type CellFace = 'front' | 'back' | 'left' | 'right';
 
 /**

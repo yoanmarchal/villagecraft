@@ -21,7 +21,9 @@ import {
   getColumnTop,
   getCell,
   getCornerRadii,
+  getRidgeAxis,
   hasOccupiedCell,
+  isGableRoofCell,
   isIsolatedBlock,
   isRampart,
   isTowerColumn,
@@ -106,15 +108,17 @@ export function archCellParts(ctx: CellContext): Part[] {
 
     // Ce qu'il y a, à hauteur du dessus de l'arche (y + 1), sur ses deux
     // appuis (les cases au-delà des deux bouts de la portée).
-    let roofContinues = false; // un appui y a un toit à deux pans : il se prolonge sur l'arche
+    const spanAxis = spanAlongX ? 'x' : 'z';
+    // Axes des toits à deux pans d'appui qui arrivent à ce niveau.
+    const continuingAxes: Array<'x' | 'z'> = [];
     let walkwayBlocked = false; // un appui n'y a pas de mur : un chemin de ronde n'y mènerait nulle part
     for (const k of [-before - 1, after + 1]) {
       const above = getCell(lookup, x + dx * k, y + 1, z + dz * k);
       if (!above?.isOccupied) {
         walkwayBlocked = true;
       } else if (above.type === BlockType.Roof) {
-        if (!isIsolatedBlock(lookup, above) && !isRampart(lookup, above)) {
-          roofContinues = true;
+        if (isGableRoofCell(lookup, above)) {
+          continuingAxes.push(getRidgeAxis(lookup, above));
           walkwayBlocked = true;
         } else if (isIsolatedBlock(lookup, above)) {
           walkwayBlocked = true; // pied de la flèche d'une tour, pas un mur
@@ -122,26 +126,30 @@ export function archCellParts(ctx: CellContext): Part[] {
       }
     }
 
-    // Pignon aux bouts de l'arche seulement si rien n'est bâti contre, à hauteur du toit.
+    // Pignon aux bouts du toit seulement si rien n'est bâti contre, à hauteur
+    // du toit. Faîtage selon la portée : pignons aux bouts de l'arche (pas
+    // entre deux cases d'une même arche). Faîtage en travers : pignons sur
+    // les deux têtes de l'arche.
     const endFree = (k: number) => !hasOccupiedCell(lookup, x + dx * k, y + 1, z + dz * k);
-    const archRoof = () => gableRoofParts(settings, {
-      axis: spanAlongX ? 'x' : 'z',
-      gablePos: after === 0 && endFree(1),
-      gableNeg: before === 0 && endFree(-1),
-      baseY: 1,
-    });
+    const headFree = (s: number) => !hasOccupiedCell(lookup, x + dz * s, y + 1, z + dx * s);
+    const archRoof = (axis: 'x' | 'z') => gableRoofParts(settings, axis === spanAxis
+      ? { axis, gablePos: after === 0 && endFree(1), gableNeg: before === 0 && endFree(-1), baseY: 1 }
+      : { axis, gablePos: headFree(1), gableNeg: headFree(-1), baseY: 1 });
 
-    if (roofContinues) {
+    if (continuingAxes.length > 0) {
       // Le toit de l'appui continue par-dessus l'arche (et bute contre une
       // tour éventuelle) : pas de merlons de pierre adossés à des tuiles.
-      parts.push(...archRoof());
+      // Même orientation que le toit de l'appui (celui qui suit la portée en
+      // priorité) : un toit d'arche en travers butait, bout ouvert, contre le
+      // pan descendant de ce toit — un trou.
+      parts.push(...archRoof(continuingAxes.includes(spanAxis) ? spanAxis : continuingAxes[0]));
     } else if (besideTower && !walkwayBlocked) {
       // Chemin de ronde : il relie deux murs (tour, mur plus haut, courtine).
       parts.push(...crenellatedWalkwayParts(G, 0.5, settings));
       topY = 0.5 + WALKWAY_H + PARAPET_H;
     } else if (gabledColumns.size >= 2) {
       // Faîtage d'un appui à l'autre.
-      parts.push(...archRoof());
+      parts.push(...archRoof(spanAxis));
     } else {
       parts.push(...walkwayDeckParts(G, 0.5, settings.wallBaseColor));
       topY = 0.5 + WALKWAY_H;
