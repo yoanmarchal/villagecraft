@@ -25,6 +25,11 @@ import { stoneParts } from './stoneParts';
 import { isQuoinProtected } from './decorations';
 import type { CellContext } from './context';
 
+/** Opacité de jour des vitres : assez faible pour voir l'intérieur depuis la rue. */
+export const WINDOW_GLASS_OPACITY = 0.3;
+/** Opacité des vitres à `windowGlow` = 1 : la lueur du soir reste franche (bloom). */
+export const WINDOW_GLASS_LIT_OPACITY = 0.85;
+
 export function wallWindowCellParts(ctx: CellContext): Part[] {
   const { cell, lookup, exposedFaces, radii, isIsolated, isRampart, settings } = ctx;
   // Tours et courtines sont défensives : meurtrières plutôt que fenêtres.
@@ -32,7 +37,10 @@ export function wallWindowCellParts(ctx: CellContext): Part[] {
   const { windowStonesPerFace, windowStoneRoughness, quoinMargin } = settings;
 
   const baseColor = settings.wallBaseColor;
-  const windowGlassColor = '#2a3a4a';
+  // Verre clair, à peine teinté : l'intérieur (et demain son mobilier) doit
+  // se voir depuis la rue. Le soir, VillageMeshes remonte son opacité avec
+  // `windowGlow` pour que la lueur reste franche.
+  const windowGlassColor = '#c4dbe6';
   const { windowFrameColor, doorColor } = shades(baseColor, { windowFrameColor: -0.15, doorColor: -0.20 });
   const doorFrameColor = windowFrameColor; // même teinte que le cadre de fenêtre
   const separatorColor = varyColorBrightness(windowFrameColor, -0.05);
@@ -141,7 +149,7 @@ export function wallWindowCellParts(ctx: CellContext): Part[] {
         windowFrameColor, { roughness: 0.85 }, mul(faceRot, xform([0, 0, 0.50]))),
       // Vitre transparente, en retrait dans l'épaisseur du mur (tableau visible)
       part(roundedBoxGeo(0.54 * scale, 0.44, 0.02, glassRadius, 4), windowGlassColor,
-        { roughness: 0.1, metalness: 0.15, transparent: true, opacity: 0.85, glow: true },
+        { roughness: 0.1, metalness: 0, transparent: true, opacity: WINDOW_GLASS_OPACITY, glow: true },
         mul(faceRot, xform([0, 0, revealZ]))),
       // Séparateurs horizontal et vertical, juste devant la vitre
       part(boxGeo(0.54 * scale, 0.05, 0.019), separatorColor, { roughness: 1 }, mul(faceRot, xform([0, 0, revealZ + 0.015]))),

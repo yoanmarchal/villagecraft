@@ -14,6 +14,7 @@ import { VillageChunkCache } from '../render/buildVillage';
 import { createGrowMaterialSet, disposeGrowMaterialSet, POP_DURATION, updateGrowTime, type GrowMaterialSet } from '../render/growMaterial';
 import { matKey, type MaterialSpec } from '../render/parts';
 import { pickRenderSettings } from '../render/renderSettings';
+import { WINDOW_GLASS_LIT_OPACITY } from '../render/cells/wallWindowCellParts';
 import { useControlStore } from '../store/controlStore';
 
 /** Teinte des fenêtres allumées (lumière de bougie / lampe). */
@@ -107,6 +108,13 @@ export function VillageMeshes({ cells, toWorldPosition, gridWidth, gridDepth }: 
       if (!set) continue;
       set.material.emissive.set(WINDOW_GLOW_COLOR);
       set.material.emissiveIntensity = windowGlow * WINDOW_GLOW_INTENSITY;
+      // Vitres : claires de jour (on voit l'intérieur), plus couvrantes une
+      // fois allumées — l'opacité atténue aussi l'émission, la lueur serait
+      // sinon trop faible pour le bloom.
+      if (mat.transparent) {
+        const day = mat.opacity ?? 1;
+        set.material.opacity = day + (Math.max(day, WINDOW_GLASS_LIT_OPACITY) - day) * windowGlow;
+      }
     }
     invalidate();
   }, [groups, materials, windowGlow, invalidate]);
