@@ -10,7 +10,7 @@
     "typecheck": "tsc -b --pretty false",
     "test": "vitest run",
     "test:watch": "vitest",
-    "lint": "eslint ."
+    "lint": "oxlint --deny-warnings"
   },
   "dependencies": {
     "@react-three/drei": "^10.7.7",
@@ -20,7 +20,7 @@
     "r3f-perf": "^7.2.3",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
-    "three": "^0.187.0",
+    "three": "^0.186.1",
     "three-bvh-csg": "^0.0.18",
     "three-mesh-bvh": "^0.9.18",
     "three-stdlib": "^2.36.1",
@@ -29,17 +29,13 @@
     "zustand": "^5.0.15"
   },
   "devDependencies": {
-    "@eslint/js": "^10.0.1",
     "@tweakpane/core": "^2.0.5",
     "@types/node": "^26.0.1",
     "@types/react": "^19.2.17",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^6.0.5",
-    "eslint": "^10.11.0",
-    "eslint-plugin-react-hooks": "^7.1.1",
-    "globals": "^17.12.0",
-    "typescript": "^5.8.3",
-    "typescript-eslint": "^8.72.2",
+    "oxlint": "^1.93.0",
+    "typescript": "^7.0.2",
     "vite": "^8.3.7",
     "vitest": "^5.0.1"
   }
