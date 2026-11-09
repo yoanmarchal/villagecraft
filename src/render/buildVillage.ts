@@ -365,12 +365,12 @@ function mergeParts(allParts: PositionedPart[]): THREE.BufferGeometry {
     for (let i = 0; i < count; i++) {
       const o = (offset + i) * 3;
 
-      v.fromBufferAttribute(posAttr as THREE.BufferAttribute, i).applyMatrix4(p.matrix);
+      v.fromBufferAttribute(posAttr, i).applyMatrix4(p.matrix);
       positions[o] = v.x;
       positions[o + 1] = v.y;
       positions[o + 2] = v.z;
 
-      n.fromBufferAttribute(norAttr as THREE.BufferAttribute, i).applyMatrix3(normalMatrix).normalize();
+      n.fromBufferAttribute(norAttr, i).applyMatrix3(normalMatrix).normalize();
       normals[o] = Math.round(n.x * 127);
       normals[o + 1] = Math.round(n.y * 127);
       normals[o + 2] = Math.round(n.z * 127);

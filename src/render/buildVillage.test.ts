@@ -106,7 +106,7 @@ describe('buildVillage', () => {
     // leur place dans la pièce ; seule la maçonnerie ne doit pas y saillir.
     const isFurnishing = (hit: THREE.Intersection) => {
       const mesh = hit.object as THREE.Mesh;
-      return mesh.userData.glow || mesh.geometry.getAttribute('aCell').getW(hit.face!.a) % 4 === 2;
+      return mesh.userData.glow === true || mesh.geometry.getAttribute('aCell').getW(hit.face!.a) % 4 === 2;
     };
     const inside = (hit: THREE.Intersection) => {
       const p = hit.point;
@@ -166,7 +166,7 @@ describe('buildVillage', () => {
         for (const hit of ray.intersectObjects(meshes)) {
           const colors = (hit.object as THREE.Mesh).geometry.getAttribute('color');
           const [r, g, b] = [colors.getX(hit.face!.a), colors.getY(hit.face!.a), colors.getZ(hit.face!.a)];
-          if (g > r + 0.2 && g > b + 0.2) intruders.add(`${hit.object.name} @ ${hit.point.toArray().map((v) => v.toFixed(2))}`);
+          if (g > r + 0.2 && g > b + 0.2) intruders.add(`${hit.object.name} @ ${hit.point.toArray().map((v) => v.toFixed(2)).join(',')}`);
         }
       }
     }
@@ -293,8 +293,8 @@ describe('buildVillage', () => {
      */
     const jumpAtBoundary = (grid: VillageGrid, meshes: THREE.Object3D[], c: [number, number], d: [number, number]) => {
       const [cx, , cz] = grid.toWorldPosition(c[0], 1, c[1]);
-      const inside = roofHeight(meshes, cx + d[0] * 0.45, cz + d[1] * 0.45)!;
-      const beyond = roofHeight(meshes, cx + d[0] * 0.55, cz + d[1] * 0.55)!;
+      const inside = roofHeight(meshes, cx + d[0] * 0.45, cz + d[1] * 0.45);
+      const beyond = roofHeight(meshes, cx + d[0] * 0.55, cz + d[1] * 0.55);
       return Math.abs(inside - beyond);
     };
 
@@ -314,11 +314,11 @@ describe('buildVillage', () => {
       for (let x = 2; x < 6; x += 1) for (let z = 2; z < 4; z += 1) grid.addBlockInColumn(x, z);
       const meshes = meshesOf(grid);
       const [x3, , z2] = grid.toWorldPosition(3, 1, 2);
-      const ridge = roofHeight(meshes, x3 + 0.2, z2)!;
+      const ridge = roofHeight(meshes, x3 + 0.2, z2);
       // Faîtage continu selon X (le long du bloc), y compris d'une case à l'autre…
-      expect(Math.abs(roofHeight(meshes, x3 + 0.5, z2)! - ridge)).toBeLessThan(0.1);
+      expect(Math.abs(roofHeight(meshes, x3 + 0.5, z2) - ridge)).toBeLessThan(0.1);
       // …et une noue entre les deux rangées, pas un faîtage croisé selon Z.
-      expect(roofHeight(meshes, x3 + 0.2, z2 + 0.5)!).toBeLessThan(ridge - 0.4);
+      expect(roofHeight(meshes, x3 + 0.2, z2 + 0.5)).toBeLessThan(ridge - 0.4);
     });
 
     it('oriente tout un bloc carré de la même façon, même contre un mur plus haut', () => {
@@ -344,10 +344,10 @@ describe('buildVillage', () => {
       expect(grid.getCell({ x: 1, y: 1, z: 3 })?.type).toBe(BlockType.Arch);
       const meshes = meshesOf(grid);
       const [ax, , az] = grid.toWorldPosition(1, 1, 3);
-      const ridge = roofHeight(meshes, ax + 0.3, az)!;
+      const ridge = roofHeight(meshes, ax + 0.3, az);
       // Faîtage selon X : même hauteur le long de X, pans qui descendent selon Z…
-      expect(Math.abs(roofHeight(meshes, ax - 0.3, az)! - ridge)).toBeLessThan(0.1);
-      expect(roofHeight(meshes, ax, az - 0.4)!).toBeLessThan(ridge - 0.4);
+      expect(Math.abs(roofHeight(meshes, ax - 0.3, az) - ridge)).toBeLessThan(0.1);
+      expect(roofHeight(meshes, ax, az - 0.4)).toBeLessThan(ridge - 0.4);
       // …et continu avec le toit de la maison au-delà de l'appui.
       expect(jumpAtBoundary(grid, meshes, [1, 3], [0, 1])).toBeLessThan(0.45);
     });
@@ -398,8 +398,8 @@ describe('buildVillage', () => {
       // Au dos (côté sans aile), le pan du toit principal descend normalement :
       // pas de pignon d'aile qui dépasse au milieu du pan.
       const [cx, , cz] = grid.toWorldPosition(2, 1, 2);
-      const ridge = roofHeight(meshes, cx + 0.2, cz)!;
-      expect(roofHeight(meshes, cx + 0.2, cz - 0.4)!).toBeLessThan(ridge - 0.4);
+      const ridge = roofHeight(meshes, cx + 0.2, cz);
+      expect(roofHeight(meshes, cx + 0.2, cz - 0.4)).toBeLessThan(ridge - 0.4);
     });
   });
 });

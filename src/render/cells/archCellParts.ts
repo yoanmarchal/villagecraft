@@ -28,7 +28,6 @@ import {
   isRampart,
   isTowerColumn,
   type CellLookup,
-  type CornerRadii,
 } from '../../utils/cellUtils';
 import { shades } from '../../colorPalettes';
 import { archBodyGeo, archVoussoirGeo, archVoussoirMidX, cornerFilletGeo } from '../geometryCache';
@@ -193,7 +192,7 @@ function abutmentFillets(
     const [cx, cz] = ddx !== 0 ? [ddx * 0.5, t * 0.5] : [t * 0.5, ddz * 0.5];
     // Coin correspondant dans le repère de l'appui (côté opposé à la direction).
     const [lx, lz] = ddx !== 0 ? [-ddx, t] : [t, -ddz];
-    const name = `${lz > 0 ? 'front' : 'back'}${lx > 0 ? 'Right' : 'Left'}` as keyof Omit<CornerRadii, 'max' | 'uniform'>;
+    const name = `${lz > 0 ? 'front' : 'back'}${lx > 0 ? 'Right' : 'Left'}` as const;
     const r = radii[name];
     if (r < 0.01) continue;
     const sx = ddx !== 0 ? ddx : -t;

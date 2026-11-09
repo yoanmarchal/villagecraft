@@ -79,7 +79,7 @@ function innerExtentX(hollow: HollowShape, radii: CornerRadii, sx: 1 | -1, z: nu
   const inner = 0.5 - WALL_T;
   const zSide = z > 0 ? 'front' : 'back';
   if (hollow.sides[zSide] === 'open') return inner;
-  const corner = `${z > 0 ? 'front' : 'back'}${sx > 0 ? 'Right' : 'Left'}` as keyof Omit<CornerRadii, 'max' | 'uniform'>;
+  const corner = `${z > 0 ? 'front' : 'back'}${sx > 0 ? 'Right' : 'Left'}` as const;
   const ri = Math.max(0, radii[corner] - WALL_T);
   const dz = Math.abs(z) - (inner - ri);
   if (ri <= 0 || dz <= 0) return inner;
@@ -93,7 +93,7 @@ function innerExtentZ(hollow: HollowShape, radii: CornerRadii, sz: 1 | -1, x: nu
   const inner = 0.5 - WALL_T;
   const xSide = x > 0 ? 'right' : 'left';
   if (hollow.sides[xSide] === 'open') return inner;
-  const corner = `${sz > 0 ? 'front' : 'back'}${x > 0 ? 'Right' : 'Left'}` as keyof Omit<CornerRadii, 'max' | 'uniform'>;
+  const corner = `${sz > 0 ? 'front' : 'back'}${x > 0 ? 'Right' : 'Left'}` as const;
   const ri = Math.max(0, radii[corner] - WALL_T);
   const dx = Math.abs(x) - (inner - ri);
   if (ri <= 0 || dx <= 0) return inner;
