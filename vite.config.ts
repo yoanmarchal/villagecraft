@@ -1,3 +1,4 @@
+/// <reference types="vitest/config" />
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react'
 
@@ -48,5 +49,18 @@ export default defineConfig({
     },
     // three seul pèse ~700 kB minifié : l'avertissement par défaut (500 kB) n'apporte rien.
     chunkSizeWarningLimit: 800,
+  },
+  test: {
+    // three-bvh-csg n'a pas de champ `exports` et son `main` est un build UMD
+    // CommonJS, qui fait `require("three")` (THREE_CJS_DEPRECATED). Le build
+    // navigateur prend son `module` (ESM) ; sous Vitest la résolution SSR prend
+    // `main` : on pointe donc sur ce même point d'entrée ESM, et on fait traiter
+    // le paquet par Vite (sans `"type": "module"`, Node lirait ses .js en CJS).
+    alias: [{ find: /^three-bvh-csg$/, replacement: 'three-bvh-csg/src/index.js' }],
+    server: {
+      deps: {
+        inline: ['three-bvh-csg'],
+      },
+    },
   },
 });
