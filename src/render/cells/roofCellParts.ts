@@ -19,35 +19,21 @@ import {
 } from '../../utils/cellUtils';
 import type { GridCell } from '../../types';
 import { shades, varyColorBrightness } from '../../colorPalettes';
-import {
-  boxGeo,
-  cylinderGeo,
-  gableGeo,
-  shapedBoxGeo,
-  sphereGeo,
-  spireBandGeo,
-  towerSoffitGeo,
-} from '../geometryCache';
+import { boxGeo, cylinderGeo, gableGeo, shapedBoxGeo, sphereGeo, spireBandGeo, towerSoffitGeo } from '../geometryCache';
 import { mul, part, xform, type Part } from '../parts';
 import type { RenderSettings } from '../renderSettings';
 import type { CellContext } from './context';
-import {
-  crenellatedWalkwayParts,
-  MERLON_DEPTH,
-  MERLON_WIDTH_FACTOR,
-  PARAPET_H,
-  stoneColors,
-} from './walkwayParts';
+import { crenellatedWalkwayParts, MERLON_DEPTH, MERLON_WIDTH_FACTOR, PARAPET_H, stoneColors } from './walkwayParts';
 
 // ── Constantes géométriques (espace local cellule : Y=0 centre, ±0.5 bords) ──
-const RUN = 0.5;                                      // course horizontale = demi-cellule
-const PANEL_LEN = 1.08;                               // longueur de pan le long du faîtage
-const PANEL_T = 0.055;                                // épaisseur de pan
+const RUN = 0.5; // course horizontale = demi-cellule
+const PANEL_LEN = 1.08; // longueur de pan le long du faîtage
+const PANEL_T = 0.055; // épaisseur de pan
 const GABLE_Z = 0.466;
-const FLUE_W = 0.14;                                  // section de la souche de cheminée                                // plan médian du remplissage de pignon
+const FLUE_W = 0.14; // section de la souche de cheminée                                // plan médian du remplissage de pignon
 
 // Décalages Z des liteaux (4 rangées de tuiles le long du faîtage)
-const RIB_OFFSETS = [-0.40, -0.13, 0.13, 0.40];
+const RIB_OFFSETS = [-0.4, -0.13, 0.13, 0.4];
 
 export function roofCellParts(ctx: CellContext): Part[] {
   const { cell, lookup, isIsolated, settings } = ctx;
@@ -98,18 +84,20 @@ export function roofCellParts(ctx: CellContext): Part[] {
   const towardGablePos = across === 'z' ? gablePos : gableNeg;
   const towardGableNeg = across === 'z' ? gableNeg : gablePos;
   for (const side of stubSides) {
-    parts.push(...gableRoofParts(settings, {
-      axis: across,
-      extent: side > 0 ? 'pos' : 'neg',
-      gablePos: false,
-      gableNeg: false,
-      // Coin en L : côté pignon, le pan s'arrête dans l'épaisseur du pignon
-      // (sinon il passait devant son pied, liteaux et bandeau compris).
-      panRunPos: towardGablePos ? GABLE_Z - 0.03 : RUN,
-      panRunNeg: towardGableNeg ? GABLE_Z - 0.03 : RUN,
-      eavePos: !towardGablePos && (across === 'z' ? !hasRight : !hasBack),
-      eaveNeg: !towardGableNeg && (across === 'z' ? !hasLeft : !hasFront),
-    }));
+    parts.push(
+      ...gableRoofParts(settings, {
+        axis: across,
+        extent: side > 0 ? 'pos' : 'neg',
+        gablePos: false,
+        gableNeg: false,
+        // Coin en L : côté pignon, le pan s'arrête dans l'épaisseur du pignon
+        // (sinon il passait devant son pied, liteaux et bandeau compris).
+        panRunPos: towardGablePos ? GABLE_Z - 0.03 : RUN,
+        panRunNeg: towardGableNeg ? GABLE_Z - 0.03 : RUN,
+        eavePos: !towardGablePos && (across === 'z' ? !hasRight : !hasBack),
+        eaveNeg: !towardGableNeg && (across === 'z' ? !hasLeft : !hasFront),
+      }),
+    );
   }
 
   return parts;
@@ -123,7 +111,18 @@ export function roofCellParts(ctx: CellContext): Part[] {
  */
 export function gableRoofParts(
   settings: RenderSettings,
-  { axis, gablePos, gableNeg, eavePos = true, eaveNeg = true, flues = [], baseY = 0, extent = 'full', panRunPos = RUN, panRunNeg = RUN }: {
+  {
+    axis,
+    gablePos,
+    gableNeg,
+    eavePos = true,
+    eaveNeg = true,
+    flues = [],
+    baseY = 0,
+    extent = 'full',
+    panRunPos = RUN,
+    panRunNeg = RUN,
+  }: {
     axis: 'x' | 'z';
     /**
      * Portion de la cellule couverte le long du faîtage : toute la case, ou
@@ -190,36 +189,62 @@ export function gableRoofParts(
   for (const side of [1, -1] as const) {
     const run = side === 1 ? panRunPos : panRunNeg;
     const full = run >= RUN;
-    const slopeLen = full ? SLOPE_LEN : +(SLOPE_LEN * run / RUN).toFixed(4);
+    const slopeLen = full ? SLOPE_LEN : +((SLOPE_LEN * run) / RUN).toFixed(4);
     // Centre du pan : à mi-portée, depuis le faîtage.
-    const panelM = mul(G, xform([side * run / 2, RIDGE_Y - (RISE * run / RUN) / 2, zMid], [0, 0, -side * SLOPE_ANG]));
-    parts.push(part(full ? panelGeo : boxGeo(slopeLen, PANEL_T, panelLen), side === 1 ? roofColor : colorLight, { roughness: 0.84 }, panelM));
+    const panelM = mul(G, xform([(side * run) / 2, RIDGE_Y - (RISE * run) / RUN / 2, zMid], [0, 0, -side * SLOPE_ANG]));
+    parts.push(
+      part(
+        full ? panelGeo : boxGeo(slopeLen, PANEL_T, panelLen),
+        side === 1 ? roofColor : colorLight,
+        { roughness: 0.84 },
+        panelM,
+      ),
+    );
     const sideRibGeo = full ? ribGeo : boxGeo(slopeLen, 0.022, 0.042);
     for (const z of RIB_OFFSETS) {
       if (z < z0 || z > z1) continue;
-      parts.push(part(sideRibGeo, colorDark, { roughness: 0.92 },
-        mul(panelM, xform([0, PANEL_T / 2 + 0.012, z - zMid]))));
+      parts.push(
+        part(sideRibGeo, colorDark, { roughness: 0.92 }, mul(panelM, xform([0, PANEL_T / 2 + 0.012, z - zMid]))),
+      );
     }
   }
 
   // ── Faîtage + embouts ──
-  parts.push(part(boxGeo(0.14, 0.056, +(panelLen + 0.02).toFixed(4)), colorDark, { roughness: 0.89 },
-    mul(G, xform([0, RIDGE_Y + 0.028, zMid]))));
+  parts.push(
+    part(
+      boxGeo(0.14, 0.056, +(panelLen + 0.02).toFixed(4)),
+      colorDark,
+      { roughness: 0.89 },
+      mul(G, xform([0, RIDGE_Y + 0.028, zMid])),
+    ),
+  );
   if (needGablePos) {
-    parts.push(part(boxGeo(0.14, 0.056, 0.06), colorDark, { roughness: 0.89 },
-      mul(G, xform([0, RIDGE_Y + 0.028, PANEL_LEN / 2 + 0.01]))));
+    parts.push(
+      part(
+        boxGeo(0.14, 0.056, 0.06),
+        colorDark,
+        { roughness: 0.89 },
+        mul(G, xform([0, RIDGE_Y + 0.028, PANEL_LEN / 2 + 0.01])),
+      ),
+    );
   }
   if (needGableNeg) {
-    parts.push(part(boxGeo(0.14, 0.056, 0.06), colorDark, { roughness: 0.89 },
-      mul(G, xform([0, RIDGE_Y + 0.028, -(PANEL_LEN / 2 + 0.01)]))));
+    parts.push(
+      part(
+        boxGeo(0.14, 0.056, 0.06),
+        colorDark,
+        { roughness: 0.89 },
+        mul(G, xform([0, RIDGE_Y + 0.028, -(PANEL_LEN / 2 + 0.01)])),
+      ),
+    );
   }
 
   // ── Bandeaux d'égout (fascias) ──
   // Même longueur que les pans : il arrive au nu du bandeau bas de pignon
   // (0.54). Plus long de 6 cm, il dépassait de 3 cm à chaque angle de pignon.
   const eaveGeo = boxGeo(0.044, 0.064, panelLen);
-  if (eavePos) parts.push(part(eaveGeo, colorDark, { roughness: 0.89 }, mul(G, xform([0.518, EAVE_Y - 0.020, zMid]))));
-  if (eaveNeg) parts.push(part(eaveGeo, colorDark, { roughness: 0.89 }, mul(G, xform([-0.518, EAVE_Y - 0.020, zMid]))));
+  if (eavePos) parts.push(part(eaveGeo, colorDark, { roughness: 0.89 }, mul(G, xform([0.518, EAVE_Y - 0.02, zMid]))));
+  if (eaveNeg) parts.push(part(eaveGeo, colorDark, { roughness: 0.89 }, mul(G, xform([-0.518, EAVE_Y - 0.02, zMid]))));
 
   // ── Pignons ──
   const bargeGeo = boxGeo(SLOPE_LEN, 0.04, 0.05);
@@ -237,17 +262,25 @@ export function gableRoofParts(
     const zEnd = sign * 0.502;
     parts.push(
       // Remplissage triangulaire
-      part(gableGeo(EAVE_Y, RIDGE_Y), roofColor, { roughness: 0.88 },
-        mul(G, xform([0, 0, sign * GABLE_Z], [0, sign === 1 ? 0 : Math.PI, 0]))),
+      part(
+        gableGeo(EAVE_Y, RIDGE_Y),
+        roofColor,
+        { roughness: 0.88 },
+        mul(G, xform([0, 0, sign * GABLE_Z], [0, sign === 1 ? 0 : Math.PI, 0])),
+      ),
       // Rives (barge boards) le long des pentes
-      part(bargeGeo, colorDark, { roughness: 0.91 },
-        mul(G, xform([RUN / 2, CENTER_Y, zEnd], [0, 0, -SLOPE_ANG]))),
-      part(bargeGeo, colorDark, { roughness: 0.91 },
-        mul(G, xform([-RUN / 2, CENTER_Y, zEnd], [0, 0, SLOPE_ANG]))),
+      part(bargeGeo, colorDark, { roughness: 0.91 }, mul(G, xform([RUN / 2, CENTER_Y, zEnd], [0, 0, -SLOPE_ANG]))),
+      part(bargeGeo, colorDark, { roughness: 0.91 }, mul(G, xform([-RUN / 2, CENTER_Y, zEnd], [0, 0, SLOPE_ANG]))),
     );
     // Bandeau bas de pignon
-    parts.push(part(gableBottomGeo, colorDark, { roughness: 0.89 },
-      mul(G, xform([(bandX0 + bandX1) / 2, EAVE_Y - 0.020, sign * BAND_Z]))));
+    parts.push(
+      part(
+        gableBottomGeo,
+        colorDark,
+        { roughness: 0.89 },
+        mul(G, xform([(bandX0 + bandX1) / 2, EAVE_Y - 0.02, sign * BAND_Z])),
+      ),
+    );
   };
   if (needGablePos && z1 === 0.5) addGable(1);
   if (needGableNeg && z0 === -0.5) addGable(-1);
@@ -265,7 +298,12 @@ export function gableRoofParts(
     parts.push(
       part(boxGeo(FLUE_W, height, FLUE_W), '#a09080', { roughness: 0.93 }, C.clone()),
       part(boxGeo(0.19, 0.04, 0.19), '#7a6a5a', { roughness: 0.91 }, mul(C, xform([0, height / 2 + 0.02, 0]))),
-      part(cylinderGeo(0.034, 0.042, 0.09, 8), '#a05a42', { roughness: 0.82 }, mul(C, xform([0, height / 2 + 0.08, 0]))),
+      part(
+        cylinderGeo(0.034, 0.042, 0.09, 8),
+        '#a05a42',
+        { roughness: 0.82 },
+        mul(C, xform([0, height / 2 + 0.08, 0])),
+      ),
     );
   }
 
@@ -303,7 +341,12 @@ function towerRoofParts({ radii, settings }: CellContext): Part[] {
   const corniceScale = 1.06;
   parts.push(
     part(
-      shapedBoxGeo(towerR * 2 * corniceScale, 0.05, towerR * 2 * corniceScale, scaleCornerRadii(towerRadii, corniceScale)),
+      shapedBoxGeo(
+        towerR * 2 * corniceScale,
+        0.05,
+        towerR * 2 * corniceScale,
+        scaleCornerRadii(towerRadii, corniceScale),
+      ),
       corniceColor,
       { roughness: 0.9 },
       xform([0, BASE_Y + 0.025, 0]),
@@ -344,13 +387,11 @@ function towerRoofParts({ radii, settings }: CellContext): Part[] {
 
 // ── Créneaux (tours crénelées, courtines) ────────────────────────────────────
 
-
 /** ~1 tour sur 3, choisie de façon déterministe par sa colonne (stable d'un rendu à l'autre). */
 function isCrenellatedTower(cell: GridCell): boolean {
   const hash = Math.imul(cell.x, 73856093) ^ Math.imul(cell.z, 19349663);
-  return ((hash >>> 0) % 3) === 0;
+  return (hash >>> 0) % 3 === 0;
 }
-
 
 /**
  * Tour crénelée sans toit : plate-forme débordante (corniche), parapet
@@ -424,7 +465,8 @@ function crenellatedTowerParts({ radii, settings }: CellContext): Part[] {
  * case à l'autre. Conçu le long de X, tourné de 90° si le mur court selon Z.
  */
 function rampartParts({ cell, lookup, settings }: CellContext): Part[] {
-  const alongX = hasOccupiedCell(lookup, cell.x - 1, cell.y, cell.z) || hasOccupiedCell(lookup, cell.x + 1, cell.y, cell.z);
+  const alongX =
+    hasOccupiedCell(lookup, cell.x - 1, cell.y, cell.z) || hasOccupiedCell(lookup, cell.x + 1, cell.y, cell.z);
   const G = xform([0, 0, 0], [0, alongX ? 0 : Math.PI / 2, 0]);
 
   return crenellatedWalkwayParts(G, -0.5, settings);

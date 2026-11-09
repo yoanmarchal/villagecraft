@@ -99,7 +99,10 @@ function AmbiencePicker() {
         aria-expanded={open}
         onClick={() => setOpen((value) => !value)}
       >
-        <span className={`swatch${current ? '' : ' swatch--custom'}`} style={current ? swatchStyle(current.settings) : undefined} />
+        <span
+          className={`swatch${current ? '' : ' swatch--custom'}`}
+          style={current ? swatchStyle(current.settings) : undefined}
+        />
       </button>
       {open && (
         <div className="ambience-menu" role="menu">
@@ -161,7 +164,11 @@ export function Toolbar() {
           <ToolButton label="Build (B)" pressed={toolMode === 'build'} onClick={() => setToolMode('build')}>
             <BuildIcon />
           </ToolButton>
-          <ToolButton label="Demolish (D, or right click)" pressed={toolMode === 'demolish'} onClick={() => setToolMode('demolish')}>
+          <ToolButton
+            label="Demolish (D, or right click)"
+            pressed={toolMode === 'demolish'}
+            onClick={() => setToolMode('demolish')}
+          >
             <DemolishIcon />
           </ToolButton>
         </div>

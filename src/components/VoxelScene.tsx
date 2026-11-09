@@ -7,7 +7,7 @@ import { VillageMeshes } from './VillageMeshes';
 import { PlacementPreview } from './PlacementPreview';
 import { GradientBackground } from './GradientBackground';
 import { GroundTile } from './GroundTile';
-import { Bloom, EffectComposer, Noise, Vignette } from '@react-three/postprocessing'
+import { Bloom, EffectComposer, Noise, Vignette } from '@react-three/postprocessing';
 import { useControlStore, type ControlState } from '../store/controlStore';
 import { lazy, Suspense, useEffect, useMemo, useRef, useState, type ComponentType, type RefObject } from 'react';
 import { useUiStore } from '../store/uiStore';
@@ -184,7 +184,6 @@ export function VoxelScene({
   const shadowHalf = shadowCameraHalfSize(gridSize);
   const sunRef = useRef<DirectionalLight>(null);
 
-
   // Les bornes de la caméra d'ombre sont posées via props : il faut
   // recalculer sa projection nous-mêmes quand elles changent.
   useEffect(() => {
@@ -204,9 +203,7 @@ export function VoxelScene({
   const { skyTopColor, skyHorizonColor, fogColor, fogNear, fogFar, groundColor, groundRoughness } = useControlStore(
     useShallow(selectSkyFog),
   );
-  const { dampingFactor, maxPolarAngle, minDistance, maxDistance } = useControlStore(
-    useShallow(selectCamera),
-  );
+  const { dampingFactor, maxPolarAngle, minDistance, maxDistance } = useControlStore(useShallow(selectCamera));
   const {
     aoEnabled,
     aoIntensity,
@@ -224,7 +221,9 @@ export function VoxelScene({
   // React.lazy + Suspense ici : l'EffectComposer ne recalcule ses passes que
   // quand ses enfants changent, il faut donc monter le composant une fois
   // le module arrivé (même mécanique que l'activation/désactivation du bloom).
-  const [AmbientOcclusion, setAmbientOcclusion] = useState<ComponentType<{ intensity: number; radius: number }> | null>(null);
+  const [AmbientOcclusion, setAmbientOcclusion] = useState<ComponentType<{ intensity: number; radius: number }> | null>(
+    null,
+  );
   useEffect(() => {
     if (!aoEnabled || AmbientOcclusion) return;
     let cancelled = false;

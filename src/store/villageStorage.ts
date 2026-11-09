@@ -38,10 +38,9 @@ export function loadVillage(): SavedVillage | null {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return null;
-    const data = JSON.parse(raw);
-    if (data?.version !== VERSION || !Number.isInteger(data.gridSize) || !Array.isArray(data.blocks)) {
-      return null;
-    }
+    const data = JSON.parse(raw) as { version?: unknown; gridSize?: unknown; blocks?: unknown } | null;
+    if (data?.version !== VERSION || typeof data.gridSize !== 'number' || !Number.isInteger(data.gridSize)) return null;
+    if (!Array.isArray(data.blocks)) return null;
     return { gridSize: data.gridSize, blocks: dropFloatingBlocks(data.blocks.filter(isSavedBlock)) };
   } catch {
     return null;

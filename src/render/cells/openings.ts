@@ -55,7 +55,9 @@ export function planDoors(contexts: CellContext[], lamps: Map<GridCell, RoomLamp
       for (const face of exposedFaces) {
         const rounded = getFaceCorners(face, radii, 'numeric').some((r) => r > WALL_T + 0.02);
         const rank =
-          (rounded ? 1000 : 0) + Math.hypot(cell.x - hx, cell.z - hz) * 10 + (hashOf(cell.x, cell.z, FACE_SALT[face]) % 10) / 10;
+          (rounded ? 1000 : 0) +
+          Math.hypot(cell.x - hx, cell.z - hz) * 10 +
+          (hashOf(cell.x, cell.z, FACE_SALT[face]) % 10) / 10;
         if (!best || rank < best.rank) best = { cell, face, rank };
       }
     }

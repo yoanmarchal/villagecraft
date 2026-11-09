@@ -69,7 +69,9 @@ interface Piece {
 }
 
 function hashOf(x: number, y: number, z: number, salt: number): number {
-  return Math.abs(Math.imul(x + salt, 73856093) ^ Math.imul(y + 3 * salt, 19349663) ^ Math.imul(z + 7 * salt, 83492791));
+  return Math.abs(
+    Math.imul(x + salt, 73856093) ^ Math.imul(y + 3 * salt, 19349663) ^ Math.imul(z + 7 * salt, 83492791),
+  );
 }
 
 const box = (w: number, h: number, d: number, color: string, mat: Part['mat'], pos: [number, number, number]) =>
@@ -169,12 +171,23 @@ function shelves(seed: number): Piece {
     const books = 2 + (s % 3);
     for (let b = 0; b < books; b += 1) {
       const bh = 0.08 + ((s + b) % 3) * 0.015;
-      parts.push(box(0.022, bh, d - 0.02, BOOK_COLORS[(s + b * 2) % BOOK_COLORS.length], CLOTH_MAT,
-        [dir * (w / 2 - 0.04 - b * 0.025), baseY + bh / 2, 0]));
+      parts.push(
+        box(0.022, bh, d - 0.02, BOOK_COLORS[(s + b * 2) % BOOK_COLORS.length], CLOTH_MAT, [
+          dir * (w / 2 - 0.04 - b * 0.025),
+          baseY + bh / 2,
+          0,
+        ]),
+      );
     }
     if (s > 4) {
-      parts.push(part(cylinderGeo(0.022, 0.018, 0.06, 8), POTTERY, { roughness: 0.9 },
-        xform([-dir * (w / 2 - 0.06), baseY + 0.03, 0])));
+      parts.push(
+        part(
+          cylinderGeo(0.022, 0.018, 0.06, 8),
+          POTTERY,
+          { roughness: 0.9 },
+          xform([-dir * (w / 2 - 0.06), baseY + 0.03, 0]),
+        ),
+      );
     }
   }
   return { depth: d, height: h, parts };
@@ -187,14 +200,17 @@ function workbench(seed: number): Piece {
   const top = 0.3;
   const parts: Part[] = [box(w, 0.025, d, LIGHT_WOOD, WOOD_MAT, [0, top - 0.0125, 0])];
   for (const x of [-w / 2 + 0.02, w / 2 - 0.02]) {
-    for (const z of [-d / 2 + 0.02, d / 2 - 0.02]) parts.push(box(0.025, top - 0.025, 0.025, FURNITURE_WOOD, WOOD_MAT, [x, (top - 0.025) / 2, z]));
+    for (const z of [-d / 2 + 0.02, d / 2 - 0.02])
+      parts.push(box(0.025, top - 0.025, 0.025, FURNITURE_WOOD, WOOD_MAT, [x, (top - 0.025) / 2, z]));
   }
   parts.push(box(w - 0.04, 0.012, d - 0.03, FURNITURE_WOOD, WOOD_MAT, [0, 0.07, 0]));
   const side = seed & 1 ? 1 : -1;
   // Maillet (manche + tête) et pot.
   parts.push(box(0.09, 0.012, 0.012, FURNITURE_WOOD, WOOD_MAT, [side * 0.06, top + 0.006, -0.02]));
   parts.push(box(0.03, 0.03, 0.035, IRON, IRON_MAT, [side * 0.1, top + 0.015, -0.02]));
-  parts.push(part(cylinderGeo(0.02, 0.02, 0.05, 8), POTTERY, { roughness: 0.9 }, xform([-side * 0.09, top + 0.025, 0.02])));
+  parts.push(
+    part(cylinderGeo(0.02, 0.02, 0.05, 8), POTTERY, { roughness: 0.9 }, xform([-side * 0.09, top + 0.025, 0.02])),
+  );
   return { depth: d, height: top + 0.03, parts };
 }
 
@@ -218,16 +234,25 @@ function fireplace(stone: string, ceilingTop: number): Piece {
     box(0.2, openingH, 0.02, '#1c1714', CLOTH_MAT, [0, openingH / 2, depth / 2 - 0.01]),
     box(0.36, 0.03, bodyD + 0.02, dark, WOOD_MAT, [0, mantelY, bodyZ - 0.01]),
     // Hotte jusqu'au plafond.
-    box(HOOD_W, ceilingTop - mantelY - 0.015, HOOD_D, stone, WOOD_MAT,
-      [0, (ceilingTop + mantelY + 0.015) / 2, depth / 2 - HOOD_D / 2]),
+    box(HOOD_W, ceilingTop - mantelY - 0.015, HOOD_D, stone, WOOD_MAT, [
+      0,
+      (ceilingTop + mantelY + 0.015) / 2,
+      depth / 2 - HOOD_D / 2,
+    ]),
     // Âtre devant le foyer.
     box(0.36, 0.012, hearthD, dark, WOOD_MAT, [0, 0.006, -depth / 2 + hearthD / 2]),
     // Braises (s'allument le soir avec les fenêtres), bûches croisées.
     box(0.13, 0.02, 0.06, '#3a1f12', { roughness: 1, glow: true }, [0, 0.01, bodyZ - 0.005]),
   ];
   for (const angle of [0.35, -0.35]) {
-    parts.push(part(cylinderGeo(0.013, 0.013, 0.15, 8), '#4a3220', WOOD_MAT,
-      xform([0, 0.033, bodyZ - 0.005], [0, angle, Math.PI / 2])));
+    parts.push(
+      part(
+        cylinderGeo(0.013, 0.013, 0.15, 8),
+        '#4a3220',
+        WOOD_MAT,
+        xform([0, 0.033, bodyZ - 0.005], [0, angle, Math.PI / 2]),
+      ),
+    );
   }
   return { depth, height: ceilingTop, parts };
 }
@@ -237,12 +262,14 @@ function diningSet(): Part[] {
   const top = 0.27;
   const parts: Part[] = [box(0.38, 0.025, 0.22, LIGHT_WOOD, WOOD_MAT, [0, top - 0.0125, 0])];
   for (const x of [-0.16, 0.16]) {
-    for (const z of [-0.08, 0.08]) parts.push(box(0.025, top - 0.025, 0.025, FURNITURE_WOOD, WOOD_MAT, [x, (top - 0.025) / 2, z]));
+    for (const z of [-0.08, 0.08])
+      parts.push(box(0.025, top - 0.025, 0.025, FURNITURE_WOOD, WOOD_MAT, [x, (top - 0.025) / 2, z]));
   }
   const seat = 0.15;
   for (const z of [-0.18, 0.18]) {
     parts.push(box(0.32, 0.02, 0.06, LIGHT_WOOD, WOOD_MAT, [0, seat - 0.01, z]));
-    for (const x of [-0.13, 0.13]) parts.push(box(0.02, seat - 0.02, 0.05, FURNITURE_WOOD, WOOD_MAT, [x, (seat - 0.02) / 2, z]));
+    for (const x of [-0.13, 0.13])
+      parts.push(box(0.02, seat - 0.02, 0.05, FURNITURE_WOOD, WOOD_MAT, [x, (seat - 0.02) / 2, z]));
   }
   return parts;
 }
@@ -287,10 +314,7 @@ const FIREPLACE_CHANCE = { ground: 90, upper: 50 };
  * que les murs parallèles à la poutre : une rangée d'une case de large n'avait
  * alors que ses deux murs pignons, presque toujours percés.
  */
-export function planFireplaces(
-  contexts: CellContext[],
-  lamps: Map<GridCell, RoomLamp>,
-): Map<GridCell, CellFace> {
+export function planFireplaces(contexts: CellContext[], lamps: Map<GridCell, RoomLamp>): Map<GridCell, CellFace> {
   const plan = new Map<GridCell, CellFace>();
   for (const zone of lampZones(contexts, lamps).values()) {
     // Une tour (pièce d'une case) garde son pourtour dégagé.

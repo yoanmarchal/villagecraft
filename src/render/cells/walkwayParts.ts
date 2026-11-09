@@ -40,8 +40,12 @@ export function flagstoneParts(
   const geo = boxGeo(length - JOINT, thickness, width);
   const parts: Part[] = [
     // Lit de mortier sombre visible dans les joints.
-    part(boxGeo(1, thickness * 0.6, width - 0.01), varyColorBrightness(color, -0.3), { roughness: 1 },
-      mul(group, xform([0, bottomY + thickness * 0.3, 0]))),
+    part(
+      boxGeo(1, thickness * 0.6, width - 0.01),
+      varyColorBrightness(color, -0.3),
+      { roughness: 1 },
+      mul(group, xform([0, bottomY + thickness * 0.3, 0])),
+    ),
   ];
   for (let i = 0; i < slabs; i += 1) {
     const x = -0.5 + length * (i + 0.5);
@@ -60,12 +64,7 @@ const CORNICE_H = 0.03;
  * débordante puis dalles, sans parapet — le dessus d'une arche qui ne
  * touche aucune tour. Base du chemin de ronde crénelé.
  */
-export function walkwayDeckParts(
-  group: THREE.Matrix4,
-  bottomY: number,
-  wallBaseColor: string,
-  width = 1,
-): Part[] {
+export function walkwayDeckParts(group: THREE.Matrix4, bottomY: number, wallBaseColor: string, width = 1): Part[] {
   const { stone, cornice } = stoneColors(wallBaseColor);
   return [
     part(boxGeo(1.0, CORNICE_H, 1.08), cornice, { roughness: 0.9 }, mul(group, xform([0, bottomY + CORNICE_H / 2, 0]))),
@@ -104,7 +103,9 @@ export function crenellatedWalkwayParts(
     const z = side * faceZ;
     parts.push(part(parapetGeo, stone, { roughness: 0.92 }, mul(group, xform([0, parapetY, z]))));
     for (const x of [-0.25, 0.25]) {
-      parts.push(...piercedMerlonParts(mul(group, xform([x, merlonY, z])), merlonR * MERLON_WIDTH_FACTOR, merlonH, stone));
+      parts.push(
+        ...piercedMerlonParts(mul(group, xform([x, merlonY, z])), merlonR * MERLON_WIDTH_FACTOR, merlonH, stone),
+      );
     }
   }
 
@@ -131,7 +132,17 @@ function piercedMerlonParts(matrix: THREE.Matrix4, w: number, h: number, stone: 
   return [
     part(boxGeo(+sideW.toFixed(4), h, MERLON_DEPTH), stone, mat, mul(matrix, xform([-sideX, 0, 0]))),
     part(boxGeo(+sideW.toFixed(4), h, MERLON_DEPTH), stone, mat, mul(matrix, xform([sideX, 0, 0]))),
-    part(boxGeo(MERLON_SLIT_W, +bottomH.toFixed(4), MERLON_DEPTH), stone, mat, mul(matrix, xform([0, -h / 2 + bottomH / 2, 0]))),
-    part(boxGeo(MERLON_SLIT_W, +topH.toFixed(4), MERLON_DEPTH), stone, mat, mul(matrix, xform([0, h / 2 - topH / 2, 0]))),
+    part(
+      boxGeo(MERLON_SLIT_W, +bottomH.toFixed(4), MERLON_DEPTH),
+      stone,
+      mat,
+      mul(matrix, xform([0, -h / 2 + bottomH / 2, 0])),
+    ),
+    part(
+      boxGeo(MERLON_SLIT_W, +topH.toFixed(4), MERLON_DEPTH),
+      stone,
+      mat,
+      mul(matrix, xform([0, h / 2 - topH / 2, 0])),
+    ),
   ];
 }

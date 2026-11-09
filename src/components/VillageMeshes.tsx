@@ -11,9 +11,16 @@ import { useFrame, useThree } from '@react-three/fiber';
 import { useShallow } from 'zustand/react/shallow';
 import type { GridCell } from '../types';
 import { VillageChunkCache } from '../render/buildVillage';
-import { createGrowMaterialSet, disposeGrowMaterialSet, POP_DURATION, updateGrowTime, type GrowMaterialSet } from '../render/growMaterial';
+import {
+  createGrowMaterialSet,
+  disposeGrowMaterialSet,
+  POP_DURATION,
+  updateGrowTime,
+  type GrowMaterialSet,
+} from '../render/growMaterial';
 import { matKey, type MaterialSpec } from '../render/parts';
-import { pickRenderSettings } from '../render/renderSettings';import { useControlStore } from '../store/controlStore';
+import { pickRenderSettings } from '../render/renderSettings';
+import { useControlStore } from '../store/controlStore';
 
 /** Teinte des fenêtres allumées (lumière de bougie / lampe). */
 const WINDOW_GLOW_COLOR = '#ffb45c';
@@ -135,10 +142,7 @@ export function VillageMeshes({ cells, toWorldPosition, gridWidth, gridDepth }: 
   // Le canvas rend à la demande (frameloop="demand") : tant qu'une cellule
   // est en pleine animation d'apparition, on redemande une frame à chaque
   // frame ; ensuite plus rien ne tourne jusqu'au prochain changement.
-  const latestSpawn = useMemo(
-    () => cells.reduce((latest, cell) => Math.max(latest, cell.spawnedAt ?? 0), 0),
-    [cells],
-  );
+  const latestSpawn = useMemo(() => cells.reduce((latest, cell) => Math.max(latest, cell.spawnedAt ?? 0), 0), [cells]);
 
   useFrame(({ invalidate }) => {
     // Même horloge que `cell.spawnedAt` (villageGrid.ts), pas celle du canvas.

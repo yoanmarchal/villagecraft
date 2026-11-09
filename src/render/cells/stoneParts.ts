@@ -123,7 +123,7 @@ export function stoneParts(config: StonePatchesConfig): Part[] {
 
   if (exposedFaces.length === 0) return [];
 
-  const metalness = isIsolated ? visual.metalnessIsolated ?? visual.metalness ?? 0 : visual.metalness ?? 0;
+  const metalness = isIsolated ? (visual.metalnessIsolated ?? visual.metalness ?? 0) : (visual.metalness ?? 0);
   const mat = { roughness: visual.roughness ?? 0.9, metalness };
 
   const parts: Part[] = [];
@@ -132,17 +132,13 @@ export function stoneParts(config: StonePatchesConfig): Part[] {
     const count =
       typeof stonesPerFace === 'function'
         ? stonesPerFace(cell, faceIdx)
-        : stonesPerFace ?? defaultStonesPerFace(cell);
+        : (stonesPerFace ?? defaultStonesPerFace(cell));
 
     const placedStones: { x: number; y: number; w: number; h: number }[] = [];
 
     for (let i = 0; i < count; i++) {
       const seed = Math.abs(
-        cell.x * seedSalt.x +
-          cell.y * seedSalt.y +
-          cell.z * seedSalt.z +
-          faceIdx * seedSalt.face +
-          i * seedSalt.stone,
+        cell.x * seedSalt.x + cell.y * seedSalt.y + cell.z * seedSalt.z + faceIdx * seedSalt.face + i * seedSalt.stone,
       );
       const h1 = seed % 100;
       const h2 = (seed * 7 + 13) % 100;

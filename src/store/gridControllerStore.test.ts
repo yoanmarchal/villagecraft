@@ -37,7 +37,10 @@ describe('gridControllerStore — annuler / rétablir', () => {
 
     store().redo();
     store().redo();
-    expect(grid.exportBlocks()).toEqual([[0, 0, 0], [2, 0, 2]]);
+    expect(grid.exportBlocks()).toEqual([
+      [0, 0, 0],
+      [2, 0, 2],
+    ]);
   });
 
   it("un clic sans effet n'ajoute pas d'étape d'historique", () => {

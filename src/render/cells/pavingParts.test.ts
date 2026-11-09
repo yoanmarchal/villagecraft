@@ -5,7 +5,9 @@ import { pavingParts } from './pavingParts';
 
 describe('pavingParts', () => {
   const paved = (grid: VillageGrid, size: number) =>
-    new Set(pavingParts(makeCellLookup(grid.getOccupiedCells()), { width: size, depth: size }).map(({ x, z }) => `${x},${z}`));
+    new Set(
+      pavingParts(makeCellLookup(grid.getOccupiedCells()), { width: size, depth: size }).map(({ x, z }) => `${x},${z}`),
+    );
 
   it('pave les cases vides qui touchent un bâtiment, y compris en diagonale', () => {
     const grid = new VillageGrid(5, 10, 5);

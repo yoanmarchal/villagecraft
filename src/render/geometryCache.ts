@@ -97,14 +97,23 @@ export function roundedBoxGeo(w: number, h: number, d: number, radius: number, s
 }
 
 export function cylinderGeo(rTop: number, rBottom: number, h: number, segments: number): THREE.BufferGeometry {
-  return getGeo(`cyl|${rTop}|${rBottom}|${h}|${segments}`, () => new THREE.CylinderGeometry(rTop, rBottom, h, segments));
+  return getGeo(
+    `cyl|${rTop}|${rBottom}|${h}|${segments}`,
+    () => new THREE.CylinderGeometry(rTop, rBottom, h, segments),
+  );
 }
 
 export function sphereGeo(r: number, ws = 12, hs = 12): THREE.BufferGeometry {
   return getGeo(`sph|${r}|${ws}|${hs}`, () => new THREE.SphereGeometry(r, ws, hs));
 }
 
-export function torusArcGeo(r: number, tube: number, radialSegs: number, tubularSegs: number, arc: number): THREE.BufferGeometry {
+export function torusArcGeo(
+  r: number,
+  tube: number,
+  radialSegs: number,
+  tubularSegs: number,
+  arc: number,
+): THREE.BufferGeometry {
   return getGeo(
     `torus|${r}|${tube}|${radialSegs}|${tubularSegs}|${r3(arc)}`,
     () => new THREE.TorusGeometry(r, tube, radialSegs, tubularSegs, arc),
@@ -173,7 +182,7 @@ export interface OpeningSpec {
  */
 export const OPENING_SIZES: Record<OpeningKind, { w: number; h: number; y: number }> = {
   window: { w: 0.54, h: 0.44, y: 0 },
-  door: { w: 0.40, h: 0.71, y: -0.095 },
+  door: { w: 0.4, h: 0.71, y: -0.095 },
   slit: { w: 0.08, h: 0.32, y: 0 },
 };
 
@@ -194,7 +203,14 @@ function innerSectionXZ(shape: HollowShape, radii: CornerRadii, openBound = 0.5 
   const zMin = -bound('back');
   const inner = 0.5 - WALL_T;
 
-  const corners: Array<{ name: CornerName; sx: 1 | -1; sz: 1 | -1; xSide: CellFace; zSide: CellFace; incomingX: boolean }> = [
+  const corners: Array<{
+    name: CornerName;
+    sx: 1 | -1;
+    sz: 1 | -1;
+    xSide: CellFace;
+    zSide: CellFace;
+    incomingX: boolean;
+  }> = [
     { name: 'backRight', sx: 1, sz: -1, xSide: 'right', zSide: 'back', incomingX: false },
     { name: 'frontRight', sx: 1, sz: 1, xSide: 'right', zSide: 'front', incomingX: true },
     { name: 'frontLeft', sx: -1, sz: 1, xSide: 'left', zSide: 'front', incomingX: false },
@@ -211,9 +227,19 @@ function innerSectionXZ(shape: HollowShape, radii: CornerRadii, openBound = 0.5 
     if (pillars[name]) {
       const px = sx * inner;
       const pz = sz * inner;
-      points.push(...(incomingX
-        ? [[cx, pz], [px, pz], [px, cz]] as Array<[number, number]>
-        : [[px, cz], [px, pz], [cx, pz]] as Array<[number, number]>));
+      points.push(
+        ...(incomingX
+          ? ([
+              [cx, pz],
+              [px, pz],
+              [px, cz],
+            ] as Array<[number, number]>)
+          : ([
+              [px, cz],
+              [px, pz],
+              [cx, pz],
+            ] as Array<[number, number]>)),
+      );
     } else if (r > 0.001) {
       // Arc du point tangent au côté X (direction (sx, 0)) au point tangent au côté Z (direction (0, sz)).
       const ox = cx - sx * r;
@@ -301,12 +327,17 @@ const openingKey = (o: OpeningSpec) => `${o.face[0]}${o.kind[0]}${r3(o.scale)}`;
 export function hollowShellGeo(radii: CornerRadii, shape: HollowShape, openings: OpeningSpec[]): THREE.BufferGeometry {
   const { sides, pillars } = shape;
   const sidesKey = (['front', 'back', 'left', 'right'] as const).map((f) => sides[f][0]).join('');
-  const pillarsKey = (['backLeft', 'backRight', 'frontLeft', 'frontRight'] as const).map((c) => (pillars[c] ? 1 : 0)).join('');
+  const pillarsKey = (['backLeft', 'backRight', 'frontLeft', 'frontRight'] as const)
+    .map((c) => (pillars[c] ? 1 : 0))
+    .join('');
   const openingsKey = openings.map(openingKey).sort().join(',');
   const key = `hollow|${radiiKey(radii)}|${sidesKey}|${pillarsKey}|${openingsKey}`;
 
   return getGeo(key, () => {
-    const cutters = [verticalPrism(innerSectionXZ(shape, radii), -0.5 + FLOOR_T, 0.5 - FLOOR_T), ...openings.map(openingCutter)];
+    const cutters = [
+      verticalPrism(innerSectionXZ(shape, radii), -0.5 + FLOOR_T, 0.5 - FLOOR_T),
+      ...openings.map(openingCutter),
+    ];
     let result = toBrush(shapedBoxGeo(1, 1, 1, radii));
     withoutBvhLeafSizeWarning(() => {
       for (const cutter of cutters) {
@@ -335,7 +366,9 @@ export function hollowShellGeo(radii: CornerRadii, shape: HollowShape, openings:
 export function hollowSheetGeo(radii: CornerRadii, shape: HollowShape, thickness: number): THREE.BufferGeometry {
   const { sides, pillars } = shape;
   const sidesKey = (['front', 'back', 'left', 'right'] as const).map((f) => sides[f][0]).join('');
-  const pillarsKey = (['backLeft', 'backRight', 'frontLeft', 'frontRight'] as const).map((c) => (pillars[c] ? 1 : 0)).join('');
+  const pillarsKey = (['backLeft', 'backRight', 'frontLeft', 'frontRight'] as const)
+    .map((c) => (pillars[c] ? 1 : 0))
+    .join('');
   return getGeo(`sheet|${radiiKey(radii)}|${sidesKey}|${pillarsKey}|${r3(thickness)}`, () => {
     const geo = verticalPrism(innerSectionXZ(shape, radii, 0.5), 0, thickness);
     geo.computeVertexNormals();
@@ -354,7 +387,10 @@ export function hollowSheetGeo(radii: CornerRadii, shape: HollowShape, thickness
  */
 export function cornerFilletGeo(r: number, height: number): THREE.BufferGeometry {
   return getGeo(`fillet|${r3(r)}|${r3(height)}`, () => {
-    const section: Array<[number, number]> = [[0, 0], [r, 0]];
+    const section: Array<[number, number]> = [
+      [0, 0],
+      [r, 0],
+    ];
     // Même découpage que getRoundedRectContourPoints (10 segments par quart) :
     // l'arc du raccord tombe pile sur les sommets du contour de la tour.
     const ARC_SEGS = 10;
@@ -440,8 +476,20 @@ export function spireBandGeo(
     for (let j = 0; j < n; j += 1) {
       const k = (j + 1) % n;
       const facing = columnNormals[j].clone().add(columnNormals[k]);
-      pushTriangle(positions, normals, [lower[j], lower[k], upper[k]], [columnNormals[j], columnNormals[k], columnNormals[k]], facing);
-      pushTriangle(positions, normals, [lower[j], upper[k], upper[j]], [columnNormals[j], columnNormals[k], columnNormals[j]], facing);
+      pushTriangle(
+        positions,
+        normals,
+        [lower[j], lower[k], upper[k]],
+        [columnNormals[j], columnNormals[k], columnNormals[k]],
+        facing,
+      );
+      pushTriangle(
+        positions,
+        normals,
+        [lower[j], upper[k], upper[j]],
+        [columnNormals[j], columnNormals[k], columnNormals[j]],
+        facing,
+      );
     }
 
     const geo = new THREE.BufferGeometry();
@@ -656,8 +704,12 @@ function roundedRectShape<T extends THREE.Shape | THREE.Path>(target: T, w: numb
  * les cadres de fenêtres, pour une fraction du coût.
  */
 export function frameWithHoleGeo(
-  outerW: number, outerH: number, outerR: number,
-  innerW: number, innerH: number, innerR: number,
+  outerW: number,
+  outerH: number,
+  outerR: number,
+  innerW: number,
+  innerH: number,
+  innerR: number,
   depth: number,
 ): THREE.BufferGeometry {
   const key = `frame|${outerW}|${outerH}|${r3(outerR)}|${innerW}|${innerH}|${r3(innerR)}|${depth}`;
@@ -685,24 +737,67 @@ export function gableGeo(eaveY: number, ridgeY: number): THREE.BufferGeometry {
     // Chaque face a ses propres copies de sommets pour des arêtes nettes.
     const pos = new Float32Array([
       // Face avant (z = +hd)
-      -hw, eaveY, hd, hw, eaveY, hd, 0, ridgeY, hd,
+      -hw,
+      eaveY,
+      hd,
+      hw,
+      eaveY,
+      hd,
+      0,
+      ridgeY,
+      hd,
       // Face arrière (z = -hd)
-      hw, eaveY, -hd, -hw, eaveY, -hd, 0, ridgeY, -hd,
+      hw,
+      eaveY,
+      -hd,
+      -hw,
+      eaveY,
+      -hd,
+      0,
+      ridgeY,
+      -hd,
       // Dessous
-      -hw, eaveY, hd, -hw, eaveY, -hd, hw, eaveY, -hd, hw, eaveY, hd,
+      -hw,
+      eaveY,
+      hd,
+      -hw,
+      eaveY,
+      -hd,
+      hw,
+      eaveY,
+      -hd,
+      hw,
+      eaveY,
+      hd,
       // Pan gauche
-      -hw, eaveY, hd, 0, ridgeY, hd, 0, ridgeY, -hd, -hw, eaveY, -hd,
+      -hw,
+      eaveY,
+      hd,
+      0,
+      ridgeY,
+      hd,
+      0,
+      ridgeY,
+      -hd,
+      -hw,
+      eaveY,
+      -hd,
       // Pan droit
-      hw, eaveY, hd, hw, eaveY, -hd, 0, ridgeY, -hd, 0, ridgeY, hd,
+      hw,
+      eaveY,
+      hd,
+      hw,
+      eaveY,
+      -hd,
+      0,
+      ridgeY,
+      -hd,
+      0,
+      ridgeY,
+      hd,
     ]);
 
-    const idx = new Uint16Array([
-      0, 1, 2,
-      3, 4, 5,
-      6, 7, 8, 6, 8, 9,
-      10, 11, 12, 10, 12, 13,
-      14, 15, 16, 14, 16, 17,
-    ]);
+    const idx = new Uint16Array([0, 1, 2, 3, 4, 5, 6, 7, 8, 6, 8, 9, 10, 11, 12, 10, 12, 13, 14, 15, 16, 14, 16, 17]);
 
     const geo = new THREE.BufferGeometry();
     geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));

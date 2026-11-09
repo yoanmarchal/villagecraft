@@ -1,5 +1,8 @@
 {
   "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "options": {
+    "typeAware": true
+  },
   "plugins": [],
   "categories": {
     "correctness": "off"
@@ -7,15 +10,10 @@
   "env": {
     "builtin": true
   },
-  "ignorePatterns": [
-    "dist",
-    "node_modules"
-  ],
+  "ignorePatterns": ["dist", "node_modules"],
   "overrides": [
     {
-      "files": [
-        "**/*.{ts,tsx}"
-      ],
+      "files": ["**/*.{ts,tsx}"],
       "rules": {
         "constructor-super": "off",
         "for-direction": "error",
@@ -113,12 +111,32 @@
         "react/error-boundaries": "error",
         "react/purity": "error",
         "react/set-state-in-render": "error",
-        "react/unsupported-syntax": "warn"
+        "react/unsupported-syntax": "warn",
+        "typescript/await-thenable": "error",
+        "typescript/no-array-delete": "error",
+        "typescript/no-base-to-string": "error",
+        "typescript/no-duplicate-type-constituents": "error",
+        "typescript/no-floating-promises": "error",
+        "typescript/no-for-in-array": "error",
+        "typescript/no-implied-eval": "error",
+        "typescript/no-misused-promises": "error",
+        "typescript/no-redundant-type-constituents": "error",
+        "typescript/no-unnecessary-type-assertion": "error",
+        "typescript/no-unsafe-argument": "error",
+        "typescript/no-unsafe-assignment": "error",
+        "typescript/no-unsafe-call": "error",
+        "typescript/no-unsafe-enum-comparison": "error",
+        "typescript/no-unsafe-member-access": "error",
+        "typescript/no-unsafe-return": "error",
+        "typescript/no-unsafe-unary-minus": "error",
+        "typescript/only-throw-error": "error",
+        "typescript/prefer-promise-reject-errors": "error",
+        "typescript/require-await": "error",
+        "typescript/restrict-plus-operands": "error",
+        "typescript/restrict-template-expressions": "error",
+        "typescript/unbound-method": "error"
       },
-      "plugins": [
-        "typescript",
-        "react"
-      ],
+      "plugins": ["typescript", "react"],
       "env": {
         "es2022": true,
         "browser": true

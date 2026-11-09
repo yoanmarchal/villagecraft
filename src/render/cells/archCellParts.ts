@@ -28,7 +28,6 @@ import {
   isRampart,
   isTowerColumn,
   type CellLookup,
-  type CornerRadii,
 } from '../../utils/cellUtils';
 import { shades } from '../../colorPalettes';
 import { archBodyGeo, archVoussoirGeo, archVoussoirMidX, cornerFilletGeo } from '../geometryCache';
@@ -95,7 +94,12 @@ export function archCellParts(ctx: CellContext): Part[] {
     for (let k = -before; k <= after; k += 1) {
       const ax = x + dx * k;
       const az = z + dz * k;
-      for (const [nx, nz] of [[ax - 1, az], [ax + 1, az], [ax, az - 1], [ax, az + 1]]) {
+      for (const [nx, nz] of [
+        [ax - 1, az],
+        [ax + 1, az],
+        [ax, az - 1],
+        [ax, az + 1],
+      ]) {
         const neighbour = getCell(lookup, nx, y, nz);
         if (!neighbour?.isOccupied || neighbour.type === BlockType.Arch) continue;
         if (isTowerColumn(lookup, neighbour)) besideTower = true;
@@ -132,9 +136,13 @@ export function archCellParts(ctx: CellContext): Part[] {
     // les deux têtes de l'arche.
     const endFree = (k: number) => !hasOccupiedCell(lookup, x + dx * k, y + 1, z + dz * k);
     const headFree = (s: number) => !hasOccupiedCell(lookup, x + dz * s, y + 1, z + dx * s);
-    const archRoof = (axis: 'x' | 'z') => gableRoofParts(settings, axis === spanAxis
-      ? { axis, gablePos: after === 0 && endFree(1), gableNeg: before === 0 && endFree(-1), baseY: 1 }
-      : { axis, gablePos: headFree(1), gableNeg: headFree(-1), baseY: 1 });
+    const archRoof = (axis: 'x' | 'z') =>
+      gableRoofParts(
+        settings,
+        axis === spanAxis
+          ? { axis, gablePos: after === 0 && endFree(1), gableNeg: before === 0 && endFree(-1), baseY: 1 }
+          : { axis, gablePos: headFree(1), gableNeg: headFree(-1), baseY: 1 },
+      );
 
     if (continuingAxes.length > 0) {
       // Le toit de l'appui continue par-dessus l'arche (et bute contre une
@@ -193,15 +201,21 @@ function abutmentFillets(
     const [cx, cz] = ddx !== 0 ? [ddx * 0.5, t * 0.5] : [t * 0.5, ddz * 0.5];
     // Coin correspondant dans le repère de l'appui (côté opposé à la direction).
     const [lx, lz] = ddx !== 0 ? [-ddx, t] : [t, -ddz];
-    const name = `${lz > 0 ? 'front' : 'back'}${lx > 0 ? 'Right' : 'Left'}` as keyof Omit<CornerRadii, 'max' | 'uniform'>;
+    const name = `${lz > 0 ? 'front' : 'back'}${lx > 0 ? 'Right' : 'Left'}` as const;
     const r = radii[name];
     if (r < 0.01) continue;
     const sx = ddx !== 0 ? ddx : -t;
     const sz = ddx !== 0 ? -t : ddz;
     // cornerFilletGeo s'étend vers (+X, +Z) : rotation qui l'envoie vers (sx, sz).
     const rotation = sx > 0 ? (sz > 0 ? 0 : Math.PI / 2) : sz > 0 ? -Math.PI / 2 : Math.PI;
-    parts.push(part(cornerFilletGeo(r, +(topY + 0.5).toFixed(3)), settings.wallBaseColor, mat,
-      xform([cx, -0.5, cz], [0, rotation, 0])));
+    parts.push(
+      part(
+        cornerFilletGeo(r, +(topY + 0.5).toFixed(3)),
+        settings.wallBaseColor,
+        mat,
+        xform([cx, -0.5, cz], [0, rotation, 0]),
+      ),
+    );
   }
   return parts;
 }

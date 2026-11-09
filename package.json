@@ -1,7 +1,7 @@
 {
   "name": "villagecraft",
-  "private": true,
   "version": "0.0.0",
+  "private": true,
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -10,7 +10,9 @@
     "typecheck": "tsc -b --pretty false",
     "test": "vitest run",
     "test:watch": "vitest",
-    "lint": "oxlint --deny-warnings"
+    "lint": "oxlint --deny-warnings",
+    "fmt": "oxfmt",
+    "fmt:check": "oxfmt --check"
   },
   "dependencies": {
     "@react-three/drei": "^10.7.7",
@@ -34,7 +36,9 @@
     "@types/react": "^19.2.17",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^6.0.5",
+    "oxfmt": "^0.78.0",
     "oxlint": "^1.93.0",
+    "oxlint-tsgolint": "^7.0.2006",
     "typescript": "^7.0.2",
     "vite": "^8.3.7",
     "vitest": "^5.0.1"

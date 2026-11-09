@@ -4,7 +4,16 @@ import type { SavedVillage } from './villageStorage';
 
 describe('encodeVillage / decodeVillage', () => {
   it('aller-retour sans perte, ordre des blocs compris', () => {
-    const village: SavedVillage = { gridSize: 5, blocks: [[4, 0, 4], [0, 0, 0], [0, 1, 0], [4, 1, 4], [4, 9, 4]] };
+    const village: SavedVillage = {
+      gridSize: 5,
+      blocks: [
+        [4, 0, 4],
+        [0, 0, 0],
+        [0, 1, 0],
+        [4, 1, 4],
+        [4, 9, 4],
+      ],
+    };
     expect(decodeVillage(encodeVillage(village))).toEqual(village);
   });
 
@@ -14,7 +23,8 @@ describe('encodeVillage / decodeVillage', () => {
 
   it('produit un code utilisable tel quel dans une URL', () => {
     const blocks: SavedVillage['blocks'] = [];
-    for (let x = 0; x < 5; x += 1) for (let z = 0; z < 5; z += 1) for (let y = 0; y < 10; y += 1) blocks.push([x, y, z]);
+    for (let x = 0; x < 5; x += 1)
+      for (let z = 0; z < 5; z += 1) for (let y = 0; y < 10; y += 1) blocks.push([x, y, z]);
     const code = encodeVillage({ gridSize: 5, blocks });
 
     expect(code).toMatch(/^[A-Za-z0-9_-]+$/);
