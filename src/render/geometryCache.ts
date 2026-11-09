@@ -271,6 +271,24 @@ function toBrush(geo: THREE.BufferGeometry): Brush {
   return brush;
 }
 
+/**
+ * three-bvh-csg 0.0.18 passe encore `maxLeafSize` à `MeshBVH` (Brush.prepareGeometry),
+ * que three-mesh-bvh 0.9 traduit en `targetLeafSize` mais signale à chaque brush.
+ * Corrigé en amont, pas encore publié : à retirer dès la version suivante de three-bvh-csg.
+ */
+function withoutBvhLeafSizeWarning(run: () => void): void {
+  const warn = console.warn;
+  console.warn = (...args: unknown[]) => {
+    if (typeof args[0] === 'string' && args[0].includes('"maxLeafSize" option has been deprecated')) return;
+    warn(...args);
+  };
+  try {
+    run();
+  } finally {
+    console.warn = warn;
+  }
+}
+
 const openingKey = (o: OpeningSpec) => `${o.face[0]}${o.kind[0]}${r3(o.scale)}`;
 
 /**
@@ -290,12 +308,14 @@ export function hollowShellGeo(radii: CornerRadii, shape: HollowShape, openings:
   return getGeo(key, () => {
     const cutters = [verticalPrism(innerSectionXZ(shape, radii), -0.5 + FLOOR_T, 0.5 - FLOOR_T), ...openings.map(openingCutter)];
     let result = toBrush(shapedBoxGeo(1, 1, 1, radii));
-    for (const cutter of cutters) {
-      const next = csgEvaluator.evaluate(result, toBrush(cutter), SUBTRACTION);
-      result.geometry.dispose();
-      result = next;
-      cutter.dispose();
-    }
+    withoutBvhLeafSizeWarning(() => {
+      for (const cutter of cutters) {
+        const next = csgEvaluator.evaluate(result, toBrush(cutter), SUBTRACTION);
+        result.geometry.dispose();
+        result = next;
+        cutter.dispose();
+      }
+    });
 
     const src = result.geometry.index ? result.geometry.toNonIndexed() : result.geometry;
     const out = new THREE.BufferGeometry();
