@@ -161,8 +161,12 @@ describe('furnitureParts', () => {
     }
     // Au plus une par chandelier (zone de pièce).
     const zones = withFire.map(({ ctx }) => {
-      const near = calls.find(({ ctx: other }) => other.chandelier && other.cell.y === ctx.cell.y &&
-        Math.max(Math.abs(other.cell.x - ctx.cell.x), Math.abs(other.cell.z - ctx.cell.z)) <= 2);
+      const near = calls.find(
+        ({ ctx: other }) =>
+          other.chandelier &&
+          other.cell.y === ctx.cell.y &&
+          Math.max(Math.abs(other.cell.x - ctx.cell.x), Math.abs(other.cell.z - ctx.cell.z)) <= 2,
+      );
       return near ? `${near.ctx.cell.x},${near.ctx.cell.y},${near.ctx.cell.z}` : '?';
     });
     expect(zones).not.toContain('?');

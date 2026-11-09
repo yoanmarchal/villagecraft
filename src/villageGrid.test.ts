@@ -60,7 +60,10 @@ describe('VillageGrid — toits automatiques', () => {
     grid.addBlock(1, 1, 1); // emplacement du cap auto
 
     expect(grid.getCell({ x: 1, y: 1, z: 1 })?.isAutoRoof).toBeFalsy();
-    expect(grid.exportBlocks()).toEqual([[1, 0, 1], [1, 1, 1]]);
+    expect(grid.exportBlocks()).toEqual([
+      [1, 0, 1],
+      [1, 1, 1],
+    ]);
   });
 
   it("retirer le sommet d'une colonne à 2 étages produit toujours un changement visible", () => {
@@ -74,7 +77,7 @@ describe('VillageGrid — toits automatiques', () => {
 });
 
 describe('VillageGrid — types de blocs', () => {
-  it("pose une arche entre deux colonnes porteuses, sans support dessous", () => {
+  it('pose une arche entre deux colonnes porteuses, sans support dessous', () => {
     const grid = new VillageGrid(3, HEIGHT, 3);
     buildColumn(grid, 0, 0, 3);
     buildColumn(grid, 2, 0, 3);
@@ -97,14 +100,23 @@ describe('VillageGrid — types de blocs', () => {
 
     for (let y = 1; y < 3; y += 1) {
       for (let x = 1; x < 5; x += 1) {
-        const both = typeAt(grid, x - 1, y, 0) === BlockType.WallWithWindow && typeAt(grid, x, y, 0) === BlockType.WallWithWindow;
+        const both =
+          typeAt(grid, x - 1, y, 0) === BlockType.WallWithWindow && typeAt(grid, x, y, 0) === BlockType.WallWithWindow;
         expect(both, `fenêtres adjacentes en x=${x - 1}/${x}, y=${y}`).toBe(false);
       }
     }
   });
 
   it("le résultat ne dépend que de la forme, pas de l'ordre de construction", () => {
-    const footprint: Array<[number, number]> = [[0, 0], [1, 0], [2, 0], [3, 0], [1, 1], [2, 1], [3, 2]];
+    const footprint: Array<[number, number]> = [
+      [0, 0],
+      [1, 0],
+      [2, 0],
+      [3, 0],
+      [1, 1],
+      [2, 1],
+      [3, 2],
+    ];
     const floors = 3;
 
     const buildInRandomOrder = (seed: number) => {
@@ -164,7 +176,7 @@ describe('VillageGrid — arches automatiques', () => {
     expect(typeAt(twoRows(3), 0, 1, 1)).not.toBe(BlockType.Roof);
   });
 
-  it("ne se forme pas avec un seul bâtiment, ni en diagonale", () => {
+  it('ne se forme pas avec un seul bâtiment, ni en diagonale', () => {
     const single = new VillageGrid(3, HEIGHT, 3);
     buildColumn(single, 0, 1, 3);
     expect(archesIn(single)).toHaveLength(0);
@@ -189,7 +201,10 @@ describe('VillageGrid — arches automatiques', () => {
       buildColumn(grid, width + 1, 1, 3);
       return archesIn(grid).map(({ x, y, z }) => [x, y, z]);
     };
-    expect(street(2)).toEqual([[1, 1, 1], [2, 1, 1]]);
+    expect(street(2)).toEqual([
+      [1, 1, 1],
+      [2, 1, 1],
+    ]);
     expect(street(3)).toEqual([]);
   });
 
@@ -250,7 +265,9 @@ describe('VillageGrid — generateTerrain', () => {
     for (let seed = 0; seed < 30; seed += 1) {
       const grid = new VillageGrid(8, HEIGHT, 8);
       grid.generateTerrain(8, seed);
-      const occupied = columnHeights(grid, 8).flat().filter((h) => h > 0).length;
+      const occupied = columnHeights(grid, 8)
+        .flat()
+        .filter((h) => h > 0).length;
       expect(occupied).toBeGreaterThan(0);
       expect(occupied).toBeLessThan(64);
     }
@@ -317,7 +334,7 @@ describe('VillageGrid — export / import', () => {
     now.mockRestore();
   });
 
-  it("applique le décalage et ignore les blocs hors grille", () => {
+  it('applique le décalage et ignore les blocs hors grille', () => {
     const grid = buildSample();
     const small = new VillageGrid(3, HEIGHT, 3);
     small.importBlocks(grid.exportBlocks(), -1, -1);

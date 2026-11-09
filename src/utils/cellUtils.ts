@@ -79,12 +79,12 @@ function buildCornerRadii(
   hasF: boolean,
   hasB: boolean,
   exposedRadius: number,
-  interiorRadius: number
+  interiorRadius: number,
 ): CornerRadii {
-  const backLeft = (!hasL && !hasB) ? exposedRadius : interiorRadius;
-  const backRight = (!hasR && !hasB) ? exposedRadius : interiorRadius;
-  const frontLeft = (!hasL && !hasF) ? exposedRadius : interiorRadius;
-  const frontRight = (!hasR && !hasF) ? exposedRadius : interiorRadius;
+  const backLeft = !hasL && !hasB ? exposedRadius : interiorRadius;
+  const backRight = !hasR && !hasB ? exposedRadius : interiorRadius;
+  const frontLeft = !hasL && !hasF ? exposedRadius : interiorRadius;
+  const frontRight = !hasR && !hasF ? exposedRadius : interiorRadius;
 
   const max = Math.max(backLeft, backRight, frontLeft, frontRight);
   const uniform = backLeft === backRight && backRight === frontLeft && frontLeft === frontRight;
@@ -129,7 +129,10 @@ export function hasOccupiedCell(lookup: CellLookup, x: number, y: number, z: num
 }
 
 // Détecte la configuration du toit et son orientation
-export function getRoofConfig(lookup: CellLookup, cell: GridCell): {
+export function getRoofConfig(
+  lookup: CellLookup,
+  cell: GridCell,
+): {
   axis: 'x' | 'z';
   hasLeft: boolean;
   hasRight: boolean;
@@ -147,10 +150,10 @@ export function getRoofConfig(lookup: CellLookup, cell: GridCell): {
   const northSouth = Number(hasFront) + Number(hasBack);
 
   // Détecte si c'est un coin (voisins perpendiculaires)
-  const isCorner = (eastWest === 1 && northSouth === 1);
+  const isCorner = eastWest === 1 && northSouth === 1;
 
   // Détecte si c'est une extrémité (voisin sur un seul côté)
-  const isEnd = (eastWest + northSouth === 1);
+  const isEnd = eastWest + northSouth === 1;
 
   const axis = eastWest > northSouth ? 'x' : 'z';
 
@@ -159,7 +162,9 @@ export function getRoofConfig(lookup: CellLookup, cell: GridCell): {
 
 /** Case coiffée d'un toit à deux pans (pas la flèche d'une tour, pas un chemin de ronde). */
 export function isGableRoofCell(lookup: CellLookup, cell: GridCell | null): boolean {
-  return !!cell?.isOccupied && cell.type === BlockType.Roof && !isIsolatedBlock(lookup, cell) && !isRampart(lookup, cell);
+  return (
+    !!cell?.isOccupied && cell.type === BlockType.Roof && !isIsolatedBlock(lookup, cell) && !isRampart(lookup, cell)
+  );
 }
 
 /**
@@ -190,12 +195,22 @@ export function getRidgeAxis(lookup: CellLookup, cell: GridCell): 'x' | 'z' {
   let [minX, maxX, minZ, maxZ] = [cell.x, cell.x, cell.z, cell.z];
   while (queue.length > 0) {
     const current = queue.pop()!;
-    for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+    for (const [dx, dz] of [
+      [1, 0],
+      [-1, 0],
+      [0, 1],
+      [0, -1],
+    ]) {
       const next = getCell(lookup, current.x + dx, current.y, current.z + dz);
       if (!next || seen.has(cellKey(next.x, next.y, next.z)) || !isGableRoofCell(lookup, next)) continue;
       seen.add(cellKey(next.x, next.y, next.z));
       queue.push(next);
-      [minX, maxX, minZ, maxZ] = [Math.min(minX, next.x), Math.max(maxX, next.x), Math.min(minZ, next.z), Math.max(maxZ, next.z)];
+      [minX, maxX, minZ, maxZ] = [
+        Math.min(minX, next.x),
+        Math.max(maxX, next.x),
+        Math.min(minZ, next.z),
+        Math.max(maxZ, next.z),
+      ];
     }
   }
   if (seen.size === 1) return getRoofConfig(lookup, cell).axis;
@@ -221,10 +236,10 @@ export const FACE_ROTATION_Y: Record<CellFace, number> = {
 export function getExposedFaces(lookup: CellLookup, cell: GridCell): Array<CellFace> {
   const faces: Array<CellFace> = [];
 
-  if (!hasOccupiedCell(lookup, cell.x, cell.y, cell.z + 1)) faces.push('front');  // Z+
-  if (!hasOccupiedCell(lookup, cell.x, cell.y, cell.z - 1)) faces.push('back');   // Z-
-  if (!hasOccupiedCell(lookup, cell.x - 1, cell.y, cell.z)) faces.push('left');   // X-
-  if (!hasOccupiedCell(lookup, cell.x + 1, cell.y, cell.z)) faces.push('right');  // X+
+  if (!hasOccupiedCell(lookup, cell.x, cell.y, cell.z + 1)) faces.push('front'); // Z+
+  if (!hasOccupiedCell(lookup, cell.x, cell.y, cell.z - 1)) faces.push('back'); // Z-
+  if (!hasOccupiedCell(lookup, cell.x - 1, cell.y, cell.z)) faces.push('left'); // X-
+  if (!hasOccupiedCell(lookup, cell.x + 1, cell.y, cell.z)) faces.push('right'); // X+
 
   return faces;
 }
@@ -246,7 +261,11 @@ export function isCornerExposed(lookup: CellLookup, cell: GridCell, dx: number, 
  * positif de son axe latéral). Mutualisé entre les pierres apparentes et le
  * dimensionnement des fenêtres/portes (elles étaient dupliquées avant).
  */
-export function getFaceCorners(face: CellFace, radii: CornerRadii, cornerMode: 'numeric' | 'boolean'): [number, number] {
+export function getFaceCorners(
+  face: CellFace,
+  radii: CornerRadii,
+  cornerMode: 'numeric' | 'boolean',
+): [number, number] {
   // En mode 'boolean', on écrase le radius en 0/EDGE-like flag numérique
   const toVal = (r: number) => (cornerMode === 'boolean' ? (r > 0.01 ? r : 0) : r);
   switch (face) {
@@ -262,7 +281,11 @@ export function getFaceCorners(face: CellFace, radii: CornerRadii, cornerMode: '
 }
 
 /** Les 4 coins d'une cellule, avec leur nom canonique. */
-export const CELL_CORNERS: ReadonlyArray<{ dx: -1 | 1; dz: -1 | 1; corner: 'backLeft' | 'backRight' | 'frontLeft' | 'frontRight' }> = [
+export const CELL_CORNERS: ReadonlyArray<{
+  dx: -1 | 1;
+  dz: -1 | 1;
+  corner: 'backLeft' | 'backRight' | 'frontLeft' | 'frontRight';
+}> = [
   { dx: -1, dz: -1, corner: 'backLeft' },
   { dx: 1, dz: -1, corner: 'backRight' },
   { dx: -1, dz: 1, corner: 'frontLeft' },
@@ -271,10 +294,12 @@ export const CELL_CORNERS: ReadonlyArray<{ dx: -1 | 1; dz: -1 | 1; corner: 'back
 
 // Détecte si un bloc est isolé (aucun voisin horizontal)
 export function isIsolatedBlock(lookup: CellLookup, cell: GridCell): boolean {
-  return !hasOccupiedCell(lookup, cell.x - 1, cell.y, cell.z) &&
+  return (
+    !hasOccupiedCell(lookup, cell.x - 1, cell.y, cell.z) &&
     !hasOccupiedCell(lookup, cell.x + 1, cell.y, cell.z) &&
     !hasOccupiedCell(lookup, cell.x, cell.y, cell.z - 1) &&
-    !hasOccupiedCell(lookup, cell.x, cell.y, cell.z + 1);
+    !hasOccupiedCell(lookup, cell.x, cell.y, cell.z + 1)
+  );
 }
 
 /**
@@ -290,8 +315,8 @@ export function isTowerColumn(lookup: CellLookup, cell: GridCell): boolean {
   let y = cell.y;
   while (true) {
     const current = getCell(lookup, cell.x, y, cell.z);
-    if (!current?.isOccupied) break;          // fin de la colonne
-    if (isIsolatedBlock(lookup, current)) return true;  // un étage isolé trouvé
+    if (!current?.isOccupied) break; // fin de la colonne
+    if (isIsolatedBlock(lookup, current)) return true; // un étage isolé trouvé
     y += 1;
   }
   return false;
@@ -300,7 +325,7 @@ export function isTowerColumn(lookup: CellLookup, cell: GridCell): boolean {
 /** Cellule la plus haute de la colonne (x, z) contenant `cell` (en montant tant que c'est occupé). */
 export function getColumnTop(lookup: CellLookup, cell: GridCell): GridCell {
   let top = cell;
-  for (let above = getCell(lookup, cell.x, cell.y + 1, cell.z); above?.isOccupied; ) {
+  for (let above = getCell(lookup, cell.x, cell.y + 1, cell.z); above?.isOccupied;) {
     top = above;
     above = getCell(lookup, top.x, top.y + 1, top.z);
   }
@@ -369,22 +394,18 @@ export function getColumnBase(lookup: CellLookup, cell: GridCell): GridCell {
 /**
  * Projette un point latéral t sur la surface réelle d'une face,
  * en tenant compte des coins arrondis.
- * 
+ *
  * @param t - Position latérale sur la face (-0.5 à 0.5)
  * @param cornerRoundedNeg - True si le coin côté t < 0 est arrondi
  * @param cornerRoundedPos - True si le coin côté t > 0 est arrondi
  * @returns { surfaceZ, rotY } - Profondeur réelle sur la face et rotation tangente
- * 
+ *
  * Dans le repère local de la face :
  * - t : position latérale (-0.5 à 0.5)
  * - surfaceZ : profondeur de sortie (0 = centre, 0.5 = surface plate)
  * - rotY : rotation tangente pour aligner avec la surface
  */
-export function projectOnFace(
-  t: number,
-  radiusNeg: number,
-  radiusPos: number,
-): { surfaceZ: number; rotY: number } {
+export function projectOnFace(t: number, radiusNeg: number, radiusPos: number): { surfaceZ: number; rotY: number } {
   if (t > 0 && radiusPos > 0.001) {
     const flatLimit = 0.5 - radiusPos;
     if (t > flatLimit) {
@@ -428,12 +449,38 @@ export function getRoundedRectContourPoints(
   arcSegs: number = 10,
 ): Array<[number, number]> {
   const corners: Array<{
-    cx: number; cy: number; r: number; startAngle: number; cornerX: number; cornerY: number;
+    cx: number;
+    cy: number;
+    r: number;
+    startAngle: number;
+    cornerX: number;
+    cornerY: number;
   }> = [
-    { cx: -hw + radii.frontLeft, cy: -hd + radii.frontLeft, r: radii.frontLeft, startAngle: Math.PI, cornerX: -hw, cornerY: -hd },
-    { cx:  hw - radii.frontRight, cy: -hd + radii.frontRight, r: radii.frontRight, startAngle: Math.PI * 1.5, cornerX: hw, cornerY: -hd },
-    { cx:  hw - radii.backRight, cy:  hd - radii.backRight, r: radii.backRight, startAngle: 0, cornerX: hw, cornerY: hd },
-    { cx: -hw + radii.backLeft, cy:  hd - radii.backLeft, r: radii.backLeft, startAngle: Math.PI * 0.5, cornerX: -hw, cornerY: hd },
+    {
+      cx: -hw + radii.frontLeft,
+      cy: -hd + radii.frontLeft,
+      r: radii.frontLeft,
+      startAngle: Math.PI,
+      cornerX: -hw,
+      cornerY: -hd,
+    },
+    {
+      cx: hw - radii.frontRight,
+      cy: -hd + radii.frontRight,
+      r: radii.frontRight,
+      startAngle: Math.PI * 1.5,
+      cornerX: hw,
+      cornerY: -hd,
+    },
+    { cx: hw - radii.backRight, cy: hd - radii.backRight, r: radii.backRight, startAngle: 0, cornerX: hw, cornerY: hd },
+    {
+      cx: -hw + radii.backLeft,
+      cy: hd - radii.backLeft,
+      r: radii.backLeft,
+      startAngle: Math.PI * 0.5,
+      cornerX: -hw,
+      cornerY: hd,
+    },
   ];
 
   const points: Array<[number, number]> = [];

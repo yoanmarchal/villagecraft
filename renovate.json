@@ -1,8 +1,6 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
-  "extends": [
-    "config:recommended"
-  ],
+  "extends": ["config:recommended"],
   "packageRules": [
     {
       "description": "three 0.187 crashes n8ao 2.0.1 in halfRes mode (its multi-render-target class returns an array as `texture`, three 0.187 dropped the `texture.mipmaps &&` guard). Remove this rule once n8ao ships the fix (N8python/n8ao#56, issue #57).",

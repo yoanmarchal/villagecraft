@@ -96,7 +96,9 @@ describe('buildVillage', () => {
     const grid = new VillageGrid(9, 10, 9);
     for (let x = 0; x < 6; x += 1) for (let z = 0; z < 6; z += 1) grid.addBlockInColumn(x, z);
     const meshes = build(grid, SETTINGS).map(({ geometry, mat }) =>
-      Object.assign(new THREE.Mesh(geometry, new THREE.MeshBasicMaterial({ side: THREE.DoubleSide })), { userData: { glow: !!mat.glow } }),
+      Object.assign(new THREE.Mesh(geometry, new THREE.MeshBasicMaterial({ side: THREE.DoubleSide })), {
+        userData: { glow: !!mat.glow },
+      }),
     );
 
     const [x0, y0, z0] = grid.toWorldPosition(0, 0, 0);
@@ -145,12 +147,13 @@ describe('buildVillage', () => {
     // plafond du centre était ouvert (6 cm plus haut), les égouts et pans des
     // toits adossés pendaient dans ce ressaut (traits rouges au plafond).
     const grid = new VillageGrid(9, 10, 9);
-    for (let x = 2; x < 6; x += 1) for (let z = 2; z < 6; z += 1) for (let i = 0; i < 2; i += 1) grid.addBlockInColumn(x, z);
+    for (let x = 2; x < 6; x += 1)
+      for (let z = 2; z < 6; z += 1) for (let i = 0; i < 2; i += 1) grid.addBlockInColumn(x, z);
     for (let x = 3; x < 5; x += 1) for (let z = 3; z < 5; z += 1) grid.addBlockInColumn(x, z);
     // Toits peints d'une couleur témoin (vert pur, et ses nuances) pour les reconnaître.
     const groups = build(grid, { ...SETTINGS, roofBaseColor: '#00ff00' });
-    const meshes = groups.map(
-      ({ geometry, key }) => Object.assign(new THREE.Mesh(geometry, new THREE.MeshBasicMaterial({ side: THREE.DoubleSide })), { name: key }),
+    const meshes = groups.map(({ geometry, key }) =>
+      Object.assign(new THREE.Mesh(geometry, new THREE.MeshBasicMaterial({ side: THREE.DoubleSide })), { name: key }),
     );
 
     const [, y1] = grid.toWorldPosition(0, 1, 0);
@@ -166,7 +169,13 @@ describe('buildVillage', () => {
         for (const hit of ray.intersectObjects(meshes)) {
           const colors = (hit.object as THREE.Mesh).geometry.getAttribute('color');
           const [r, g, b] = [colors.getX(hit.face!.a), colors.getY(hit.face!.a), colors.getZ(hit.face!.a)];
-          if (g > r + 0.2 && g > b + 0.2) intruders.add(`${hit.object.name} @ ${hit.point.toArray().map((v) => v.toFixed(2)).join(',')}`);
+          if (g > r + 0.2 && g > b + 0.2)
+            intruders.add(
+              `${hit.object.name} @ ${hit.point
+                .toArray()
+                .map((v) => v.toFixed(2))
+                .join(',')}`,
+            );
         }
       }
     }
@@ -177,12 +186,15 @@ describe('buildVillage', () => {
     const grid = new VillageGrid(9, 10, 9);
     for (let x = 2; x < 5; x += 1) for (let z = 2; z < 5; z += 1) grid.addBlockInColumn(x, z);
     const groups = build(grid, SETTINGS);
-    const meshes = groups.map(
-      ({ geometry, key }) => Object.assign(new THREE.Mesh(geometry, new THREE.MeshBasicMaterial({ side: THREE.DoubleSide })), { name: key }),
+    const meshes = groups.map(({ geometry, key }) =>
+      Object.assign(new THREE.Mesh(geometry, new THREE.MeshBasicMaterial({ side: THREE.DoubleSide })), { name: key }),
     );
     const [cx, cy, cz] = grid.toWorldPosition(3, 0, 3);
     const colorAt = (dir: number) => {
-      const hit = new THREE.Raycaster(new THREE.Vector3(cx + 0.2, cy, cz + 0.05), new THREE.Vector3(0, dir, 0)).intersectObjects(meshes)[0];
+      const hit = new THREE.Raycaster(
+        new THREE.Vector3(cx + 0.2, cy, cz + 0.05),
+        new THREE.Vector3(0, dir, 0),
+      ).intersectObjects(meshes)[0];
       const colors = (hit.object as THREE.Mesh).geometry.getAttribute('color');
       return new THREE.Color(colors.getX(hit.face!.a), colors.getY(hit.face!.a), colors.getZ(hit.face!.a));
     };
@@ -203,8 +215,8 @@ describe('buildVillage', () => {
     const grid = new VillageGrid(9, 10, 9);
     for (let i = 0; i < 4; i += 1) grid.addBlockInColumn(2, 4);
     for (const bz of [4, 5]) for (let y = 0; y < 4; y += 1) grid.addBlock(4, y, bz);
-    const meshes = build(grid, SETTINGS).map(
-      ({ geometry, key }) => Object.assign(new THREE.Mesh(geometry, new THREE.MeshBasicMaterial({ side: THREE.DoubleSide })), { name: key }),
+    const meshes = build(grid, SETTINGS).map(({ geometry, key }) =>
+      Object.assign(new THREE.Mesh(geometry, new THREE.MeshBasicMaterial({ side: THREE.DoubleSide })), { name: key }),
     );
     const [ax, ay, az] = grid.toWorldPosition(3, 1, 4);
 
@@ -217,7 +229,10 @@ describe('buildVillage', () => {
       // raccord, le coin arrondi de la tour laisse un jour de ~11 cm.
       for (const dy of [-0.3, 0, 0.3, 0.6]) {
         for (const side of [1, -1]) {
-          const ray = new THREE.Raycaster(new THREE.Vector3(ax - 0.53, ay + dy, az + side * 3), new THREE.Vector3(0, 0, -side));
+          const ray = new THREE.Raycaster(
+            new THREE.Vector3(ax - 0.53, ay + dy, az + side * 3),
+            new THREE.Vector3(0, 0, -side),
+          );
           const hit = ray.intersectObjects(meshes)[0];
           expect(Math.abs(hit.point.z - az)).toBeGreaterThanOrEqual(0.495);
         }
@@ -227,7 +242,10 @@ describe('buildVillage', () => {
     it('n’a pas de rainure ouverte entre la corniche et le parapet', () => {
       // Entre le dessus de la corniche (0.03) et le dessus des dalles (0.06).
       for (const side of [1, -1]) {
-        const ray = new THREE.Raycaster(new THREE.Vector3(ax, ay + 0.5 + 0.045, az + side * 3), new THREE.Vector3(0, 0, -side));
+        const ray = new THREE.Raycaster(
+          new THREE.Vector3(ax, ay + 0.5 + 0.045, az + side * 3),
+          new THREE.Vector3(0, 0, -side),
+        );
         const hit = ray.intersectObjects(meshes)[0];
         // Le parapet (nu extérieur à 0.52) arrête le rayon, pas le bord des dalles (0.40).
         expect(Math.abs(hit.point.z - az)).toBeGreaterThan(0.5);
@@ -260,31 +278,42 @@ describe('buildVillage', () => {
     expect(grid.getCell({ x: 4, y: 2, z: 4 })?.type).toBe(BlockType.Roof);
 
     // Toits en vert pur pour les reconnaître.
-    const meshes = build(grid, { ...SETTINGS, roofBaseColor: '#00ff00' }).map(
-      ({ geometry, key }) => Object.assign(new THREE.Mesh(geometry, new THREE.MeshBasicMaterial({ side: THREE.DoubleSide })), { name: key }),
+    const meshes = build(grid, { ...SETTINGS, roofBaseColor: '#00ff00' }).map(({ geometry, key }) =>
+      Object.assign(new THREE.Mesh(geometry, new THREE.MeshBasicMaterial({ side: THREE.DoubleSide })), { name: key }),
     );
     const [ax, ay, az] = grid.toWorldPosition(3, 1, 4);
-    const hit = new THREE.Raycaster(new THREE.Vector3(ax, ay + 5, az + 0.3), new THREE.Vector3(0, -1, 0)).intersectObjects(meshes)[0];
+    const hit = new THREE.Raycaster(
+      new THREE.Vector3(ax, ay + 5, az + 0.3),
+      new THREE.Vector3(0, -1, 0),
+    ).intersectObjects(meshes)[0];
     const colors = (hit.object as THREE.Mesh).geometry.getAttribute('color');
     const [r, g, b] = [colors.getX(hit.face!.a), colors.getY(hit.face!.a), colors.getZ(hit.face!.a)];
     expect(g).toBeGreaterThan(r + 0.2);
     expect(g).toBeGreaterThan(b + 0.2);
     // Et aucun merlon : rien au-dessus du toit à hauteur de créneau, à l'aplomb des merlons.
     const merlonY = ay + 0.5 + WALKWAY_H + PARAPET_H + SETTINGS.merlonH / 2;
-    const across = new THREE.Raycaster(new THREE.Vector3(ax + 0.25 + 0.06, merlonY, az + 3), new THREE.Vector3(0, 0, -1));
+    const across = new THREE.Raycaster(
+      new THREE.Vector3(ax + 0.25 + 0.06, merlonY, az + 3),
+      new THREE.Vector3(0, 0, -1),
+    );
     across.far = 2.5;
-    expect(across.intersectObjects(meshes).every((h) => {
-      const c = (h.object as THREE.Mesh).geometry.getAttribute('color');
-      return c.getY(h.face!.a) > c.getX(h.face!.a) + 0.2;
-    })).toBe(true);
+    expect(
+      across.intersectObjects(meshes).every((h) => {
+        const c = (h.object as THREE.Mesh).geometry.getAttribute('color');
+        return c.getY(h.face!.a) > c.getX(h.face!.a) + 0.2;
+      }),
+    ).toBe(true);
   });
 
   describe('jonction de toits perpendiculaires', () => {
     /** Hauteur du premier toit rencontré par un rayon vertical en (x, z) monde. */
     const roofHeight = (meshes: THREE.Object3D[], x: number, z: number) =>
-      new THREE.Raycaster(new THREE.Vector3(x, 10, z), new THREE.Vector3(0, -1, 0)).intersectObjects(meshes)[0]?.point.y;
+      new THREE.Raycaster(new THREE.Vector3(x, 10, z), new THREE.Vector3(0, -1, 0)).intersectObjects(meshes)[0]?.point
+        .y;
     const meshesOf = (grid: VillageGrid) =>
-      build(grid, SETTINGS).map(({ geometry }) => new THREE.Mesh(geometry, new THREE.MeshBasicMaterial({ side: THREE.DoubleSide })));
+      build(grid, SETTINGS).map(
+        ({ geometry }) => new THREE.Mesh(geometry, new THREE.MeshBasicMaterial({ side: THREE.DoubleSide })),
+      );
     /**
      * De part et d'autre de la frontière entre la case de jonction `c` et son
      * aile (direction `d`), sur l'axe de l'aile : le toit doit être continu.
@@ -301,7 +330,12 @@ describe('buildVillage', () => {
     it('fusionne les toits d’un coin en L', () => {
       // Maisons de plain-pied en (2, 2), (3, 2) et (2, 3) : coin en (2, 2).
       const grid = new VillageGrid(9, 10, 9);
-      for (const [x, z] of [[2, 2], [3, 2], [2, 3]]) grid.addBlockInColumn(x, z);
+      for (const [x, z] of [
+        [2, 2],
+        [3, 2],
+        [2, 3],
+      ])
+        grid.addBlockInColumn(x, z);
       const meshes = meshesOf(grid);
       expect(jumpAtBoundary(grid, meshes, [2, 2], [1, 0])).toBeLessThan(0.1);
       expect(jumpAtBoundary(grid, meshes, [2, 2], [0, 1])).toBeLessThan(0.1);
@@ -329,7 +363,10 @@ describe('buildVillage', () => {
       for (let y = 0; y < 3; y += 1) grid.addBlock(4, y, 2);
       const lookup = makeCellLookup(grid.getOccupiedCells());
       const axes = new Set(
-        grid.getOccupiedCells().filter((c) => c.y === 1 && c.x < 4).map((c) => getRidgeAxis(lookup, c)),
+        grid
+          .getOccupiedCells()
+          .filter((c) => c.y === 1 && c.x < 4)
+          .map((c) => getRidgeAxis(lookup, c)),
       );
       expect(axes.size).toBe(1);
     });
@@ -358,11 +395,22 @@ describe('buildVillage', () => {
       // l'aile X y entre par une demi-aile. Son pan avant passait devant le
       // pied du pignon jusqu'à la façade, liteaux et bandeau d'égout compris.
       const grid = new VillageGrid(9, 10, 9);
-      for (const [x, z] of [[3, 0], [3, 1], [3, 2], [3, 3], [1, 3], [2, 3]]) grid.addBlockInColumn(x, z);
+      for (const [x, z] of [
+        [3, 0],
+        [3, 1],
+        [3, 2],
+        [3, 3],
+        [1, 3],
+        [2, 3],
+      ])
+        grid.addBlockInColumn(x, z);
       const meshes = meshesOf(grid);
       const [cx, cy, cz] = grid.toWorldPosition(3, 1, 3);
       // Juste au-dessus de l'égout, côté de la demi-aile, à l'aplomb d'un liteau.
-      const hit = new THREE.Raycaster(new THREE.Vector3(cx - 0.4, cy - 0.47, cz + 3), new THREE.Vector3(0, 0, -1)).intersectObjects(meshes)[0];
+      const hit = new THREE.Raycaster(
+        new THREE.Vector3(cx - 0.4, cy - 0.47, cz + 3),
+        new THREE.Vector3(0, 0, -1),
+      ).intersectObjects(meshes)[0];
       expect(hit.point.z - cz).toBeLessThanOrEqual(0.505); // la face du pignon (0.501), rien devant
       // Et le toit reste continu entre l'aile X et le coin.
       expect(jumpAtBoundary(grid, meshes, [3, 3], [-1, 0])).toBeLessThan(0.1);
@@ -377,13 +425,19 @@ describe('buildVillage', () => {
       const meshes = meshesOf(grid);
       const [ex, ey, ez] = grid.toWorldPosition(4, 1, 4);
       for (const dz of [-0.52, 0.52]) {
-        const hit = new THREE.Raycaster(new THREE.Vector3(ex + 3, ey - 0.52, ez + dz), new THREE.Vector3(-1, 0, 0)).intersectObjects(meshes)[0];
+        const hit = new THREE.Raycaster(
+          new THREE.Vector3(ex + 3, ey - 0.52, ez + dz),
+          new THREE.Vector3(-1, 0, 0),
+        ).intersectObjects(meshes)[0];
         expect(hit.point.x - ex).toBeLessThanOrEqual(0.545);
       }
       // Le bandeau bas du pignon couvre le bout des pans et des bandeaux
       // latéraux (nu à 0.54) : sa face est devant, pas dans le même plan.
       for (const dz of [-0.48, 0, 0.48]) {
-        const hit = new THREE.Raycaster(new THREE.Vector3(ex + 3, ey - 0.495, ez + dz), new THREE.Vector3(-1, 0, 0)).intersectObjects(meshes)[0];
+        const hit = new THREE.Raycaster(
+          new THREE.Vector3(ex + 3, ey - 0.495, ez + dz),
+          new THREE.Vector3(-1, 0, 0),
+        ).intersectObjects(meshes)[0];
         expect(hit.point.x - ex).toBeGreaterThan(0.542);
       }
     });
@@ -391,7 +445,13 @@ describe('buildVillage', () => {
     it('fusionne l’aile d’une jonction en T sans pignon au dos', () => {
       // Rangée (1..3, 2) et aile en (2, 3) : jonction en (2, 2).
       const grid = new VillageGrid(9, 10, 9);
-      for (const [x, z] of [[1, 2], [2, 2], [3, 2], [2, 3]]) grid.addBlockInColumn(x, z);
+      for (const [x, z] of [
+        [1, 2],
+        [2, 2],
+        [3, 2],
+        [2, 3],
+      ])
+        grid.addBlockInColumn(x, z);
       const meshes = meshesOf(grid);
       expect(jumpAtBoundary(grid, meshes, [2, 2], [0, 1])).toBeLessThan(0.1);
       expect(jumpAtBoundary(grid, meshes, [2, 2], [1, 0])).toBeLessThan(0.1);
@@ -475,7 +535,8 @@ describe('compact vertex format', () => {
         const w = cell.getW(i);
         if (!isHollowType(type!)) expect(w % 4).toBe(0);
         // Hors pièce, le code est la chute ; dans une pièce, le décalage vers le chandelier.
-        if (w % 4 === 0) expect(Math.floor(w / 4) * 0.01).toBeCloseTo(type === BlockType.Roof ? ROOF_DROP_HEIGHT : 0, 5);
+        if (w % 4 === 0)
+          expect(Math.floor(w / 4) * 0.01).toBeCloseTo(type === BlockType.Roof ? ROOF_DROP_HEIGHT : 0, 5);
         const length = Math.hypot(normal.getX(i), normal.getY(i), normal.getZ(i));
         expect(Math.abs(length - 1)).toBeLessThan(0.02);
       }
@@ -522,7 +583,14 @@ describe('interior light', () => {
     const all = vertices(grid);
 
     const tips = all.filter(({ glow, local }) => glow && local.y > INTERIOR_LAMP_Y + 0.011 && Math.abs(local.y) < 0.5);
-    const tipPositions = new Set(tips.map(({ world }) => world.toArray().map((v) => v.toFixed(3)).join(',')));
+    const tipPositions = new Set(
+      tips.map(({ world }) =>
+        world
+          .toArray()
+          .map((v) => v.toFixed(3))
+          .join(','),
+      ),
+    );
     expect(tipPositions.size).toBe(4); // un chandelier, 4 bougies
     const [cx, , cz] = grid.toWorldPosition(3, 0, 3);
     for (const { world } of tips) expect(Math.hypot(world.x - cx, world.z - cz)).toBeLessThan(0.15);
@@ -543,7 +611,9 @@ describe('interior light', () => {
     for (let i = 0; i < 3; i += 1) grid.addBlockInColumn(2, 2);
     const hollowCells = grid.getOccupiedCells().filter((cell) => isHollowType(cell.type)).length;
 
-    const flames = vertices(grid).filter(({ glow, local }) => glow && Math.abs(local.x) < 0.2 && Math.abs(local.z) < 0.2);
+    const flames = vertices(grid).filter(
+      ({ glow, local }) => glow && Math.abs(local.x) < 0.2 && Math.abs(local.z) < 0.2,
+    );
     const flameLevels = new Set(flames.map(({ local }) => Math.round(local.y * 100)));
     expect(hollowCells).toBeGreaterThan(0);
     for (const level of flameLevels) {
@@ -551,6 +621,15 @@ describe('interior light', () => {
     }
     // 4 flammes par chandelier, une pointe (sommet du cône) chacune.
     const tips = flames.filter(({ local }) => local.y > INTERIOR_LAMP_Y + 0.011);
-    expect(new Set(tips.map(({ world }) => world.toArray().map((v) => v.toFixed(3)).join(','))).size).toBe(4 * hollowCells);
+    expect(
+      new Set(
+        tips.map(({ world }) =>
+          world
+            .toArray()
+            .map((v) => v.toFixed(3))
+            .join(','),
+        ),
+      ).size,
+    ).toBe(4 * hollowCells);
   });
 });

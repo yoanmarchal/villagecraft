@@ -98,7 +98,8 @@ export interface CellTransitionState {
 }
 
 export interface ControlState
-  extends GridState,
+  extends
+    GridState,
     LightingState,
     SkyFogState,
     CameraState,

@@ -24,10 +24,7 @@ export function varyColorBrightness(color: string, variation: number): string {
  * Remplace les appels répétés `varyColorBrightness(base, x)` par un seul
  * objet nommé, ex: `const { dark, light } = shades(baseColor, { dark: -0.15, light: 0.07 });`
  */
-export function shades<T extends Record<string, number>>(
-  base: string,
-  deltas: T
-): Record<keyof T, string> {
+export function shades<T extends Record<string, number>>(base: string, deltas: T): Record<keyof T, string> {
   const result = {} as Record<keyof T, string>;
   for (const key in deltas) {
     result[key] = varyColorBrightness(base, deltas[key]);

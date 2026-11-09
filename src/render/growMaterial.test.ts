@@ -29,7 +29,9 @@ describe('growMaterial shader injection', () => {
 
     const fragment = shader.fragmentShader;
     expect(fragment).toContain('uniform vec3 uInteriorLight');
-    expect(fragment.indexOf('uInteriorLight * interiorLight')).toBeGreaterThan(fragment.indexOf('#include <emissivemap_fragment>'));
+    expect(fragment.indexOf('uInteriorLight * interiorLight')).toBeGreaterThan(
+      fragment.indexOf('#include <emissivemap_fragment>'),
+    );
     expect(shader.uniforms.uInteriorLight).toBe(set.interiorLight);
   });
 

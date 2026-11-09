@@ -85,12 +85,7 @@ export function raycastVoxels(
  * d'un bloc : la colonne touchée. Construction sur un flanc : la colonne
  * voisine, de ce côté (on bâtit "contre" le mur), si elle est dans la grille.
  */
-export function targetColumn(
-  hit: VoxelHit,
-  build: boolean,
-  width: number,
-  depth: number,
-): { x: number; z: number } {
+export function targetColumn(hit: VoxelHit, build: boolean, width: number, depth: number): { x: number; z: number } {
   const [nx, ny, nz] = hit.normal;
   if (build && ny === 0 && (nx !== 0 || nz !== 0)) {
     const x = hit.x + nx;

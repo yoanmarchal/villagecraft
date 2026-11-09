@@ -1,6 +1,6 @@
 /// <reference types="vitest/config" />
 import { defineConfig } from 'vite';
-import react from '@vitejs/plugin-react'
+import react from '@vitejs/plugin-react';
 
 /**
  * Teste si un module appartient à l'un des `packages`, installé au premier
@@ -8,11 +8,13 @@ import react from '@vitejs/plugin-react'
  * copies de drei/zustand dans un node_modules imbriqué : elles ne doivent pas
  * être aspirées dans les chunks chargés au démarrage.
  */
-const vendor = (...packages: string[]) => (id: string) => {
-  const parts = id.replace(/\\/g, '/').split('/node_modules/');
-  if (parts.length !== 2) return false; // hors node_modules, ou imbriqué
-  return packages.some((name) => parts[1].startsWith(`${name}/`));
-};
+const vendor =
+  (...packages: string[]) =>
+  (id: string) => {
+    const parts = id.replace(/\\/g, '/').split('/node_modules/');
+    if (parts.length !== 2) return false; // hors node_modules, ou imbriqué
+    return packages.some((name) => parts[1].startsWith(`${name}/`));
+  };
 
 export default defineConfig({
   base: '/villagecraft/',

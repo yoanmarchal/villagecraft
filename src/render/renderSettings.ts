@@ -5,12 +5,7 @@
  * dès que l'un d'eux change — sans liste de sélecteurs à tenir à jour à part.
  */
 
-import type {
-  CellDecorationsState,
-  CellMaterialsState,
-  CellRoofState,
-  CellShapeState,
-} from '../store/controlStore';
+import type { CellDecorationsState, CellMaterialsState, CellRoofState, CellShapeState } from '../store/controlStore';
 
 export type RenderSettings = CellMaterialsState & CellDecorationsState & CellRoofState & CellShapeState;
 

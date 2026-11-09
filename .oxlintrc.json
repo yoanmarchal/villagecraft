@@ -10,15 +10,10 @@
   "env": {
     "builtin": true
   },
-  "ignorePatterns": [
-    "dist",
-    "node_modules"
-  ],
+  "ignorePatterns": ["dist", "node_modules"],
   "overrides": [
     {
-      "files": [
-        "**/*.{ts,tsx}"
-      ],
+      "files": ["**/*.{ts,tsx}"],
       "rules": {
         "constructor-super": "off",
         "for-direction": "error",
@@ -141,10 +136,7 @@
         "typescript/restrict-template-expressions": "error",
         "typescript/unbound-method": "error"
       },
-      "plugins": [
-        "typescript",
-        "react"
-      ],
+      "plugins": ["typescript", "react"],
       "env": {
         "es2022": true,
         "browser": true

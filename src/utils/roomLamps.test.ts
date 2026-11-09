@@ -42,7 +42,15 @@ describe('assignRoomLamps', () => {
   });
 
   it('keeps separate buildings and storeys as separate rooms', () => {
-    const { holders } = lampsOf(village([[1, 1], [6, 6]], 2));
+    const { holders } = lampsOf(
+      village(
+        [
+          [1, 1],
+          [6, 6],
+        ],
+        2,
+      ),
+    );
     // Deux maisons à deux étages (+ caps de toit, non creux) : 4 pièces.
     expect(holders).toHaveLength(4);
   });

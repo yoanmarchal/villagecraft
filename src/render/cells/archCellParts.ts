@@ -94,7 +94,12 @@ export function archCellParts(ctx: CellContext): Part[] {
     for (let k = -before; k <= after; k += 1) {
       const ax = x + dx * k;
       const az = z + dz * k;
-      for (const [nx, nz] of [[ax - 1, az], [ax + 1, az], [ax, az - 1], [ax, az + 1]]) {
+      for (const [nx, nz] of [
+        [ax - 1, az],
+        [ax + 1, az],
+        [ax, az - 1],
+        [ax, az + 1],
+      ]) {
         const neighbour = getCell(lookup, nx, y, nz);
         if (!neighbour?.isOccupied || neighbour.type === BlockType.Arch) continue;
         if (isTowerColumn(lookup, neighbour)) besideTower = true;
@@ -131,9 +136,13 @@ export function archCellParts(ctx: CellContext): Part[] {
     // les deux têtes de l'arche.
     const endFree = (k: number) => !hasOccupiedCell(lookup, x + dx * k, y + 1, z + dz * k);
     const headFree = (s: number) => !hasOccupiedCell(lookup, x + dz * s, y + 1, z + dx * s);
-    const archRoof = (axis: 'x' | 'z') => gableRoofParts(settings, axis === spanAxis
-      ? { axis, gablePos: after === 0 && endFree(1), gableNeg: before === 0 && endFree(-1), baseY: 1 }
-      : { axis, gablePos: headFree(1), gableNeg: headFree(-1), baseY: 1 });
+    const archRoof = (axis: 'x' | 'z') =>
+      gableRoofParts(
+        settings,
+        axis === spanAxis
+          ? { axis, gablePos: after === 0 && endFree(1), gableNeg: before === 0 && endFree(-1), baseY: 1 }
+          : { axis, gablePos: headFree(1), gableNeg: headFree(-1), baseY: 1 },
+      );
 
     if (continuingAxes.length > 0) {
       // Le toit de l'appui continue par-dessus l'arche (et bute contre une
@@ -199,8 +208,14 @@ function abutmentFillets(
     const sz = ddx !== 0 ? -t : ddz;
     // cornerFilletGeo s'étend vers (+X, +Z) : rotation qui l'envoie vers (sx, sz).
     const rotation = sx > 0 ? (sz > 0 ? 0 : Math.PI / 2) : sz > 0 ? -Math.PI / 2 : Math.PI;
-    parts.push(part(cornerFilletGeo(r, +(topY + 0.5).toFixed(3)), settings.wallBaseColor, mat,
-      xform([cx, -0.5, cz], [0, rotation, 0])));
+    parts.push(
+      part(
+        cornerFilletGeo(r, +(topY + 0.5).toFixed(3)),
+        settings.wallBaseColor,
+        mat,
+        xform([cx, -0.5, cz], [0, rotation, 0]),
+      ),
+    );
   }
   return parts;
 }

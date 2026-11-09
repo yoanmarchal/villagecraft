@@ -474,8 +474,7 @@ export class VillageGrid {
     // murs d'un étage entier, avec son propre toit : une maçonnerie portée
     // par des toitures. Passage : vide aux deux niveaux.
     const support = (x: number, z: number) => solid(x, 0, z) && solid(x, ARCH_Y, z) && solid(x, ARCH_Y + 1, z);
-    const open = (x: number, z: number) =>
-      this.isValidCoordinate(x, 0, z) && !solid(x, 0, z) && !solid(x, ARCH_Y, z);
+    const open = (x: number, z: number) => this.isValidCoordinate(x, 0, z) && !solid(x, 0, z) && !solid(x, ARCH_Y, z);
 
     const wanted = new Set<string>();
     /**
@@ -573,13 +572,22 @@ export class VillageGrid {
           const hasFrontNeighbor = cellFront?.isOccupied ?? false;
           const hasBackNeighbor = cellBack?.isOccupied ?? false;
 
-          const horizontalNeighborCount = [hasLeftNeighbor, hasRightNeighbor, hasFrontNeighbor, hasBackNeighbor]
-            .filter(Boolean).length;
+          const horizontalNeighborCount = [hasLeftNeighbor, hasRightNeighbor, hasFrontNeighbor, hasBackNeighbor].filter(
+            Boolean,
+          ).length;
 
           const isTopMost = !cellAbove?.isOccupied;
 
           // Logique simplifiée pour les arches
-          const isArch = this.isSimpleArch(x, y, z, hasLeftNeighbor, hasRightNeighbor, hasFrontNeighbor, hasBackNeighbor);
+          const isArch = this.isSimpleArch(
+            x,
+            y,
+            z,
+            hasLeftNeighbor,
+            hasRightNeighbor,
+            hasFrontNeighbor,
+            hasBackNeighbor,
+          );
 
           if (y === 0) {
             // Au sol : fondation ou mur avec fenêtre selon les faces exposées
@@ -610,17 +618,19 @@ export class VillageGrid {
     }
   }
 
-  private isSimpleArch(x: number, y: number, z: number,
-                     hasLeft: boolean, hasRight: boolean,
-                     hasFront: boolean, hasBack: boolean): boolean {
+  private isSimpleArch(
+    x: number,
+    y: number,
+    z: number,
+    hasLeft: boolean,
+    hasRight: boolean,
+    hasFront: boolean,
+    hasBack: boolean,
+  ): boolean {
     // Deux voisins opposés sur un seul axe, et rien dessous (le passage).
     // Pas d'exigence de murs au-dessus : entre deux maisons d'un étage, le
     // voisin porteur est un toit (cap auto) — l'arche s'y adosse quand même.
-    const oppositePairs = (
-      (hasLeft && hasRight) ? 1 : 0
-    ) + (
-      (hasFront && hasBack) ? 1 : 0
-    );
+    const oppositePairs = (hasLeft && hasRight ? 1 : 0) + (hasFront && hasBack ? 1 : 0);
 
     if (oppositePairs !== 1) return false;
 

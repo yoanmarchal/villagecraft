@@ -1,10 +1,9 @@
 :root {
   color-scheme: light;
-  font-family: "Trebuchet MS", "Gill Sans", "Segoe UI", sans-serif;
+  font-family: 'Trebuchet MS', 'Gill Sans', 'Segoe UI', sans-serif;
   background:
     radial-gradient(circle at top left, rgba(184, 212, 241, 0.28), transparent 32%),
-    radial-gradient(circle at bottom right, rgba(245, 230, 211, 0.32), transparent 26%),
-    #e8f3fa;
+    radial-gradient(circle at bottom right, rgba(245, 230, 211, 0.32), transparent 26%), #e8f3fa;
   color: #2d3748;
 }
 
@@ -64,7 +63,7 @@ input {
 
 /* Thème Tweakpane accordé à l'interface (Tweakpane lit ces variables). */
 .tweakpane-root {
-  --tp-base-font-family: "Trebuchet MS", "Gill Sans", "Segoe UI", sans-serif;
+  --tp-base-font-family: 'Trebuchet MS', 'Gill Sans', 'Segoe UI', sans-serif;
   --tp-base-background-color: hsla(36, 45%, 97%, 0.94);
   --tp-base-shadow-color: hsla(25, 35%, 18%, 0.18);
   --tp-button-background-color: hsla(14, 52%, 51%, 1);
@@ -173,7 +172,10 @@ input {
   background: transparent;
   color: inherit;
   cursor: pointer;
-  transition: background-color 120ms ease, color 120ms ease, transform 80ms ease;
+  transition:
+    background-color 120ms ease,
+    color 120ms ease,
+    transform 80ms ease;
 }
 
 .tool-button:hover:not(:disabled),
@@ -185,7 +187,7 @@ input {
   transform: scale(0.94);
 }
 
-.tool-button[aria-pressed="true"] {
+.tool-button[aria-pressed='true'] {
   background: var(--ui-accent);
   color: var(--ui-on-accent);
   box-shadow: 0 2px 6px rgba(169, 69, 48, 0.35);
@@ -259,7 +261,7 @@ input {
   background: var(--ui-hover);
 }
 
-.ambience-option[aria-checked="true"] {
+.ambience-option[aria-checked='true'] {
   background: var(--ui-accent-soft);
   color: var(--ui-accent-strong);
   font-weight: 600;

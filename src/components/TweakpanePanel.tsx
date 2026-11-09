@@ -47,11 +47,5 @@ export function TweakpanePanel() {
     };
   }, []);
 
-  return (
-    <div
-      ref={containerRef}
-      className="tweakpane-root"
-      style={{ display: panelVisible ? undefined : 'none' }}
-    />
-  );
+  return <div ref={containerRef} className="tweakpane-root" style={{ display: panelVisible ? undefined : 'none' }} />;
 }

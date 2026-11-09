@@ -4,7 +4,14 @@ import { FLOOR_T, hollowShellGeo, WALL_T, type OpeningSpec } from './geometryCac
 import type { CornerRadii, HollowShape, HollowSideKind } from '../utils/cellUtils';
 
 const SQUARE: CornerRadii = { backLeft: 0, backRight: 0, frontLeft: 0, frontRight: 0, max: 0, uniform: true };
-const TOWER: CornerRadii = { backLeft: 0.22, backRight: 0.22, frontLeft: 0.22, frontRight: 0.22, max: 0.22, uniform: true };
+const TOWER: CornerRadii = {
+  backLeft: 0.22,
+  backRight: 0.22,
+  frontLeft: 0.22,
+  frontRight: 0.22,
+  max: 0.22,
+  uniform: true,
+};
 
 function shape(
   sides: Partial<Record<'front' | 'back' | 'left' | 'right', HollowSideKind>> = {},
@@ -86,7 +93,11 @@ describe('hollowShellGeo', () => {
 
   it('reste dans le budget de sommets (ouvertures à angles vifs)', () => {
     const faces = ['front', 'back', 'left', 'right'] as const;
-    const geo = hollowShellGeo(TOWER, shape(), faces.map((face) => ({ face, kind: 'window', scale: 1 })));
+    const geo = hollowShellGeo(
+      TOWER,
+      shape(),
+      faces.map((face) => ({ face, kind: 'window', scale: 1 })),
+    );
     // Un volume de découpe arrondi faisait monter cette coque à ~14 000 sommets.
     expect(geo.getAttribute('position').count).toBeLessThan(2500);
   });

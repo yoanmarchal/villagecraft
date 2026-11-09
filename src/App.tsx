@@ -141,10 +141,7 @@ export function App() {
   // "la grille (objet mutable) a changé" qui doit invalider ce memo.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const cells = useMemo(() => grid.getOccupiedCells(), [grid, renderTick]);
-  const toWorldPosition = useCallback(
-    (x: number, y: number, z: number) => grid.toWorldPosition(x, y, z),
-    [grid],
-  );
+  const toWorldPosition = useCallback((x: number, y: number, z: number) => grid.toWorldPosition(x, y, z), [grid]);
 
   return (
     <div className="app-shell">

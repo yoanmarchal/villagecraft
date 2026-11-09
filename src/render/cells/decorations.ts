@@ -35,10 +35,19 @@ export function isQuoinProtected(
     let dx = 0;
     let dz = 0;
 
-    if (face === 'front') { dz = 1; dx = isLeftEdge ? -1 : 1; }
-    else if (face === 'back') { dz = -1; dx = isLeftEdge ? -1 : 1; }
-    else if (face === 'left') { dx = -1; dz = isLeftEdge ? -1 : 1; }
-    else if (face === 'right') { dx = 1; dz = isLeftEdge ? -1 : 1; }
+    if (face === 'front') {
+      dz = 1;
+      dx = isLeftEdge ? -1 : 1;
+    } else if (face === 'back') {
+      dz = -1;
+      dx = isLeftEdge ? -1 : 1;
+    } else if (face === 'left') {
+      dx = -1;
+      dz = isLeftEdge ? -1 : 1;
+    } else if (face === 'right') {
+      dx = 1;
+      dz = isLeftEdge ? -1 : 1;
+    }
 
     return isCornerExposed(lookup, cell, dx, dz);
   };

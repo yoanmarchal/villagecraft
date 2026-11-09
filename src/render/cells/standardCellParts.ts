@@ -24,8 +24,12 @@ export function standardCellParts(ctx: CellContext): Part[] {
     const trimGeo = roundedBoxGeo(1.02, 0.08, 0.02, 0.01, 2);
     for (const face of exposedFaces) {
       parts.push(
-        part(trimGeo, trimColor, { roughness: 0.9 },
-          mul(xform([0, 0, 0], [0, FACE_ROTATION_Y[face], 0]), xform([0, -0.46, 0.505]))),
+        part(
+          trimGeo,
+          trimColor,
+          { roughness: 0.9 },
+          mul(xform([0, 0, 0], [0, FACE_ROTATION_Y[face], 0]), xform([0, -0.46, 0.505])),
+        ),
       );
     }
   }

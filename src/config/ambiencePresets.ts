@@ -7,7 +7,12 @@ import type { LightingState, SkyFogState } from '../store/controlStore';
 
 export type AmbienceSettings = Pick<
   LightingState,
-  'ambientIntensity' | 'ambientColor' | 'directionalIntensity' | 'directionalColor' | 'directionalPosition' | 'windowGlow'
+  | 'ambientIntensity'
+  | 'ambientColor'
+  | 'directionalIntensity'
+  | 'directionalColor'
+  | 'directionalPosition'
+  | 'windowGlow'
 > &
   Pick<SkyFogState, 'skyTopColor' | 'skyHorizonColor' | 'fogColor' | 'fogNear' | 'fogFar'>;
 

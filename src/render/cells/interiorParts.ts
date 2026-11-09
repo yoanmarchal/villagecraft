@@ -50,10 +50,18 @@ export const INTERIOR_LAMP_Y = CHANDELIER_RING_Y + 0.006 + CANDLE_H + FLAME_H / 
 function chandelierParts(ceilingBottomY: number): { structure: Part[]; flames: Part[] } {
   const chainH = +(ceilingBottomY - CHANDELIER_RING_Y).toFixed(3);
   const structure: Part[] = [
-    part(boxGeo(0.008, chainH, 0.008), IRON, { roughness: 0.6, metalness: 0.4 },
-      xform([0, CHANDELIER_RING_Y + chainH / 2, 0])),
-    part(torusArcGeo(CHANDELIER_RING_R, 0.006, 4, 16, Math.PI * 2), IRON, { roughness: 0.6, metalness: 0.4 },
-      xform([0, CHANDELIER_RING_Y, 0], [Math.PI / 2, 0, 0])),
+    part(
+      boxGeo(0.008, chainH, 0.008),
+      IRON,
+      { roughness: 0.6, metalness: 0.4 },
+      xform([0, CHANDELIER_RING_Y + chainH / 2, 0]),
+    ),
+    part(
+      torusArcGeo(CHANDELIER_RING_R, 0.006, 4, 16, Math.PI * 2),
+      IRON,
+      { roughness: 0.6, metalness: 0.4 },
+      xform([0, CHANDELIER_RING_Y, 0], [Math.PI / 2, 0, 0]),
+    ),
   ];
   const flames: Part[] = [];
   for (let i = 0; i < 4; i += 1) {
@@ -62,8 +70,14 @@ function chandelierParts(ceilingBottomY: number): { structure: Part[]; flames: P
     const z = Math.sin(angle) * CHANDELIER_RING_R;
     const candleY = CHANDELIER_RING_Y + 0.006 + CANDLE_H / 2;
     structure.push(part(cylinderGeo(CANDLE_R, CANDLE_R, CANDLE_H, 6), WAX, { roughness: 0.7 }, xform([x, candleY, z])));
-    flames.push(part(cylinderGeo(0, 0.007, FLAME_H, 5), FLAME, { roughness: 1, glow: true },
-      xform([x, candleY + CANDLE_H / 2 + FLAME_H / 2, z])));
+    flames.push(
+      part(
+        cylinderGeo(0, 0.007, FLAME_H, 5),
+        FLAME,
+        { roughness: 1, glow: true },
+        xform([x, candleY + CANDLE_H / 2 + FLAME_H / 2, z]),
+      ),
+    );
   }
   return { structure, flames };
 }
@@ -115,7 +129,12 @@ export function interiorParts(ctx: CellContext, openings: OpeningSpec[] = []): P
   const parts: Part[] = [
     // Parquet posé sur la dalle, plafond enduit sous la dalle du dessus.
     part(hollowSheetGeo(radii, hollow, FLOORBOARD_T), floorColor, { roughness: 0.8 }, xform([0, floorY, 0])),
-    part(hollowSheetGeo(radii, hollow, CEILING_T), ceilingColor, { roughness: 0.95 }, xform([0, ceilingY - CEILING_T, 0])),
+    part(
+      hollowSheetGeo(radii, hollow, CEILING_T),
+      ceilingColor,
+      { roughness: 0.95 },
+      xform([0, ceilingY - CEILING_T, 0]),
+    ),
   ];
 
   // Joints des lames (selon X), à fleur du parquet.
@@ -123,8 +142,14 @@ export function interiorParts(ctx: CellContext, openings: OpeningSpec[] = []): P
     const x0 = -innerExtentX(hollow, radii, -1, z);
     const x1 = innerExtentX(hollow, radii, 1, z);
     if (x1 - x0 < 0.02) continue;
-    parts.push(part(boxGeo(+(x1 - x0).toFixed(3), 0.002, 0.008), seamColor, { roughness: 0.9 },
-      xform([(x0 + x1) / 2, floorY + FLOORBOARD_T + 0.0005, z])));
+    parts.push(
+      part(
+        boxGeo(+(x1 - x0).toFixed(3), 0.002, 0.008),
+        seamColor,
+        { roughness: 0.9 },
+        xform([(x0 + x1) / 2, floorY + FLOORBOARD_T + 0.0005, z]),
+      ),
+    );
   }
 
   // Poutre au milieu de la cellule : elle franchit la portée entre deux murs
@@ -138,13 +163,25 @@ export function interiorParts(ctx: CellContext, openings: OpeningSpec[] = []): P
   if (alongZ) {
     const z0 = -innerExtentZ(hollow, radii, -1, 0) + hoodStop('back');
     const z1 = innerExtentZ(hollow, radii, 1, 0) - hoodStop('front');
-    parts.push(part(boxGeo(BEAM_W, BEAM_H, +(z1 - z0).toFixed(3)), BEAM_WOOD, { roughness: 0.9 },
-      xform([0, beamY, (z0 + z1) / 2])));
+    parts.push(
+      part(
+        boxGeo(BEAM_W, BEAM_H, +(z1 - z0).toFixed(3)),
+        BEAM_WOOD,
+        { roughness: 0.9 },
+        xform([0, beamY, (z0 + z1) / 2]),
+      ),
+    );
   } else {
     const x0 = -innerExtentX(hollow, radii, -1, 0) + hoodStop('left');
     const x1 = innerExtentX(hollow, radii, 1, 0) - hoodStop('right');
-    parts.push(part(boxGeo(+(x1 - x0).toFixed(3), BEAM_H, BEAM_W), BEAM_WOOD, { roughness: 0.9 },
-      xform([(x0 + x1) / 2, beamY, 0])));
+    parts.push(
+      part(
+        boxGeo(+(x1 - x0).toFixed(3), BEAM_H, BEAM_W),
+        BEAM_WOOD,
+        { roughness: 0.9 },
+        xform([(x0 + x1) / 2, beamY, 0]),
+      ),
+    );
   }
 
   // Mobilier (furnitureParts.ts) : éclairé par la pièce comme le reste.
