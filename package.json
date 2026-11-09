@@ -20,7 +20,7 @@
     "r3f-perf": "^7.2.3",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
-    "three": "^0.187.0",
+    "three": "^0.186.1",
     "three-bvh-csg": "^0.0.18",
     "three-mesh-bvh": "^0.9.18",
     "three-stdlib": "^2.36.1",
