@@ -8,7 +8,7 @@ describe('migrateControlState (v1 → v2)', () => {
       1,
     );
     expect(migrated.ambientIntensity).toBe(1.1);
-    expect(migrated.groundColor).toBe('#6f8a4a');
+    expect(migrated.groundColor).toBe('#66804a');
     expect(migrated.bloomLuminanceThreshold).toBe(0.85);
   });
 

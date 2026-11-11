@@ -12,10 +12,10 @@ import { varyColorBrightness, shades } from '../../colorPalettes';
 import { WINDOW_PROTECTED_AREAS, isInProtectedArea } from '../../config/protectedAreasConfig';
 import {
   boxGeo,
-  cylinderGeo,
   frameWithHoleGeo,
   OPENING_SIZES,
   roundedBoxGeo,
+  torusArcGeo,
   WALL_T,
   type OpeningKind,
   type OpeningSpec,
@@ -26,6 +26,12 @@ import { openingKindsOf } from './openings';
 import { stoneParts } from './stoneParts';
 import { isQuoinProtected } from './decorations';
 import type { CellContext } from './context';
+
+/** Chêne des portes, et fer forgé de leurs ferrures. */
+const DOOR_WOOD_COLOR = '#6b4a2f';
+const DOOR_PLANKS = 5;
+const IRON_COLOR = '#2a2a2e';
+const IRON_MATERIAL = { metalness: 0.6, roughness: 0.5 };
 
 /** Opacité des vitres : assez faible pour voir l'intérieur depuis la rue, de jour comme de nuit. */
 export const WINDOW_GLASS_OPACITY = 0.3;
@@ -41,9 +47,12 @@ export function wallWindowCellParts(ctx: CellContext): Part[] {
   // se voir depuis la rue. Le soir, la lumière vient de la pièce elle-même
   // (growMaterial.ts) ; la vitre n'ajoute qu'un voile chaud.
   const windowGlassColor = '#c4dbe6';
-  const { windowFrameColor, doorColor } = shades(baseColor, { windowFrameColor: -0.15, doorColor: -0.2 });
+  const { windowFrameColor } = shades(baseColor, { windowFrameColor: -0.15 });
   const doorFrameColor = windowFrameColor; // même teinte que le cadre de fenêtre
-  const separatorColor = varyColorBrightness(windowFrameColor, -0.05);
+  // Menuiseries en chêne sombre : petits-bois des fenêtres et vantaux des portes.
+  const separatorColor = '#4a3626';
+  // Teinte du vantail propre à chaque maison (hash des coordonnées, jamais Math.random).
+  const doorWood = varyColorBrightness(DOOR_WOOD_COLOR, (((cell.x * 7 + cell.z * 13) % 5) - 2) * 0.03);
 
   // Radius moyen du bloc, réutilisé par tous les éléments
   const avgRadius = (radii.backLeft + radii.backRight + radii.frontLeft + radii.frontRight) / 4;
@@ -185,18 +194,37 @@ export function wallWindowCellParts(ctx: CellContext): Part[] {
         { roughness: 0.88 },
         mul(faceRot, xform([0, door.y, 0.502])),
       ),
-      // Vantail logé dans l'épaisseur du mur
+      // Vantail logé dans l'épaisseur du mur : un fond sombre (il se voit dans
+      // les joints) et des planches verticales, de teintes légèrement inégales.
       part(
-        roundedBoxGeo(door.w * scale, door.h, 0.04, doorPanelRadius, 6),
-        doorColor,
-        { roughness: 0.92 },
+        boxGeo(door.w * scale, door.h, 0.03),
+        varyColorBrightness(doorWood, -0.12),
+        { roughness: 0.95 },
         mul(faceRot, xform([0, door.y, panelZ])),
       ),
+      ...Array.from({ length: DOOR_PLANKS }, (_, i) => {
+        const plankW = (door.w * scale) / DOOR_PLANKS;
+        return part(
+          boxGeo(plankW - 0.008, door.h - 0.01, 0.014),
+          varyColorBrightness(doorWood, ((i * 3 + cell.x + cell.z) % 3) * 0.035 - 0.035),
+          { roughness: 0.9 },
+          mul(faceRot, xform([(i - (DOOR_PLANKS - 1) / 2) * plankW, door.y, panelZ + 0.02])),
+        );
+      }),
+      // Pentures en fer forgé, côté gonds, et anneau de tirage.
+      ...[-0.22, 0.22].map((dy) =>
+        part(
+          boxGeo(door.w * scale * 0.78, 0.032, 0.008),
+          IRON_COLOR,
+          IRON_MATERIAL,
+          mul(faceRot, xform([-door.w * scale * 0.09, door.y + dy, panelZ + 0.03])),
+        ),
+      ),
       part(
-        cylinderGeo(0.01, 0.01, 0.04, 8),
-        '#8a6a3a',
-        { metalness: 0.55, roughness: 0.35 },
-        mul(faceRot, xform([0.14 * scale, -0.14, panelZ + 0.03], [Math.PI / 2, 0, 0])),
+        torusArcGeo(0.022, 0.005, 5, 10, Math.PI * 2),
+        IRON_COLOR,
+        IRON_MATERIAL,
+        mul(faceRot, xform([0.13 * scale, door.y - 0.03, panelZ + 0.034])),
       ),
       part(
         roundedBoxGeo(0.5 * scale, 0.04, 0.03, thresholdRadius, 4),

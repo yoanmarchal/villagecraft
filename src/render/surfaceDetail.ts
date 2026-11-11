@@ -48,7 +48,12 @@ export const NOISE_GLSL = `
     vec3 r1 = cross(sigmaY, surfaceNormal);
     vec3 r2 = cross(surfaceNormal, sigmaX);
     float det = dot(sigmaX, r1);
-    vec3 gradient = sign(det) * (dFdx(height) * r1 + dFdy(height) * r2);
+    // Pente bornée : une hauteur discontinue (bord de tuile) donne sinon, sur
+    // le pixel qui chevauche la marche, une normale quasi couchée — autant de
+    // reflets blancs qui scintillent, surtout sur l'ardoise sombre.
+    float slopeX = clamp(dFdx(height), -0.9 * length(sigmaX), 0.9 * length(sigmaX));
+    float slopeY = clamp(dFdy(height), -0.9 * length(sigmaY), 0.9 * length(sigmaY));
+    vec3 gradient = sign(det) * (slopeX * r1 + slopeY * r2);
     return normalize(abs(det) * surfaceNormal - gradient);
   }
 `;
@@ -67,6 +72,7 @@ export const DETAIL_FRAGMENT_DECLARATIONS = `
   float vcDetailBlotch;
   float vcDetailGrain;
   float vcDetailTile;
+  float vcDetailRoof;
   ${NOISE_GLSL}
 `;
 
@@ -95,15 +101,33 @@ export const DETAIL_ALBEDO_APPLY = `
     // constante, en quinconce le long de la pente — continus d'une cellule à
     // l'autre puisque tout est en coordonnées monde.
     vcDetailTile = 0.0;
+    vcDetailRoof = 0.0;
     vec3 detailNormal = normalize(vInteriorNormal);
-    float detailSlope = smoothstep(0.22, 0.36, detailNormal.y) * (1.0 - smoothstep(0.93, 0.97, detailNormal.y));
-    if (detailSlope > 0.0 && vInteriorMode < 0.5) {
-      float tileFade = detailSlope * (1.0 - smoothstep(9.0, 30.0, length(vViewPosition)));
-      vec3 tileAlong = normalize(cross(vec3(0.0, 1.0, 0.0), detailNormal));
+    // Normale de la facette, par dérivées écran — calculée hors de tout
+    // branchement (les dérivées y sont indéfinies) et jamais nulle : un seul
+    // pixel NaN, étalé par le bloom, noircit l'image entière.
+    vec3 detailFaceRaw = cross(dFdx(vDetailPos), dFdy(vDetailPos));
+    vec3 detailFace = detailFaceRaw / max(length(detailFaceRaw), 1e-12);
+    float detailSlope = smoothstep(0.22, 0.36, detailNormal.y) * (1.0 - smoothstep(0.93, 0.97, detailNormal.y))
+      * (1.0 - step(0.5, vInteriorMode));
+    // Sans branchement : fwidth() doit rester défini partout.
+    {
+      // Sens des rangs : pris sur la normale de la facette (dérivées écran),
+      // constante sur tout un pan. La normale interpolée, elle, tourne d'un
+      // bord à l'autre des pans lissés d'une flèche : projetée dessus, la
+      // position donnait des tuiles larges d'un côté et en lamelles de l'autre.
+      vec3 tileAlong = normalize(cross(vec3(0.0, 1.0, 0.0), detailFace) + vec3(1e-5, 0.0, 0.0));
       float tileCourse = vDetailPos.y * 12.0;
+      float tileColumn = dot(vDetailPos, tileAlong) * 8.0;
+      // Le motif s'efface dès qu'une tuile approche la taille d'un pixel
+      // (flèches raides vues de loin) : en deçà, il ne fait que du moiré.
+      float tileFootprint = max(fwidth(tileCourse), fwidth(tileColumn));
+      float tileFade = detailSlope
+        * (1.0 - smoothstep(9.0, 30.0, length(vViewPosition)))
+        * (1.0 - smoothstep(0.12, 0.4, tileFootprint));
       float tileRow = floor(tileCourse);
       float tileV = fract(tileCourse); // 0 = bas du rang (pureau), 1 = sous le rang du dessus
-      float tileU = dot(vDetailPos, tileAlong) * 8.0 + mod(tileRow, 2.0) * 0.5;
+      float tileU = tileColumn + mod(tileRow, 2.0) * 0.5;
       float tileSeed = vcHash(vec3(floor(tileU), tileRow, 3.0));
       float tileJoint = smoothstep(0.0, 0.1, fract(tileU)) * smoothstep(1.0, 0.9, fract(tileU));
       // Ombre portée par le rang du dessus, joints, et teinte propre à chaque tuile.
@@ -113,6 +137,7 @@ export const DETAIL_ALBEDO_APPLY = `
       diffuseColor.rgb *= mix(1.0, tileShade, tileFade);
       // Chaque tuile se relève vers son bord bas, par-dessus la suivante.
       vcDetailTile = (1.0 - tileV) * (0.6 + 0.4 * tileSeed) * tileJoint * 0.035 * tileFade;
+      vcDetailRoof = detailSlope;
     }
 
     if (vInteriorMode < 1.5) {
@@ -128,6 +153,8 @@ export const DETAIL_ALBEDO_APPLY = `
 /** Rugosité, après `roughnessmap_fragment` : les taches sombres sont aussi plus lisses. */
 export const DETAIL_ROUGHNESS_APPLY = `
   roughnessFactor = clamp(roughnessFactor + (vcDetailBlotch - 0.44) * 0.3, 0.04, 1.0);
+  // Couverture mate : tuile et ardoise ne renvoient pas d'éclats de soleil.
+  roughnessFactor = max(roughnessFactor, 0.82 * vcDetailRoof);
 `;
 
 /** Relief, après `normal_fragment_maps` : bosses larges + grain fin. */

@@ -14,7 +14,7 @@
 
 import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three-stdlib';
-import { mergeVertices } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
+import { mergeVertices, toCreasedNormals } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { Brush, Evaluator, SUBTRACTION } from 'three-bvh-csg';
 import type { CellFace, CornerRadii, HollowShape } from '../utils/cellUtils';
 import { FACE_ROTATION_Y, getRoundedRectContourPoints } from '../utils/cellUtils';
@@ -120,6 +120,15 @@ export function torusArcGeo(
   );
 }
 
+/**
+ * Angle de pli des contours extrudés : en deçà, deux facettes voisines
+ * partagent leurs normales. Les arcs des tours et des coins arrondis (10
+ * segments par quart de tour, 9° entre facettes) sont ainsi lissés — à plat,
+ * chaque facette se lisait comme une bande verticale sous la lumière du ciel —
+ * tandis que les angles droits et les arêtes haut/bas restent vifs.
+ */
+const CONTOUR_CREASE_ANGLE = Math.PI / 6;
+
 // ── Corps de cellule : contour "carré à coins arrondis" extrudé ──────────────
 
 const radiiKey = (radii: CornerRadii) =>
@@ -140,8 +149,7 @@ export function shapedBoxGeo(w: number, h: number, d: number, radii: CornerRadii
     // Plan shape XY → scène XZ, extrusion Z → hauteur Y, recentrée.
     geo.applyMatrix4(new THREE.Matrix4().makeRotationX(-Math.PI / 2));
     geo.applyMatrix4(new THREE.Matrix4().makeTranslation(0, -h / 2, 0));
-    geo.computeVertexNormals();
-    return geo;
+    return toCreasedNormals(geo, CONTOUR_CREASE_ANGLE);
   });
 }
 
@@ -268,7 +276,7 @@ function verticalPrism(sectionXZ: Array<[number, number]>, y0: number, y1: numbe
   const geo = new THREE.ExtrudeGeometry(shape, { depth: y1 - y0, bevelEnabled: false });
   geo.applyMatrix4(new THREE.Matrix4().makeRotationX(-Math.PI / 2));
   geo.applyMatrix4(new THREE.Matrix4().makeTranslation(0, y0, 0));
-  return geo;
+  return toCreasedNormals(geo, CONTOUR_CREASE_ANGLE);
 }
 
 /** Volume qui perce une ouverture de part en part dans le mur de la face `face`. */

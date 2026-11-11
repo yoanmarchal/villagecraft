@@ -151,7 +151,7 @@ const DEFAULT_STATE: GridState &
   fogColor: '#cfe4f5',
   fogNear: 22,
   fogFar: 110,
-  groundColor: '#6f8a4a',
+  groundColor: '#66804a',
   groundRoughness: 0.95,
 
   dampingFactor: 0.08,
