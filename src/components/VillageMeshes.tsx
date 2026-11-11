@@ -27,11 +27,17 @@ const WINDOW_GLOW_COLOR = '#ffb45c';
 /** Intensité d'émission à `windowGlow` = 1 — assez pour passer le seuil du bloom. */
 const WINDOW_GLOW_INTENSITY = 2.2;
 /** Lueur des vitres une fois fondue (après opacité), à `windowGlow` = 1. */
-const GLASS_GLOW_INTENSITY = 0.9;
+const GLASS_GLOW_INTENSITY = 0.1;
 /** Teinte de l'appoint de jour des pièces : lumière du ciel entrée par les fenêtres. */
 const INTERIOR_DAY_COLOR = '#fff3e3';
 /** Intensité de la lampe des pièces à `windowGlow` = 1 (× albédo des surfaces). */
-const INTERIOR_LAMP_INTENSITY = 1.3;
+const INTERIOR_LAMP_INTENSITY = 0.9;
+/**
+ * Teinte de la lampe des pièces : plus pâle que la lueur des vitres. Aussi
+ * saturée qu'elle, elle noyait tout l'intérieur dans le même orange — bois,
+ * tentures et rideaux ne se distinguaient plus depuis la rue.
+ */
+const INTERIOR_LAMP_COLOR = '#ffd9a8';
 
 interface VillageMeshesProps {
   cells: GridCell[];
@@ -139,7 +145,7 @@ export function VillageMeshes({ cells, toWorldPosition, gridWidth, gridDepth }: 
   useEffect(() => {
     const light = new THREE.Color(INTERIOR_DAY_COLOR)
       .multiplyScalar(interiorFill * (1 - windowGlow))
-      .add(new THREE.Color(WINDOW_GLOW_COLOR).multiplyScalar(windowGlow * INTERIOR_LAMP_INTENSITY));
+      .add(new THREE.Color(INTERIOR_LAMP_COLOR).multiplyScalar(windowGlow * INTERIOR_LAMP_INTENSITY));
     for (const set of materials.values()) set.interiorLight.value.copy(light);
     invalidate();
   }, [materials, interiorFill, windowGlow, invalidate]);

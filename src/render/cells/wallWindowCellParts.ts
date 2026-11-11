@@ -20,7 +20,7 @@ import {
   type OpeningKind,
   type OpeningSpec,
 } from '../geometryCache';
-import { mul, part, xform, type Part } from '../parts';
+import { asInterior, mul, part, xform, type Part } from '../parts';
 import { shellParts } from './shellParts';
 import { openingKindsOf } from './openings';
 import { stoneParts } from './stoneParts';
@@ -32,6 +32,9 @@ const DOOR_WOOD_COLOR = '#6b4a2f';
 const DOOR_PLANKS = 5;
 const IRON_COLOR = '#2a2a2e';
 const IRON_MATERIAL = { metalness: 0.6, roughness: 0.5 };
+/** Rideaux : lin, garance, pastel, vert, ocre. */
+const CURTAINS = ['#d8cdb4', '#8a3434', '#3d5a80', '#56704a', '#b8893f'];
+const CLOTH_MATERIAL = { roughness: 1 };
 
 /** Opacité des vitres : assez faible pour voir l'intérieur depuis la rue, de jour comme de nuit. */
 export const WINDOW_GLASS_OPACITY = 0.3;
@@ -149,10 +152,50 @@ export function wallWindowCellParts(ctx: CellContext): Part[] {
     );
   }
 
+  // ── Rideaux ────────────────────────────────────────────────────────────
+  // Côté pièce, tirés de part et d'autre de la fenêtre, sous une tringle :
+  // le premier pli mord de 4 cm sur le jour (sans lui, le mur les cache
+  // entièrement depuis la rue), le reste de la baie reste dégagé. Deux plis
+  // par pan ; une teinte par maison. Éclairés par la pièce (`room`).
+  const curtainColor = CURTAINS[Math.abs(cell.x * 3 + cell.z * 5 + cell.y) % CURTAINS.length];
+  const curtainParts = (faceRot: ReturnType<typeof xform>, scale: number): Part[] => {
+    const win = OPENING_SIZES.window;
+    const edge = (win.w * scale) / 2;
+    const z = 0.5 - WALL_T - 0.008;
+    const dropH = win.h + 0.05;
+    const dropY = win.y + 0.015;
+    const out: Part[] = [
+      part(
+        boxGeo(edge * 2 + 0.12, 0.01, 0.01),
+        IRON_COLOR,
+        IRON_MATERIAL,
+        mul(faceRot, xform([0, win.y + win.h / 2 + 0.035, z])),
+      ),
+    ];
+    for (const side of [-1, 1]) {
+      out.push(
+        part(
+          boxGeo(0.045, dropH, 0.01),
+          curtainColor,
+          CLOTH_MATERIAL,
+          mul(faceRot, xform([side * (edge - 0.018), dropY, z])),
+        ),
+        part(
+          boxGeo(0.04, dropH, 0.006),
+          varyColorBrightness(curtainColor, -0.12),
+          CLOTH_MATERIAL,
+          mul(faceRot, xform([side * (edge + 0.024), dropY, z + 0.002])),
+        ),
+      );
+    }
+    return asInterior('room', out);
+  };
+
   // ── Fenêtre ────────────────────────────────────────────────────────────
   const windowParts = (rotation: number, scale: number): Part[] => {
     const faceRot = xform([0, 0, 0], [0, rotation, 0]);
     return [
+      ...(ctx.hollow ? curtainParts(faceRot, scale) : []),
       // Cadre percé sur la face extérieure, son jour aligné sur l'ouverture de la coque
       part(
         frameWithHoleGeo(0.6 * scale, 0.5, windowRadius, 0.54 * scale, 0.44, glassRadius, 0.02),

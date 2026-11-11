@@ -1,6 +1,7 @@
 /**
- * Finitions intérieures d'un bloc creux : parquet en bois (lames de 25 cm,
- * joints sombres), plafond enduit, une poutre par cellule et un chandelier
+ * Finitions intérieures d'un bloc creux : sol (dallage de pierre au
+ * rez-de-chaussée, parquet aux étages — joints sombres tous les 25 cm),
+ * plafond enduit sur solives, une poutre par cellule et un chandelier
  * par pièce (source de sa lumière le soir, voir roomLamps.ts). Sans elles, sol,
  * murs et plafond ont la teinte de la maçonnerie et l'intérieur se lit comme
  * une boîte uniforme.
@@ -25,6 +26,12 @@ const CEILING_T = 0.006;
 const SEAM_Z = [-0.375, -0.125, 0.125, 0.375];
 const BEAM_W = 0.06;
 const BEAM_H = 0.05;
+/** Solives : portées par la poutre, quatre par cellule, alignées d'une cellule à l'autre. */
+const JOIST_W = 0.028;
+const JOIST_H = 0.026;
+const JOIST_WOOD = '#7a573a';
+/** Dallage du rez-de-chaussée (les étages sont planchéiés). */
+const FLAGSTONE = '#8c8273';
 
 // ── Chandelier ────────────────────────────────────────────────────────────
 const IRON = '#2b2622';
@@ -122,8 +129,11 @@ export function interiorParts(ctx: CellContext, openings: OpeningSpec[] = []): P
   const ceilingY = 0.5 - FLOOR_T;
   // Teinte de parquet légèrement variée d'une cellule à l'autre (déterministe).
   const hash = Math.abs(Math.imul(cell.x, 73856093) ^ Math.imul(cell.y, 19349663) ^ Math.imul(cell.z, 83492791));
-  const floorColor = varyColorBrightness(WOOD, ((hash % 7) - 3) * 0.015);
-  const seamColor = varyColorBrightness(WOOD, -0.4);
+  // Rez-de-chaussée dallé de pierre, étages planchéiés.
+  const paved = cell.y === 0;
+  const floorBase = paved ? FLAGSTONE : WOOD;
+  const floorColor = varyColorBrightness(floorBase, ((hash % 7) - 3) * 0.015);
+  const seamColor = varyColorBrightness(floorBase, -0.4);
   const ceilingColor = varyColorBrightness(settings.wallBaseColor, -0.04);
 
   const parts: Part[] = [
@@ -150,6 +160,23 @@ export function interiorParts(ctx: CellContext, openings: OpeningSpec[] = []): P
         xform([(x0 + x1) / 2, floorY + FLOORBOARD_T + 0.0005, z]),
       ),
     );
+  }
+
+  // Dallage : joints dans l'autre sens aussi (dalles de 25 cm).
+  if (paved) {
+    for (const x of SEAM_Z) {
+      const z0 = -innerExtentZ(hollow, radii, -1, x);
+      const z1 = innerExtentZ(hollow, radii, 1, x);
+      if (z1 - z0 < 0.02) continue;
+      parts.push(
+        part(
+          boxGeo(0.008, 0.002, +(z1 - z0).toFixed(3)),
+          seamColor,
+          { roughness: 0.9 },
+          xform([x, floorY + FLOORBOARD_T + 0.0005, (z0 + z1) / 2]),
+        ),
+      );
+    }
   }
 
   // Poutre au milieu de la cellule : elle franchit la portée entre deux murs
@@ -182,6 +209,36 @@ export function interiorParts(ctx: CellContext, openings: OpeningSpec[] = []): P
         xform([(x0 + x1) / 2, beamY, 0]),
       ),
     );
+  }
+
+  // Solives, perpendiculaires à la poutre, plaquées sous le plafond.
+  const joistY = ceilingY - CEILING_T - JOIST_H / 2;
+  for (const offset of SEAM_Z) {
+    if (alongZ) {
+      const x0 = -innerExtentX(hollow, radii, -1, offset);
+      const x1 = innerExtentX(hollow, radii, 1, offset);
+      if (x1 - x0 < 0.05) continue;
+      parts.push(
+        part(
+          boxGeo(+(x1 - x0).toFixed(3), JOIST_H, JOIST_W),
+          JOIST_WOOD,
+          { roughness: 0.9 },
+          xform([(x0 + x1) / 2, joistY, offset]),
+        ),
+      );
+    } else {
+      const z0 = -innerExtentZ(hollow, radii, -1, offset);
+      const z1 = innerExtentZ(hollow, radii, 1, offset);
+      if (z1 - z0 < 0.05) continue;
+      parts.push(
+        part(
+          boxGeo(JOIST_W, JOIST_H, +(z1 - z0).toFixed(3)),
+          JOIST_WOOD,
+          { roughness: 0.9 },
+          xform([offset, joistY, (z0 + z1) / 2]),
+        ),
+      );
+    }
   }
 
   // Mobilier (furnitureParts.ts) : éclairé par la pièce comme le reste.

@@ -5,8 +5,9 @@
  *  - au centre de la cellule qui porte le chandelier de la pièce : une table
  *    et ses bancs au rez-de-chaussée, un tapis à l'étage ;
  *  - contre les murs (côtés `exterior` / `partition`, jamais `open`), un
- *    emplacement par coin : coffre, buffet, tonneaux (rez-de-chaussée), lit
- *    (étage) — ou rien, pour ne pas encombrer.
+ *    emplacement par coin : coffre, buffet, tonneaux, établi (rez-de-chaussée),
+ *    lit, table à écrire (étage), étagères, tenture sur les murs aveugles —
+ *    ou rien, pour ne pas encombrer.
  *
  * Contraintes : rien contre le mur d'une porte ; sous une fenêtre ou une
  * meurtrière, seulement des meubles plus bas que l'appui (`LOW_MAX_H`) ;
@@ -34,7 +35,13 @@ const IRON = '#2f2b28';
 const LINEN = '#e6dcc6';
 const BLANKETS = ['#8c2f2f', '#2f4f8c', '#3f6b3a', '#b08a3c'];
 const RUGS = ['#7d2a2a', '#3a4a7a', '#6b5a2a'];
+const PEWTER = '#8d9094';
+const BREAD = '#b5823f';
+const WAX = '#efe6d2';
+/** Tentures : fond, puis bordure et motif (plus clairs). */
+const TAPESTRIES = ['#6e2430', '#27406b', '#2f5a3a', '#6b4a1f'];
 const WOOD_MAT = { roughness: 0.85 };
+const PEWTER_MAT = { roughness: 0.45, metalness: 0.6 };
 const CLOTH_MAT = { roughness: 1 };
 const IRON_MAT = { roughness: 0.6, metalness: 0.4 };
 
@@ -140,10 +147,18 @@ function bed(blanket: string): Piece {
     height: 0.2,
     parts: [
       box(w, frameH, length, FURNITURE_WOOD, WOOD_MAT, [0, frameH / 2, 0]),
-      // Tête de lit contre le mur.
+      // Tête de lit contre le mur, pied de lit plus bas.
       box(w + 0.02, 0.2, 0.025, varyColorBrightness(FURNITURE_WOOD, -0.1), WOOD_MAT, [0, 0.1, length / 2 - 0.0125]),
-      box(w - 0.02, 0.03, 0.08, LINEN, CLOTH_MAT, [0, frameH + 0.015, length / 2 - 0.07]),
-      box(w + 0.006, 0.035, length - 0.14, blanket, CLOTH_MAT, [0, frameH + 0.0175, -0.06]),
+      box(w + 0.02, 0.13, 0.02, varyColorBrightness(FURNITURE_WOOD, -0.1), WOOD_MAT, [0, 0.065, -length / 2 + 0.01]),
+      // Drap, oreiller, couverture rabattue (liseré clair).
+      box(w - 0.02, 0.03, 0.12, LINEN, CLOTH_MAT, [0, frameH + 0.015, length / 2 - 0.09]),
+      box(w - 0.08, 0.022, 0.07, varyColorBrightness(LINEN, 0.06), CLOTH_MAT, [0, frameH + 0.041, length / 2 - 0.075]),
+      box(w + 0.006, 0.035, length - 0.2, blanket, CLOTH_MAT, [0, frameH + 0.0175, -0.08]),
+      box(w + 0.008, 0.037, 0.03, varyColorBrightness(blanket, 0.25), CLOTH_MAT, [
+        0,
+        frameH + 0.0185,
+        length / 2 - 0.165,
+      ]),
     ],
   };
 }
@@ -243,6 +258,22 @@ function fireplace(stone: string, ceilingTop: number): Piece {
     box(0.36, 0.012, hearthD, dark, WOOD_MAT, [0, 0.006, -depth / 2 + hearthD / 2]),
     // Braises (s'allument le soir avec les fenêtres), bûches croisées.
     box(0.13, 0.02, 0.06, '#3a1f12', { roughness: 1, glow: true }, [0, 0.01, bodyZ - 0.005]),
+    // Flammes : sombres le jour comme les mèches du chandelier, vives le soir (groupe "glow").
+    part(cylinderGeo(0, 0.022, 0.07, 5), '#4a2410', { roughness: 1, glow: true }, xform([-0.025, 0.075, bodyZ])),
+    part(cylinderGeo(0, 0.016, 0.05, 5), '#4a2410', { roughness: 1, glow: true }, xform([0.03, 0.065, bodyZ - 0.01])),
+    // Marmite suspendue à sa crémaillère.
+    box(0.006, openingH - 0.125, 0.006, IRON, IRON_MAT, [0.005, (openingH + 0.125) / 2, bodyZ]),
+    part(cylinderGeo(0.036, 0.028, 0.045, 8), IRON, IRON_MAT, xform([0.005, 0.105, bodyZ])),
+    // Réserve de bûches, sur l'âtre.
+    ...(
+      [
+        [-0.15, 0.024, 0.025, '#5a3d26'],
+        [-0.125, 0.024, 0.03, '#6b4a2f'],
+        [-0.137, 0.046, 0.028, '#5a3d26'],
+      ] as const
+    ).map(([x, y, dz, color]) =>
+      part(cylinderGeo(0.012, 0.012, 0.1, 6), color, WOOD_MAT, xform([x, y, -depth / 2 + dz], [Math.PI / 2, 0, 0])),
+    ),
   ];
   for (const angle of [0.35, -0.35]) {
     parts.push(
@@ -271,7 +302,71 @@ function diningSet(): Part[] {
     for (const x of [-0.13, 0.13])
       parts.push(box(0.02, seat - 0.02, 0.05, FURNITURE_WOOD, WOOD_MAT, [x, (seat - 0.02) / 2, z]));
   }
+  // Couvert : écuelles et chopes d'étain, miche, bougeoir (éteint : la lumière vient du chandelier).
+  for (const [x, z] of [
+    [-0.1, -0.06],
+    [0.09, 0.06],
+  ] as const) {
+    parts.push(part(cylinderGeo(0.03, 0.022, 0.008, 8), PEWTER, PEWTER_MAT, xform([x, top + 0.004, z])));
+    parts.push(part(cylinderGeo(0.013, 0.015, 0.035, 8), PEWTER, PEWTER_MAT, xform([x + 0.05, top + 0.0175, z])));
+  }
+  parts.push(box(0.07, 0.028, 0.04, BREAD, CLOTH_MAT, [0.11, top + 0.014, -0.05]));
+  parts.push(part(cylinderGeo(0.018, 0.022, 0.008, 8), IRON, IRON_MAT, xform([0, top + 0.004, 0])));
+  parts.push(part(cylinderGeo(0.008, 0.008, 0.05, 6), WAX, CLOTH_MAT, xform([0, top + 0.033, 0])));
   return parts;
+}
+
+/** Tenture pendue à sa tringle, contre un mur aveugle : fond, bordures, médaillon. */
+function tapestry(color: string): Piece {
+  const w = 0.24;
+  const top = 0.66;
+  const drop = 0.36;
+  const gold = '#b08a3c';
+  return {
+    depth: 0.014,
+    height: top + 0.01,
+    parts: [
+      box(w + 0.04, 0.012, 0.012, IRON, IRON_MAT, [0, top, 0]),
+      box(w, drop, 0.006, color, CLOTH_MAT, [0, top - drop / 2, 0.002]),
+      box(w, 0.025, 0.007, gold, CLOTH_MAT, [0, top - 0.03, 0.002]),
+      box(w, 0.025, 0.007, gold, CLOTH_MAT, [0, top - drop + 0.02, 0.002]),
+      // Médaillon en losange.
+      part(
+        boxGeo(0.085, 0.085, 0.007),
+        varyColorBrightness(color, 0.3),
+        CLOTH_MAT,
+        xform([0, top - drop / 2, 0.002], [0, 0, Math.PI / 4]),
+      ),
+    ],
+  };
+}
+
+/** Table à écrire et son tabouret : livre ouvert, encrier, bougeoir. */
+function desk(seed: number): Piece {
+  const w = 0.28;
+  const d = 0.13;
+  const top = 0.27;
+  const stool = 0.08;
+  const depth = d + 0.02 + stool;
+  const z = depth / 2 - d / 2; // table contre le mur (+z), tabouret devant
+  const side = seed & 1 ? 1 : -1;
+  const dark = varyColorBrightness(FURNITURE_WOOD, -0.08);
+  const parts: Part[] = [box(w, 0.022, d, FURNITURE_WOOD, WOOD_MAT, [0, top - 0.011, z])];
+  for (const x of [-w / 2 + 0.018, w / 2 - 0.018]) {
+    parts.push(box(0.022, top - 0.022, d - 0.02, dark, WOOD_MAT, [x, (top - 0.022) / 2, z]));
+  }
+  parts.push(
+    // Livre ouvert : deux pages claires sur une reliure.
+    box(0.1, 0.006, 0.07, BOOK_COLORS[seed % BOOK_COLORS.length], CLOTH_MAT, [-side * 0.04, top + 0.003, z - 0.01]),
+    box(0.044, 0.004, 0.06, LINEN, CLOTH_MAT, [-side * 0.04 - 0.024, top + 0.008, z - 0.01]),
+    box(0.044, 0.004, 0.06, LINEN, CLOTH_MAT, [-side * 0.04 + 0.024, top + 0.008, z - 0.01]),
+    part(cylinderGeo(0.012, 0.014, 0.022, 6), IRON, IRON_MAT, xform([side * 0.07, top + 0.011, z + 0.03])),
+    part(cylinderGeo(0.008, 0.008, 0.05, 6), WAX, CLOTH_MAT, xform([side * 0.11, top + 0.025, z - 0.02])),
+    // Tabouret.
+    box(stool, 0.016, stool, LIGHT_WOOD, WOOD_MAT, [0, 0.142, -depth / 2 + stool / 2]),
+    box(stool - 0.02, 0.134, stool - 0.02, dark, WOOD_MAT, [0, 0.067, -depth / 2 + stool / 2]),
+  );
+  return { depth, height: top + 0.05, parts };
 }
 
 function rug(color: string): Part[] {
@@ -423,10 +518,15 @@ export function furnitureParts(ctx: CellContext, openings: OpeningSpec[]): Part[
         else if (roll < 4) piece = chest(shade);
         else if (roll < 5) piece = shelves(variant);
         else if (roll < 7) piece = workbench(variant);
+        else if (roll < 9) piece = tapestry(TAPESTRIES[variant % TAPESTRIES.length]);
       } else if (!hasBed && roll < 5) {
         piece = bed(BLANKETS[roll % BLANKETS.length]);
       } else if (roll < 8) {
-        piece = roll % 3 === 0 ? cupboard(shade) : roll % 3 === 1 ? chest(shade) : shelves(variant);
+        const pick = roll % 4;
+        piece =
+          pick === 0 ? cupboard(shade) : pick === 1 ? chest(shade) : pick === 2 ? shelves(variant) : desk(variant);
+      } else {
+        piece = tapestry(TAPESTRIES[variant % TAPESTRIES.length]);
       }
       if (!piece || (opening && piece.height > LOW_MAX_H)) continue;
 
