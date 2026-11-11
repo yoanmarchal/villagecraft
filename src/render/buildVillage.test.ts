@@ -545,7 +545,7 @@ describe('compact vertex format', () => {
 });
 
 describe('masonry', () => {
-  it('keeps merging: one brick-wall group for a whole building, joinery and stones left out', () => {
+  it('keeps merging: one stone-wall group for a whole building, joinery and stones left out', () => {
     // Bâtiment de 3 × 2 cases sur deux niveaux : ses coques fusionnent en un seul groupe maçonné.
     const grid = new VillageGrid(6, 10, 6);
     for (let x = 1; x <= 3; x += 1)

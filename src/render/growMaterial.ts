@@ -220,7 +220,7 @@ export interface GrowMaterialOptions {
    * vitres et les pièces lumineuses : un verre taché se lit comme sale.
    */
   detail?: boolean;
-  /** Appareil de briques sur les faces de mur (voir `MaterialSpec.masonry`) ; suppose `detail`. */
+  /** Appareil de pierre sur les faces de mur (voir `MaterialSpec.masonry`) ; suppose `detail`. */
   masonry?: boolean;
 }
 

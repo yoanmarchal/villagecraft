@@ -30,8 +30,8 @@ export interface MaterialSpec {
   doubleSide?: boolean;
   /**
    * Corps de mur maçonné (coque des blocs, arches, parapets, merlons,
-   * souches) : ses faces verticales extérieures sont appareillées en briques
-   * par le shader (surfaceDetail.ts), en coordonnées monde — les assises
+   * souches) : ses faces verticales extérieures sont appareillées en pierre
+   * (moellons en assises irrégulières) par le shader (surfaceDetail.ts), en coordonnées monde — les assises
    * filent donc d'une cellule à l'autre d'un même bâtiment. Jamais sur les
    * menuiseries, pierres de taille, cadres…
    */
