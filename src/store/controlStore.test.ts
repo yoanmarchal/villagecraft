@@ -27,7 +27,15 @@ describe('migrateControlState (v1 → v2)', () => {
 
   it('ne touche pas à un état déjà à jour', () => {
     const state = { ambientIntensity: 1.3 };
-    expect(migrateControlState(state, 3)).toEqual(state);
+    expect(migrateControlState(state, 4)).toEqual(state);
+  });
+});
+
+describe('migrateControlState (v3 → v4)', () => {
+  it('supprime le nombre de pierres apparentes par face', () => {
+    expect(migrateControlState({ windowStonesPerFace: 25, windowStoneRoughness: 0.7 }, 3)).toEqual({
+      windowStoneRoughness: 0.7,
+    });
   });
 });
 

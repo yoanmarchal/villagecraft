@@ -533,7 +533,7 @@ export function towerSoffitGeo(halfSize: number, radii: CornerRadii, y: number, 
  * les bords bas de la rue (x = ±span/2, y = −0.5) et monte de `rise` en son
  * milieu. Coordonnées centrées sur le milieu de l'arche.
  */
-function archCircle(rise: number, span: number): { centerY: number; radius: number; springAngle: number } {
+export function archCircle(rise: number, span: number): { centerY: number; radius: number; springAngle: number } {
   const halfSpan = span / 2;
   const radius = (halfSpan * halfSpan + rise * rise) / (2 * rise);
   const centerY = -0.5 + rise - radius;
@@ -811,6 +811,97 @@ export function gableGeo(eaveY: number, ridgeY: number): THREE.BufferGeometry {
     geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
     geo.setIndex(new THREE.BufferAttribute(idx, 1));
     geo.computeVertexNormals();
+    return geo;
+  });
+}
+
+// ── Pierre de maçonnerie ─────────────────────────────────────────────────────
+
+/** Côtés d'une pierre qui sont de vrais bords (joint, chanfrein) — les autres sont des coupes internes. */
+export const STONE_EDGE = { left: 1, right: 2, top: 4, bottom: 8 } as const;
+
+/** Retrait de la face avant sur un bord, en fraction de la largeur / de la hauteur du bloc. */
+const STONE_INSET_X = 0.06;
+const STONE_INSET_Y = 0.1;
+/** Cote (bloc unité, dos à −0,5 et face à +0,5) où le flanc droit laisse place à l'arrondi. */
+const STONE_SHOULDER_Z = 0.08;
+
+/**
+ * Bloc unité d'une pierre de parement (masonryParts.ts la met à l'échelle) :
+ * dos en z = −0,5 (dans le mur), flancs droits jusqu'à l'épaulement, puis
+ * une face avant en retrait sur les côtés `mask` (STONE_EDGE). Les normales
+ * ne sont pas celles des facettes : elles sont lissées d'un anneau à l'autre
+ * — tournées vers l'extérieur sur l'épaulement, à mi-chemin sur le pourtour
+ * de la face —, ce qui donne à l'éclairage une pierre aux arêtes arrondies et
+ * au parement légèrement bombé pour 12 sommets seulement. Elles sont écrites
+ * pour le bloc à sa taille finale : le part doit porter `rigidNormals` (la
+ * mise à l'échelle, très inégale, les aplatirait toutes vers l'avant).
+ *
+ * Un côté hors masque est une coupe interne (pierre à cheval sur deux
+ * cellules, tronçon d'arc) : ni retrait, ni flanc, ni inclinaison de normale,
+ * le morceau voisin s'y raccorde bord à bord, sans arête visible. Pas de dos.
+ * 16 variantes en cache.
+ */
+export function stoneBlockGeo(mask: number): THREE.BufferGeometry {
+  return getGeo(`stoneBlock|${mask}`, () => {
+    const left = (mask & STONE_EDGE.left) !== 0;
+    const right = (mask & STONE_EDGE.right) !== 0;
+    const top = (mask & STONE_EDGE.top) !== 0;
+    const bottom = (mask & STONE_EDGE.bottom) !== 0;
+
+    // Trois anneaux de quatre sommets (bas-gauche, bas-droite, haut-droite,
+    // haut-gauche) : dos, épaulement, face. `tilt` : part de la normale
+    // tournée vers l'extérieur du côté ; `forward` : part tournée vers l'avant.
+    const corners: Array<[-1 | 1, -1 | 1]> = [
+      [-1, -1],
+      [1, -1],
+      [1, 1],
+      [-1, 1],
+    ];
+    const rings = [
+      { z: -0.5, inset: 0, tilt: 1, forward: 0 },
+      { z: STONE_SHOULDER_Z, inset: 0, tilt: 1, forward: 0.75 },
+      { z: 0.5, inset: 1, tilt: 0.42, forward: 1 },
+    ];
+    const positions: number[] = [];
+    const normals: number[] = [];
+    const normal = new THREE.Vector3();
+    for (const ring of rings) {
+      for (const [sx, sy] of corners) {
+        const edgeX = sx < 0 ? left : right;
+        const edgeY = sy < 0 ? bottom : top;
+        positions.push(
+          sx * (0.5 - (edgeX ? STONE_INSET_X * ring.inset : 0)),
+          sy * (0.5 - (edgeY ? STONE_INSET_Y * ring.inset : 0)),
+          ring.z,
+        );
+        normal.set(edgeX ? sx * ring.tilt : 0, edgeY ? sy * ring.tilt : 0, ring.forward);
+        if (normal.lengthSq() === 0) normal.set(0, 0, 1);
+        normal.normalize();
+        normals.push(normal.x, normal.y, normal.z);
+      }
+    }
+
+    // Faces : avant, puis pour chaque côté qui est un vrai bord, le flanc
+    // (dos → épaulement) et l'arrondi (épaulement → face).
+    const index: number[] = [8, 9, 10, 8, 10, 11];
+    const sides: Array<[number, number, boolean]> = [
+      [0, 1, bottom],
+      [1, 2, right],
+      [2, 3, top],
+      [3, 0, left],
+    ];
+    for (const [a, b, edge] of sides) {
+      if (!edge) continue;
+      for (const base of [0, 4]) {
+        index.push(base + a, base + b, base + 4 + b, base + a, base + 4 + b, base + 4 + a);
+      }
+    }
+
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+    geo.setAttribute('normal', new THREE.Float32BufferAttribute(normals, 3));
+    geo.setIndex(index);
     return geo;
   });
 }

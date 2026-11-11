@@ -24,6 +24,7 @@ import { mul, part, xform, type Part } from '../parts';
 import type { RenderSettings } from '../renderSettings';
 import type { CellContext } from './context';
 import { crenellatedWalkwayParts, MERLON_DEPTH, MERLON_WIDTH_FACTOR, PARAPET_H, stoneColors } from './walkwayParts';
+import { masonryParts, stoneCourseParts } from './masonryParts';
 
 // ── Constantes géométriques (espace local cellule : Y=0 centre, ±0.5 bords) ──
 const RUN = 0.5; // course horizontale = demi-cellule
@@ -196,7 +197,7 @@ export function gableRoofParts(
       part(
         full ? panelGeo : boxGeo(slopeLen, PANEL_T, panelLen),
         side === 1 ? roofColor : colorLight,
-        { roughness: 0.84 },
+        { roughness: 0.84, roofing: true },
         panelM,
       ),
     );
@@ -296,7 +297,9 @@ export function gableRoofParts(
     const height = +(top - bottom).toFixed(3);
     const C = xform([x, baseY + top - height / 2, z]);
     parts.push(
+      // Noyau (mortier) monté en assises de vraies pierres.
       part(boxGeo(FLUE_W, height, FLUE_W), '#a09080', { roughness: 0.93, masonry: true }, C.clone()),
+      ...stoneCourseParts(C, FLUE_W, height, FLUE_W, '#b3a391', 0.9, Math.round((x + z) * 1000)),
       part(boxGeo(0.19, 0.04, 0.19), '#7a6a5a', { roughness: 0.91 }, mul(C, xform([0, height / 2 + 0.02, 0]))),
       part(
         cylinderGeo(0.034, 0.042, 0.09, 8),
@@ -333,7 +336,7 @@ function towerRoofParts({ radii, settings }: CellContext): Part[] {
 
   const { slateLight, slateUnder } = shades(spireColor, { slateLight: 0.08, slateUnder: -0.35 });
   const corniceColor = varyColorBrightness(wallBaseColor, -0.14);
-  const slate = { roughness: 0.62, metalness: 0.08 };
+  const slate = { roughness: 0.62, metalness: 0.08, roofing: true };
 
   const parts: Part[] = [];
 
@@ -398,7 +401,7 @@ function isCrenellatedTower(cell: GridCell): boolean {
  * continu, puis merlons rectangulaires répartis sur le contour réel de la
  * tour et orientés selon sa tangente.
  */
-function crenellatedTowerParts({ radii, settings }: CellContext): Part[] {
+function crenellatedTowerParts({ cell, lookup, radii, settings }: CellContext): Part[] {
   const { towerR, merlonCount, merlonR, merlonH, wallBaseColor } = settings;
   const { stone, cornice } = stoneColors(wallBaseColor);
   const BASE_Y = -0.5;
@@ -418,6 +421,17 @@ function crenellatedTowerParts({ radii, settings }: CellContext): Part[] {
       stone,
       { roughness: 0.92, masonry: true },
       xform([0, BASE_Y + 0.06 + PARAPET_H / 2, 0]),
+    ),
+    // Parement du parapet : le même appareil que le mur de la tour, sur son contour.
+    ...masonryParts(
+      { cell, lookup, radii: towerRadii },
+      (['front', 'back', 'left', 'right'] as const).map((face) => ({
+        face,
+        extent: towerR,
+        yRange: [BASE_Y + 0.06, BASE_Y + 0.06 + PARAPET_H] as [number, number],
+      })),
+      stone,
+      settings.windowStoneRoughness,
     ),
   ];
 
@@ -452,8 +466,10 @@ function crenellatedTowerParts({ radii, settings }: CellContext): Part[] {
     // Tangente en coordonnées scène (z = −y de la shape).
     const tx = ahead.x - behind.x;
     const tz = -(ahead.z - behind.z);
+    const merlonMatrix = xform([x, merlonY, -z], [0, Math.atan2(-tz, tx), 0]);
     parts.push(
-      part(merlonGeo, stone, { roughness: 0.92, masonry: true }, xform([x, merlonY, -z], [0, Math.atan2(-tz, tx), 0])),
+      part(merlonGeo, stone, { roughness: 0.92, masonry: true }, merlonMatrix),
+      ...stoneCourseParts(merlonMatrix, merlonR * MERLON_WIDTH_FACTOR, merlonH, MERLON_DEPTH, stone, 0.9, i * 7 + 3),
     );
   }
 

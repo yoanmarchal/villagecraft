@@ -84,7 +84,8 @@ export function quoinParts(ctx: CellContext, baseColor: string): Part[] {
   const quoinColor = varyColorBrightness(baseColor, -0.12);
   const mat = { roughness: quoinRoughness };
   const parts: Part[] = [];
-  const protrusion = 0.01;
+  // Chaînages en avant du parement (pierres saillantes de 2,4 cm au plus, masonryParts.ts).
+  const protrusion = 0.034;
   const levels = [-0.32, 0, 0.32];
 
   // Niveaux 0 et 2 : longs le long de X ; niveau 1 : long le long de Z

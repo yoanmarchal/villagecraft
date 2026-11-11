@@ -159,6 +159,7 @@ function hashParts(parts: CollectedPart[]): string {
     num(p.interiorMode);
     num(p.lampDx);
     num(p.lampDz);
+    mix(p.rigidNormals ? 1 : 0);
   }
   return `${parts.length}:${(h1 >>> 0).toString(36)}:${(h2 >>> 0).toString(36)}`;
 }
@@ -346,7 +347,17 @@ function mergeParts(allParts: PositionedPart[]): THREE.BufferGeometry {
       indexOffset += count;
     }
 
-    normalMatrix.getNormalMatrix(p.matrix);
+    if (p.rigidNormals) {
+      // Rotation seule : les colonnes de la matrice, ramenées à l'unité.
+      normalMatrix.setFromMatrix4(p.matrix);
+      const e = normalMatrix.elements;
+      for (let column = 0; column < 3; column += 1) {
+        const length = Math.hypot(e[column * 3], e[column * 3 + 1], e[column * 3 + 2]) || 1;
+        for (let row = 0; row < 3; row += 1) e[column * 3 + row] /= length;
+      }
+    } else {
+      normalMatrix.getNormalMatrix(p.matrix);
+    }
     color.set(p.color);
     const r = Math.round(color.r * 255);
     const g = Math.round(color.g * 255);

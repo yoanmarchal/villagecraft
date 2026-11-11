@@ -9,7 +9,6 @@
 import type { CellFace } from '../../utils/cellUtils';
 import { FACE_ROTATION_Y, getFaceCorners } from '../../utils/cellUtils';
 import { varyColorBrightness, shades } from '../../colorPalettes';
-import { WINDOW_PROTECTED_AREAS, isInProtectedArea } from '../../config/protectedAreasConfig';
 import {
   boxGeo,
   frameWithHoleGeo,
@@ -23,8 +22,7 @@ import {
 import { asInterior, mul, part, xform, type Part } from '../parts';
 import { shellParts } from './shellParts';
 import { openingKindsOf } from './openings';
-import { stoneParts } from './stoneParts';
-import { isQuoinProtected } from './decorations';
+import { masonryFacesOf, masonryParts, type MasonryHole } from './masonryParts';
 import type { CellContext } from './context';
 
 /** Chêne des portes, et fer forgé de leurs ferrures. */
@@ -40,10 +38,8 @@ const CLOTH_MATERIAL = { roughness: 1 };
 export const WINDOW_GLASS_OPACITY = 0.3;
 
 export function wallWindowCellParts(ctx: CellContext): Part[] {
-  const { cell, lookup, exposedFaces, radii, isIsolated, isRampart, settings } = ctx;
-  // Tours et courtines sont défensives : meurtrières plutôt que fenêtres.
-  const hasArrowSlits = isIsolated || isRampart;
-  const { windowStonesPerFace, windowStoneRoughness, quoinMargin } = settings;
+  const { cell, radii, settings } = ctx;
+  const { windowStoneRoughness } = settings;
 
   const baseColor = settings.wallBaseColor;
   // Verre clair, à peine teinté : l'intérieur (et demain son mobilier) doit
@@ -61,11 +57,6 @@ export function wallWindowCellParts(ctx: CellContext): Part[] {
   const avgRadius = (radii.backLeft + radii.backRight + radii.frontLeft + radii.frontRight) / 4;
   const windowRadius = Math.min(0.025, avgRadius * 0.9);
   const glassRadius = Math.min(0.02, avgRadius * 0.8);
-
-  // ── Porte : une par pièce au rez-de-chaussée (planDoors, openings.ts) ──
-  const doorFace = ctx.doorFace;
-
-  const hasBands = exposedFaces.length > 0;
 
   // La face d'un mur n'est plate à z=0.5 que sur la portion non couverte par
   // l'arrondi des coins (largeur `1 - 2*radius`). Le cadre et l'ouverture
@@ -95,62 +86,29 @@ export function wallWindowCellParts(ctx: CellContext): Part[] {
   /** Profondeur (z local de face) du milieu de l'épaisseur du mur. */
   const revealZ = 0.5 - WALL_T / 2;
 
-  // ── Pierres apparentes ─────────────────────────────────────────────────
-  if (exposedFaces.length > 0) {
-    const stoneColor = varyColorBrightness(baseColor, -0.25);
-    const baseStoneW = 0.12 + (Math.abs(cell.x) % 4) * 0.02;
-    const baseStoneH = baseStoneW * 0.75;
-
-    parts.push(
-      ...stoneParts({
-        cell,
-        exposedFaces,
-        isIsolated,
-        radii,
-        cornerMode: 'numeric',
-        wallSurfaceOffset: 0.015,
-        stonesPerFace: windowStonesPerFace,
-        seedSalt: { x: 7, y: 11, z: 13, face: 23, stone: 17 },
-        baseSize: { width: baseStoneW, height: baseStoneH },
-        computeSize: (h1, h2, _h3, base) => ({
-          width: base.width * (0.85 + (h1 % 20) / 100),
-          height: base.height * (0.8 + (h2 % 15) / 100),
-        }),
-        distance: { xBase: 0, xModRange: 45, yBase: 0, yModRange: 45 },
-        visual: {
-          thickness: 0.025,
-          cornerRadius: 0.012,
-          smoothness: 4,
-          color: stoneColor,
-          roughness: windowStoneRoughness,
-          metalness: 0.1,
-          metalnessIsolated: 0.05,
-        },
-        // 🔒 Zone protégée propre à WallWithWindowCell
-        isInProtectedZone: (face, x, y, w, h) => {
-          // Mur de cheminée : plein, pas d'ouverture à dégager.
-          if (face !== ctx.fireplaceFace || face === doorFace) {
-            let area = WINDOW_PROTECTED_AREAS.window;
-            if (face === doorFace) {
-              area = WINDOW_PROTECTED_AREAS.door;
-            } else if (hasArrowSlits) {
-              area = WINDOW_PROTECTED_AREAS.arrowSlit;
-            }
-            if (isInProtectedArea(area, x, y, w, h)) return true;
-          }
-
-          if (hasBands) {
-            if (isInProtectedArea(WINDOW_PROTECTED_AREAS.bandTop, x, y, w, h)) return true;
-            if (isInProtectedArea(WINDOW_PROTECTED_AREAS.bandBottom, x, y, w, h)) return true;
-          }
-
-          if (isQuoinProtected(cell, lookup, isIsolated, face, x, w, quoinMargin)) return true;
-
-          return false;
-        },
+  // ── Parement de pierre ─────────────────────────────────────────────────
+  // De vraies pierres en saillie (masonryParts.ts), découpées au ras des
+  // cadres : fenêtre, porte et son seuil, meurtrière.
+  const openingHoles = (kind: OpeningKind, scale: number): MasonryHole[] => {
+    if (kind === 'window') return [{ t0: -0.3 * scale, t1: 0.3 * scale, y0: -0.25, y1: 0.25 }];
+    if (kind === 'slit') return [{ t0: -0.07 * scale, t1: 0.07 * scale, y0: -0.2, y1: 0.2 }];
+    const door = OPENING_SIZES.door;
+    return [
+      { t0: -0.24 * scale, t1: 0.24 * scale, y0: -0.5, y1: door.y + (door.h + 0.08) / 2 },
+      { t0: -0.25 * scale, t1: 0.25 * scale, y0: -0.5, y1: -0.47 },
+    ];
+  };
+  parts.push(
+    ...masonryParts(
+      ctx,
+      masonryFacesOf(ctx.lookup, cell).map((face) => {
+        const opening = openings.find((o) => o.face === face);
+        return { face, holes: opening ? openingHoles(opening.kind, opening.scale) : [] };
       }),
-    );
-  }
+      baseColor,
+      windowStoneRoughness,
+    ),
+  );
 
   // ── Rideaux ────────────────────────────────────────────────────────────
   // Côté pièce, tirés de part et d'autre de la fenêtre, sous une tringle :

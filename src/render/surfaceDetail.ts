@@ -76,18 +76,6 @@ export const DETAIL_FRAGMENT_DECLARATIONS = `
 
   ${NOISE_GLSL}
 
-  // Appareil de pierre (VC_MASONRY) : cote du lit de pose n° k, décalé au
-  // hasard autour d'une trame régulière — des assises de hauteurs inégales,
-  // mais fonction de la seule hauteur monde : elles se suivent d'une cellule,
-  // d'une face et d'un bâtiment à l'autre.
-  float vcCourseBed(float k) {
-    return (k + (vcHash(vec3(k, 1.0, 9.0)) - 0.5) * 0.56) / 12.0;
-  }
-
-  // Abscisse du joint montant n° c de l'assise row, même principe.
-  float vcStoneHead(float c, float row, float salt, float width) {
-    return (c + (vcHash(vec3(c, row, salt + 3.0)) - 0.5) * 0.62) * width;
-  }
 `;
 
 /**
@@ -110,8 +98,8 @@ export const DETAIL_ALBEDO_APPLY = `
     // Dérive de teinte à grande échelle : zones un peu plus chaudes ou plus froides.
     diffuseColor.rgb *= mix(vec3(1.035, 1.0, 0.955), vec3(0.965, 1.0, 1.04), detailStain);
 
-    // Couverture : toute face en pente hors des pièces est un pan de toit
-    // (tuiles) ou une flèche (ardoises). Rangs horizontaux à hauteur
+    // Couverture (matériaux roofing : pans de toit, bandes des flèches) :
+    // tuiles ou ardoises sur leurs faces en pente. Rangs horizontaux à hauteur
     // constante, en quinconce le long de la pente — continus d'une cellule à
     // l'autre puisque tout est en coordonnées monde.
     vcDetailTile = 0.0;
@@ -124,6 +112,7 @@ export const DETAIL_ALBEDO_APPLY = `
     vec3 detailFace = detailFaceRaw / max(length(detailFaceRaw), 1e-12);
     float detailSlope = smoothstep(0.22, 0.36, detailNormal.y) * (1.0 - smoothstep(0.93, 0.97, detailNormal.y))
       * (1.0 - step(0.5, vInteriorMode));
+    #ifdef VC_ROOFING
     // Sans branchement : fwidth() doit rester défini partout.
     {
       // Sens des rangs : pris sur la normale de la facette (dérivées écran),
@@ -153,109 +142,24 @@ export const DETAIL_ALBEDO_APPLY = `
       vcDetailTile = (1.0 - tileV) * (0.6 + 0.4 * tileSeed) * tileJoint * 0.035 * tileFade;
       vcDetailRoof = detailSlope;
     }
+    #endif
 
     #ifdef VC_MASONRY
     {
-      // ── Appareil de pierre ─────────────────────────────────────────────
-      // Maçonnerie de château fort : moellons équarris posés en assises de
-      // hauteurs inégales (17 à 30 cm), pierres de longueurs variables,
-      // joints épais et sinueux, angles usés, parement bombé. Rien de
-      // répétitif : une brique moulée, régulière, se lit comme du XIXe siècle.
-      // Tout est en coordonnées monde : les assises (hauteur) et les joints
-      // montants (abscisse le long du mur) filent d'une cellule à l'autre.
+      // ── Fond de mur ────────────────────────────────────────────────────
+      // Faces verticales extérieures d'un corps de mur : mortier de chaux et
+      // de sable. Il ne se voit qu'au creux des joints, entre les pierres —
+      // de vrais blocs posés devant lui (masonryParts.ts). Les faces de la
+      // cavité d'une coque creuse (pièces, tableaux) restent enduites.
       float masonryWall = 1.0 - smoothstep(0.25, 0.45, abs(detailNormal.y));
-      // Coque creuse : les faces de la cavité (pièces, tableaux) restent enduites.
       vec3 masonryAxis = abs(detailNormal);
       vec3 masonryLocal = abs(vInteriorLocal);
       float masonryDepth = masonryAxis.x > masonryAxis.z ? masonryLocal.x : masonryLocal.z;
       masonryWall *= mix(1.0, step(VC_CAVITY_HALF_WIDTH, masonryDepth), step(0.5, vInteriorMode));
-
-      // Abscisse le long du mur : x ou z selon l'orientation de la face. Sur
-      // un coin arrondi (normale lissée qui tourne), on la prolonge en
-      // longueur d'arc — projetées à plat, les pierres s'étiraient de 40 %
-      // à l'approche de la diagonale. Rayon : celui des tours.
-      bool masonryAlongZ = masonryAxis.x > masonryAxis.z;
-      float masonryRun = masonryAlongZ ? vDetailPos.z : vDetailPos.x;
-      float masonryTurn = masonryAlongZ ? detailNormal.z : detailNormal.x;
-      float masonryTheta = atan(abs(masonryTurn), max(masonryAlongZ ? masonryAxis.x : masonryAxis.z, 1e-4));
-      masonryRun += sign(masonryTurn) * 0.22 * (masonryTheta - sin(masonryTheta));
-
-      // Taille d'un pixel sur le mur : sert à lisser les joints, et à fondre
-      // l'appareil dans sa teinte moyenne quand une assise passe sous ~3 pixels.
-      float masonryPixel = length(fwidth(vDetailPos));
-      float masonryFade = 1.0 - smoothstep(0.14, 0.42, masonryPixel * 12.0);
-      // Le relief s'efface bien plus tôt : ses dérivées écran ne voient plus
-      // les joints de loin et dessinaient un moiré en diagonale.
-      float masonryReliefFade = 1.0 - smoothstep(0.05, 0.16, masonryPixel * 12.0);
-
-      // Joints sinueux : les pierres sont taillées à la main, pas tirées au cordeau.
-      vec2 masonryPoint = vec2(masonryRun, vDetailPos.y);
-      masonryPoint += (vec2(
-        vcNoise(vec3(masonryPoint * 6.0, 3.1)),
-        vcNoise(vec3(masonryPoint * 6.0, 8.7))) - 0.5) * 0.02;
-
-      // Assise : lits de pose décalés au hasard autour d'une trame de 10 cm… × 2,8.
-      float masonryK = floor(masonryPoint.y * 12.0);
-      float masonryBed = vcCourseBed(masonryK);
-      float masonryBelow = step(masonryPoint.y, masonryBed);
-      float masonryRow = masonryK - masonryBelow;
-      float masonryBottom = mix(masonryBed, vcCourseBed(masonryRow), masonryBelow);
-      float masonryTop = mix(vcCourseBed(masonryK + 1.0), masonryBed, masonryBelow);
-
-      // Pierre dans l'assise : module et décalage propres à chaque assise,
-      // joints montants décalés au hasard — jamais deux assises identiques.
-      float masonrySalt = masonryAlongZ ? 7.0 : 13.0;
-      float masonryModule = 0.12 + 0.1 * vcHash(vec3(masonryRow, 2.0, masonrySalt));
-      float masonryShift = vcHash(vec3(masonryRow, 5.0, masonrySalt)) * masonryModule;
-      float masonryC = floor((masonryPoint.x + masonryShift) / masonryModule);
-      float masonryHead = vcStoneHead(masonryC, masonryRow, masonrySalt, masonryModule) - masonryShift;
-      float masonryLeftOf = step(masonryPoint.x, masonryHead);
-      float masonryColumn = masonryC - masonryLeftOf;
-      float masonryLeft = mix(
-        masonryHead,
-        vcStoneHead(masonryColumn, masonryRow, masonrySalt, masonryModule) - masonryShift,
-        masonryLeftOf);
-      float masonryRight = mix(
-        vcStoneHead(masonryC + 1.0, masonryRow, masonrySalt, masonryModule) - masonryShift,
-        masonryHead,
-        masonryLeftOf);
-
-      // Distance au bord de la pierre, angles arrondis (arêtes usées, épaufrées).
-      vec2 masonryInset = min(
-        masonryPoint - vec2(masonryLeft, masonryBottom),
-        vec2(masonryRight, masonryTop) - masonryPoint);
-      float masonrySeed = vcHash(vec3(masonryColumn, masonryRow, masonrySalt));
-      float masonrySeed2 = vcHash(vec3(masonryRow, masonryColumn, masonrySalt + 5.0));
-      float masonryRound = 0.008 + 0.012 * masonrySeed2;
-      vec2 masonryCorner = max(masonryRound - masonryInset, 0.0);
-      float masonryEdge = min(min(masonryInset.x, masonryInset.y), masonryRound - length(masonryCorner));
-      // Joint de mortier large (≈ 2 cm de chaque côté), antialiasé.
-      float masonryJoint = 0.0055;
-      float masonryStone = smoothstep(masonryJoint - masonryPixel * 0.5, masonryJoint + masonryPixel, masonryEdge);
-
-      vec3 masonryBase = diffuseColor.rgb;
-      // Chaque pierre vient d'un banc différent : plus ou moins claire, tirant
-      // sur l'ocre, le gris ou le rosé ; quelques-unes nettement plus sombres.
-      vec3 masonryColor = masonryBase * (0.8 + 0.3 * masonrySeed)
-        * mix(vec3(1.07, 0.99, 0.88), vec3(0.94, 0.99, 1.06), masonrySeed2);
-      masonryColor *= 1.0 - 0.2 * step(0.9, fract(masonrySeed * 7.3));
-      // Parement piqué à l'outil : mouchetures propres à chaque pierre.
-      float masonryPitting = vcNoise(vec3(masonryPoint * 55.0, masonrySeed * 40.0));
-      masonryColor *= 0.94 + 0.12 * masonryPitting * masonryFade;
-      // Mortier de chaux et de sable : plus sombre qu'une pierre claire, plus clair qu'une pierre foncée.
-      float masonryLuminance = dot(masonryBase, vec3(0.2126, 0.7152, 0.0722));
-      vec3 masonryMortar = mix(vec3(0.74, 0.7, 0.61), masonryBase * 0.58, smoothstep(0.2, 0.5, masonryLuminance));
-      vec3 masonryNear = mix(masonryMortar, masonryColor, masonryStone);
-      // De loin : la moyenne pierre + joints, pour que le mur ne change pas de valeur en dézoomant.
-      vec3 masonryFar = masonryBase * 0.87;
-      diffuseColor.rgb = mix(diffuseColor.rgb, mix(masonryFar, masonryNear, masonryFade), masonryWall);
-      // Parement bombé (bossage rustique) au-dessus de joints creux, piqueté.
-      // Pas de relief sur la diagonale d'un coin arrondi, où l'abscisse change
-      // d'axe : la marche de hauteur y traçait un pointillé vertical.
-      float masonrySeam = smoothstep(0.0, 0.1, abs(masonryAxis.x - masonryAxis.z));
-      vcDetailTile += smoothstep(0.0, 0.028, masonryEdge - masonryJoint)
-        * (0.007 + 0.004 * masonrySeed + 0.002 * masonryPitting)
-        * masonryReliefFade * masonryWall * masonrySeam;
+      // Plus sombre qu'une pierre claire, plus clair qu'une pierre foncée.
+      float masonryLuminance = dot(diffuseColor.rgb, vec3(0.2126, 0.7152, 0.0722));
+      vec3 masonryMortar = mix(vec3(0.74, 0.7, 0.61), diffuseColor.rgb * 0.58, smoothstep(0.2, 0.5, masonryLuminance));
+      diffuseColor.rgb = mix(diffuseColor.rgb, masonryMortar, masonryWall);
     }
     #endif
 

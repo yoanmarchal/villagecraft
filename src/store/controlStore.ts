@@ -75,7 +75,7 @@ export interface CellMaterialsState {
 }
 
 export interface CellDecorationsState {
-  windowStonesPerFace: number;
+  /** Rugosité des pierres du parement (masonryParts.ts). */
   windowStoneRoughness: number;
   quoinMargin: number;
   quoinRoughness: number;
@@ -180,7 +180,6 @@ const DEFAULT_STATE: GridState &
   roofBaseColor: '#a65238',
   spireColor: '#56606c',
 
-  windowStonesPerFace: 25,
   windowStoneRoughness: 0.85,
   quoinMargin: 0.2,
   quoinRoughness: 0.9,
@@ -263,6 +262,9 @@ export function migrateControlState(persisted: unknown, version: number): Persis
     }
     for (const key of V1_REMOVED_KEYS) delete state[key];
   }
+  // v3 → v4 : les pierres apparentes semées sur les murs ont laissé place à un
+  // vrai parement de pierre ; leur nombre par face n'est plus un réglage.
+  if (version < 4) delete state.windowStonesPerFace;
   if (version < 3) {
     const defaults = DEFAULT_STATE as unknown as PersistedState;
     for (const [key, oldDefault] of Object.entries(V2_CHANGED_DEFAULTS)) {
@@ -285,7 +287,7 @@ export const useControlStore = create<ControlState>()(
     }),
     {
       name: 'voxel-control-panel',
-      version: 3,
+      version: 4,
       migrate: (persisted, version) => migrateControlState(persisted, version) as unknown as ControlState,
     },
   ),
