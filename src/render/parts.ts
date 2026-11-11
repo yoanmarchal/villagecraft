@@ -28,6 +28,14 @@ export interface MaterialSpec {
    * moins que le plan proche) verrait sinon à travers, faces arrière éliminées.
    */
   doubleSide?: boolean;
+  /**
+   * Corps de mur maçonné (coque des blocs, arches, parapets, merlons,
+   * souches) : ses faces verticales extérieures sont appareillées en briques
+   * par le shader (surfaceDetail.ts), en coordonnées monde — les assises
+   * filent donc d'une cellule à l'autre d'un même bâtiment. Jamais sur les
+   * menuiseries, pierres de taille, cadres…
+   */
+  masonry?: boolean;
 }
 
 /**
@@ -88,7 +96,7 @@ const quantize = (v: number) => Math.round(v * 20) / 20;
 
 export function matKey(m: MaterialSpec): string {
   const t = m.transparent ? `t${m.opacity ?? 1}` : 'o';
-  return `${quantize(m.roughness)}|${quantize(m.metalness ?? 0)}|${t}${m.glow ? '|glow' : ''}${m.doubleSide ? '|ds' : ''}`;
+  return `${quantize(m.roughness)}|${quantize(m.metalness ?? 0)}|${t}${m.glow ? '|glow' : ''}${m.doubleSide ? '|ds' : ''}${m.masonry ? '|m' : ''}`;
 }
 
 const _euler = new THREE.Euler();

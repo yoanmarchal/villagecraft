@@ -31,7 +31,7 @@ import {
 } from '../../utils/cellUtils';
 import { shades } from '../../colorPalettes';
 import { archBodyGeo, archVoussoirGeo, archVoussoirMidX, cornerFilletGeo } from '../geometryCache';
-import { mul, part, xform, type Part } from '../parts';
+import { mul, part, xform, type MaterialSpec, type Part } from '../parts';
 import { gableRoofParts } from './roofCellParts';
 import { crenellatedWalkwayParts, PARAPET_H, WALKWAY_H, walkwayDeckParts } from './walkwayParts';
 import type { RenderSettings } from '../renderSettings';
@@ -66,7 +66,7 @@ export function archCellParts(ctx: CellContext): Part[] {
 
   const wall = settings.wallBaseColor;
   const { voussoir, keystone } = shades(wall, { voussoir: -0.08, keystone: -0.16 });
-  const stone = { roughness: settings.wallRoughness };
+  const stone = { roughness: settings.wallRoughness, masonry: true };
 
   const parts: Part[] = [part(archBodyGeo(rise, span, slice), wall, stone, G)];
 
@@ -187,7 +187,7 @@ function abutmentFillets(
   ddx: number,
   ddz: number,
   topY: number,
-  mat: { roughness: number },
+  mat: MaterialSpec,
 ): Part[] {
   const support = getCell(lookup, cell.x + ddx, cell.y, cell.z + ddz);
   if (!support?.isOccupied || support.type === BlockType.Arch || support.type === BlockType.Roof) return [];

@@ -136,7 +136,7 @@ describe('buildVillage', () => {
     const groups = build(sampleVillage(), SETTINGS);
     const doubleSided = groups.filter((g) => g.mat.doubleSide);
     expect(doubleSided).toHaveLength(1);
-    expect(doubleSided[0].key.endsWith('|ds')).toBe(true);
+    expect(doubleSided[0].key.includes('|ds')).toBe(true);
     // Les autres pièces (toits, arches, décors) restent dans des groupes simple face.
     expect(groups.length).toBeGreaterThan(1);
   });
@@ -540,6 +540,40 @@ describe('compact vertex format', () => {
         const length = Math.hypot(normal.getX(i), normal.getY(i), normal.getZ(i));
         expect(Math.abs(length - 1)).toBeLessThan(0.02);
       }
+    }
+  });
+});
+
+describe('masonry', () => {
+  it('keeps merging: one brick-wall group for a whole building, joinery and stones left out', () => {
+    // Bâtiment de 3 × 2 cases sur deux niveaux : ses coques fusionnent en un seul groupe maçonné.
+    const grid = new VillageGrid(6, 10, 6);
+    for (let x = 1; x <= 3; x += 1)
+      for (let z = 2; z <= 3; z += 1) for (let i = 0; i < 2; i += 1) grid.addBlockInColumn(x, z);
+    const groups = build(grid, SETTINGS);
+
+    const walls = groups.filter(({ mat }) => mat.masonry && mat.doubleSide);
+    expect(walls).toHaveLength(1);
+    // Les murs extérieurs de toutes les cases y sont : il couvre toute l'emprise du bâtiment.
+    walls[0].geometry.computeBoundingBox();
+    const size = walls[0].geometry.boundingBox!.getSize(new THREE.Vector3());
+    expect(size.x).toBeCloseTo(3, 1);
+    expect(size.z).toBeCloseTo(2, 1);
+    expect(size.y).toBeCloseTo(2, 1);
+
+    // Seuls des corps de mur sont appareillés : jamais le verre, les pièces lumineuses ni le bois des portes.
+    for (const { mat } of groups) if (mat.masonry) expect(mat.transparent || mat.glow).toBeFalsy();
+    const colorsOf = (geometry: THREE.BufferGeometry) => {
+      const color = geometry.getAttribute('color');
+      const seen = new Set<string>();
+      for (let i = 0; i < color.count; i += 1) {
+        seen.add(new THREE.Color(color.getX(i), color.getY(i), color.getZ(i)).getHexString());
+      }
+      return seen;
+    };
+    const wallColor = new THREE.Color(SETTINGS.wallBaseColor).getHexString();
+    for (const { mat, geometry } of groups) {
+      if (mat.masonry && mat.doubleSide) expect([...colorsOf(geometry)]).toEqual([wallColor]);
     }
   });
 });

@@ -60,6 +60,18 @@ describe('growMaterial shader injection', () => {
     expect(detailed.material.customProgramCacheKey()).not.toBe(plain.material.customProgramCacheKey());
   });
 
+  it('lays bricks only on masonry materials, as a separate program', () => {
+    const detailed = createGrowMaterialSet({}, { detail: true });
+    const masonry = createGrowMaterialSet({}, { detail: true, masonry: true });
+
+    // Le bloc brique est compilé partout mais gardé par un define, posé sur la seule variante maçonnée.
+    expect(compile(masonry.material, THREE.ShaderLib.standard).fragmentShader).toContain('#ifdef VC_MASONRY');
+    expect(masonry.material.defines).toHaveProperty('VC_MASONRY');
+    expect(masonry.material.defines).toHaveProperty('VC_CAVITY_HALF_WIDTH');
+    expect(detailed.material.defines ?? {}).not.toHaveProperty('VC_MASONRY');
+    expect(masonry.material.customProgramCacheKey()).not.toBe(detailed.material.customProgramCacheKey());
+  });
+
   it('only animates the depth material (no interior light in shadows)', () => {
     const set = createGrowMaterialSet({});
     const shader = compile(set.depthMaterial, THREE.ShaderLib.depth);

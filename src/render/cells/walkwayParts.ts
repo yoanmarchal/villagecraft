@@ -101,7 +101,7 @@ export function crenellatedWalkwayParts(
 
   for (const side of [1, -1] as const) {
     const z = side * faceZ;
-    parts.push(part(parapetGeo, stone, { roughness: 0.92 }, mul(group, xform([0, parapetY, z]))));
+    parts.push(part(parapetGeo, stone, { roughness: 0.92, masonry: true }, mul(group, xform([0, parapetY, z]))));
     for (const x of [-0.25, 0.25]) {
       parts.push(
         ...piercedMerlonParts(mul(group, xform([x, merlonY, z])), merlonR * MERLON_WIDTH_FACTOR, merlonH, stone),
@@ -127,7 +127,7 @@ function piercedMerlonParts(matrix: THREE.Matrix4, w: number, h: number, stone: 
   const sideW = (w - MERLON_SLIT_W) / 2;
   const bottomH = slitY - slitH / 2 + h / 2;
   const topH = h / 2 - slitY - slitH / 2;
-  const mat = { roughness: 0.92 };
+  const mat = { roughness: 0.92, masonry: true };
   const sideX = MERLON_SLIT_W / 2 + sideW / 2;
   return [
     part(boxGeo(+sideW.toFixed(4), h, MERLON_DEPTH), stone, mat, mul(matrix, xform([-sideX, 0, 0]))),

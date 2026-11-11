@@ -296,7 +296,7 @@ export function gableRoofParts(
     const height = +(top - bottom).toFixed(3);
     const C = xform([x, baseY + top - height / 2, z]);
     parts.push(
-      part(boxGeo(FLUE_W, height, FLUE_W), '#a09080', { roughness: 0.93 }, C.clone()),
+      part(boxGeo(FLUE_W, height, FLUE_W), '#a09080', { roughness: 0.93, masonry: true }, C.clone()),
       part(boxGeo(0.19, 0.04, 0.19), '#7a6a5a', { roughness: 0.91 }, mul(C, xform([0, height / 2 + 0.02, 0]))),
       part(
         cylinderGeo(0.034, 0.042, 0.09, 8),
@@ -416,7 +416,7 @@ function crenellatedTowerParts({ radii, settings }: CellContext): Part[] {
     part(
       shapedBoxGeo(towerR * 2, PARAPET_H, towerR * 2, towerRadii),
       stone,
-      { roughness: 0.92 },
+      { roughness: 0.92, masonry: true },
       xform([0, BASE_Y + 0.06 + PARAPET_H / 2, 0]),
     ),
   ];
@@ -452,7 +452,9 @@ function crenellatedTowerParts({ radii, settings }: CellContext): Part[] {
     // Tangente en coordonnées scène (z = −y de la shape).
     const tx = ahead.x - behind.x;
     const tz = -(ahead.z - behind.z);
-    parts.push(part(merlonGeo, stone, { roughness: 0.92 }, xform([x, merlonY, -z], [0, Math.atan2(-tz, tx), 0])));
+    parts.push(
+      part(merlonGeo, stone, { roughness: 0.92, masonry: true }, xform([x, merlonY, -z], [0, Math.atan2(-tz, tx), 0])),
+    );
   }
 
   return parts;

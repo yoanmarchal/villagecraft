@@ -140,6 +140,77 @@ export const DETAIL_ALBEDO_APPLY = `
       vcDetailRoof = detailSlope;
     }
 
+    #ifdef VC_MASONRY
+    {
+      // ── Appareil de briques ────────────────────────────────────────────
+      // Brique médiévale de grand format (≈ 31 × 15 × 9 cm, joint compris)
+      // en appareil gothique ("monk bond") : dans chaque assise, deux
+      // panneresses puis une boutisse, l'assise suivante décalée d'une
+      // demi-période — la boutisse tombe sur le joint des deux panneresses.
+      // Tout est en coordonnées monde : les assises (hauteur) et les joints
+      // montants (abscisse le long du mur) filent d'une cellule à l'autre.
+      float masonryWall = 1.0 - smoothstep(0.25, 0.45, abs(detailNormal.y));
+      // Coque creuse : les faces de la cavité (pièces, tableaux) restent enduites.
+      vec3 masonryAxis = abs(detailNormal);
+      vec3 masonryLocal = abs(vInteriorLocal);
+      float masonryDepth = masonryAxis.x > masonryAxis.z ? masonryLocal.x : masonryLocal.z;
+      masonryWall *= mix(1.0, step(VC_CAVITY_HALF_WIDTH, masonryDepth), step(0.5, vInteriorMode));
+
+      // Abscisse le long du mur : x ou z selon l'orientation de la face. Sur
+      // un coin arrondi (normale lissée qui tourne), on la prolonge en
+      // longueur d'arc — projetées à plat, les briques s'étiraient de 40 %
+      // à l'approche de la diagonale. Rayon : celui des tours.
+      bool masonryAlongZ = masonryAxis.x > masonryAxis.z;
+      float masonryRun = masonryAlongZ ? vDetailPos.z : vDetailPos.x;
+      float masonryTurn = masonryAlongZ ? detailNormal.z : detailNormal.x;
+      float masonryTheta = atan(abs(masonryTurn), max(masonryAlongZ ? masonryAxis.x : masonryAxis.z, 1e-4));
+      masonryRun += sign(masonryTurn) * 0.22 * (masonryTheta - sin(masonryTheta));
+
+      // Taille d'un pixel sur le mur : sert à lisser les joints, et à fondre
+      // l'appareil dans sa teinte moyenne quand une assise passe sous ~2 pixels.
+      float masonryPixel = length(fwidth(vDetailPos));
+      float masonryFade = 1.0 - smoothstep(0.14, 0.42, masonryPixel * 26.0);
+      // Le relief s'efface bien plus tôt : sous ~8 pixels par assise, ses
+      // dérivées écran ne voient plus les joints et dessinaient un moiré en diagonale.
+      float masonryReliefFade = 1.0 - smoothstep(0.05, 0.16, masonryPixel * 26.0);
+
+      float masonryCourse = vDetailPos.y * 26.0;
+      float masonryRow = floor(masonryCourse);
+      float masonryV = fract(masonryCourse);
+      float masonryU = masonryRun * 9.0 + mod(masonryRow, 2.0) * 1.25;
+      float masonryBay = floor(masonryU / 2.5);
+      float masonryT = masonryU - masonryBay * 2.5;
+      float masonryIndex = min(floor(masonryT), 2.0); // 0, 1 : panneresses ; 2 : boutisse
+      float masonryLength = masonryIndex > 1.5 ? 0.5 : 1.0;
+      float masonryFu = (masonryT - masonryIndex) / masonryLength;
+      // Distance (monde) au bord de la brique.
+      float masonryEdge = min(
+        min(masonryFu, 1.0 - masonryFu) * masonryLength / 9.0,
+        min(masonryV, 1.0 - masonryV) / 26.0);
+      float masonryBrick = smoothstep(0.0026 - masonryPixel * 0.5, 0.0026 + masonryPixel, masonryEdge);
+
+      float masonrySeed = vcHash(vec3(masonryBay * 3.0 + masonryIndex, masonryRow, masonryAlongZ ? 7.0 : 13.0));
+      float masonrySeed2 = vcHash(vec3(masonryRow, masonryBay * 3.0 + masonryIndex, 5.0));
+      vec3 masonryBase = diffuseColor.rgb;
+      // Chaque brique a sa cuisson : plus ou moins claire, plus chaude ou
+      // plus froide ; boutisses plus cuites, et de rares briques brûlées.
+      vec3 masonryColor = masonryBase * (0.86 + 0.24 * masonrySeed)
+        * mix(vec3(1.06, 0.98, 0.9), vec3(0.96, 1.0, 1.05), masonrySeed2);
+      masonryColor *= masonryIndex > 1.5 ? 0.9 : 1.0;
+      masonryColor *= 1.0 - 0.24 * step(0.94, masonrySeed2);
+      // Mortier de chaux : plus sombre qu'une brique claire, plus clair qu'une brique foncée.
+      float masonryLuminance = dot(masonryBase, vec3(0.2126, 0.7152, 0.0722));
+      vec3 masonryMortar = mix(vec3(0.8, 0.77, 0.7), masonryBase * 0.56, smoothstep(0.2, 0.5, masonryLuminance));
+      vec3 masonryNear = mix(masonryMortar, masonryColor, masonryBrick);
+      // De loin : la moyenne brique + joints, pour que le mur ne change pas de valeur en dézoomant.
+      vec3 masonryFar = masonryBase * 0.9;
+      diffuseColor.rgb = mix(diffuseColor.rgb, mix(masonryFar, masonryNear, masonryFade), masonryWall);
+      // Briques en léger relief sur les joints creux, aux arêtes adoucies.
+      vcDetailTile += smoothstep(0.0026, 0.0075, masonryEdge) * (0.005 + 0.003 * masonrySeed)
+        * masonryReliefFade * masonryWall;
+    }
+    #endif
+
     if (vInteriorMode < 1.5) {
       // Pied des murs : éclaboussures et humidité, à bord irrégulier, verdies par endroits.
       float detailGround = 1.0 - smoothstep(0.0, 0.45, vDetailPos.y + (vcDetailBlotch - 0.44) * 0.4);

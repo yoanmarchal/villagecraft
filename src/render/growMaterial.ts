@@ -220,11 +220,13 @@ export interface GrowMaterialOptions {
    * vitres et les pièces lumineuses : un verre taché se lit comme sale.
    */
   detail?: boolean;
+  /** Appareil de briques sur les faces de mur (voir `MaterialSpec.masonry`) ; suppose `detail`. */
+  masonry?: boolean;
 }
 
 export function createGrowMaterialSet(
   params: THREE.MeshStandardMaterialParameters,
-  { detail = false }: GrowMaterialOptions = {},
+  { detail = false, masonry = false }: GrowMaterialOptions = {},
 ): GrowMaterialSet {
   const initialTime = performance.now() / 1000;
   // Objet uniform créé ici et non à la compilation : une mise à jour avant
@@ -234,7 +236,11 @@ export function createGrowMaterialSet(
   const material = new THREE.MeshStandardMaterial(params);
   // three partage les programmes dont `onBeforeCompile` a le même texte :
   // sans clé distincte, les variantes avec et sans détail se confondraient.
-  material.customProgramCacheKey = () => (detail ? 'grow-detail' : 'grow');
+  material.customProgramCacheKey = () => (masonry ? 'grow-masonry' : detail ? 'grow-detail' : 'grow');
+  if (masonry) {
+    // Les faces de cavité de la coque (mêmes bornes que l'éclairage intérieur) restent enduites.
+    material.defines = { ...material.defines, VC_MASONRY: '', VC_CAVITY_HALF_WIDTH: CAVITY_HALF_WIDTH };
+  }
   material.onBeforeCompile = (shader) => {
     injectGrow(shader, initialTime);
     injectInterior(shader, interiorLight);

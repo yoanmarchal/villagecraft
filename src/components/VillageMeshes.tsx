@@ -63,7 +63,7 @@ function createMaterialSet(mat: MaterialSpec): GrowMaterialSet {
       // ne rend que les faces arrière (sinon acné sur les murs fins).
       shadowSide: mat.doubleSide ? THREE.BackSide : null,
     },
-    { detail },
+    { detail, masonry: detail && mat.masonry === true },
   );
 }
 
