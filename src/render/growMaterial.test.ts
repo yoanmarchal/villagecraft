@@ -35,6 +35,31 @@ describe('growMaterial shader injection', () => {
     expect(shader.uniforms.uInteriorLight).toBe(set.interiorLight);
   });
 
+  it('adds the procedural surface detail only when asked, under its own program key', () => {
+    const plain = createGrowMaterialSet({});
+    const detailed = createGrowMaterialSet({}, { detail: true });
+    expect(compile(plain.material, THREE.ShaderLib.standard).fragmentShader).not.toContain('vcFbm');
+
+    const shader = compile(detailed.material, THREE.ShaderLib.standard);
+    const fragment = shader.fragmentShader;
+    // Albédo après la couleur de sommet, relief après la normale, le tout
+    // déclaré avant `main` — et la position monde prise après l'animation.
+    expect(fragment.indexOf('float vcFbm')).toBeLessThan(fragment.indexOf('void main()'));
+    expect(fragment.indexOf('vcDetailBlotch = vcFbm')).toBeGreaterThan(fragment.indexOf('#include <color_fragment>'));
+    expect(fragment.indexOf('normal = vcBumpNormal')).toBeGreaterThan(
+      fragment.indexOf('#include <normal_fragment_maps>'),
+    );
+    expect(fragment.indexOf('normal = vcBumpNormal')).toBeLessThan(
+      fragment.indexOf('#include <lights_physical_fragment>'),
+    );
+    expect(shader.vertexShader.indexOf('vDetailPos = transformed')).toBeGreaterThan(
+      shader.vertexShader.indexOf('growFallHeight'),
+    );
+
+    // three met en cache les programmes par texte de onBeforeCompile : les deux variantes doivent différer.
+    expect(detailed.material.customProgramCacheKey()).not.toBe(plain.material.customProgramCacheKey());
+  });
+
   it('only animates the depth material (no interior light in shadows)', () => {
     const set = createGrowMaterialSet({});
     const shader = compile(set.depthMaterial, THREE.ShaderLib.depth);

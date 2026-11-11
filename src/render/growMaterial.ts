@@ -25,6 +25,14 @@
 import * as THREE from 'three';
 import { FLOOR_T, WALL_T } from './geometryCache';
 import { INTERIOR_LAMP_Y } from './cells/interiorParts';
+import {
+  DETAIL_ALBEDO_APPLY,
+  DETAIL_FRAGMENT_DECLARATIONS,
+  DETAIL_NORMAL_APPLY,
+  DETAIL_ROUGHNESS_APPLY,
+  DETAIL_VERTEX_APPLY,
+  DETAIL_VERTEX_DECLARATIONS,
+} from './surfaceDetail';
 
 export const POP_DURATION = 0.45;
 /** Hauteur de chute des toits (en unités monde, ~1 par bloc) — "pas haut". */
@@ -144,6 +152,46 @@ function injectInterior(shader: THREE.WebGLProgramParametersWithUniforms, interi
     .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>\n${INTERIOR_FRAGMENT_APPLY}`);
 }
 
+/**
+ * Détail de surface procédural (surfaceDetail.ts) : patine, grain et relief.
+ * Après `injectInterior` (lit `vInteriorMode`) et `injectGrow` (la position
+ * monde est celle du sommet une fois animé).
+ */
+function injectDetail(shader: THREE.WebGLProgramParametersWithUniforms): void {
+  shader.vertexShader = shader.vertexShader
+    .replace(
+      '#include <common>',
+      `${DETAIL_VERTEX_DECLARATIONS}
+#include <common>`,
+    )
+    .replace(
+      '#include <project_vertex>',
+      `${DETAIL_VERTEX_APPLY}
+#include <project_vertex>`,
+    );
+  shader.fragmentShader = shader.fragmentShader
+    .replace(
+      '#include <common>',
+      `${DETAIL_FRAGMENT_DECLARATIONS}
+#include <common>`,
+    )
+    .replace(
+      '#include <color_fragment>',
+      `#include <color_fragment>
+${DETAIL_ALBEDO_APPLY}`,
+    )
+    .replace(
+      '#include <roughnessmap_fragment>',
+      `#include <roughnessmap_fragment>
+${DETAIL_ROUGHNESS_APPLY}`,
+    )
+    .replace(
+      '#include <normal_fragment_maps>',
+      `#include <normal_fragment_maps>
+${DETAIL_NORMAL_APPLY}`,
+    );
+}
+
 function injectGrow(shader: THREE.WebGLProgramParametersWithUniforms, initialTime: number): void {
   // `uTime` par défaut à 0 ferait calculer `growAge` comme 0 pour TOUTES les
   // cellules (même déjà posées depuis longtemps) le temps qu'`updateGrowTime`
@@ -166,16 +214,31 @@ export interface GrowMaterialSet {
   interiorLight: { value: THREE.Color };
 }
 
-export function createGrowMaterialSet(params: THREE.MeshStandardMaterialParameters): GrowMaterialSet {
+export interface GrowMaterialOptions {
+  /**
+   * Détail de surface procédural (patine, grain, relief). À couper pour les
+   * vitres et les pièces lumineuses : un verre taché se lit comme sale.
+   */
+  detail?: boolean;
+}
+
+export function createGrowMaterialSet(
+  params: THREE.MeshStandardMaterialParameters,
+  { detail = false }: GrowMaterialOptions = {},
+): GrowMaterialSet {
   const initialTime = performance.now() / 1000;
   // Objet uniform créé ici et non à la compilation : une mise à jour avant
   // la première compilation du shader n'est ainsi jamais perdue.
   const interiorLight = { value: new THREE.Color(0, 0, 0) };
 
   const material = new THREE.MeshStandardMaterial(params);
+  // three partage les programmes dont `onBeforeCompile` a le même texte :
+  // sans clé distincte, les variantes avec et sans détail se confondraient.
+  material.customProgramCacheKey = () => (detail ? 'grow-detail' : 'grow');
   material.onBeforeCompile = (shader) => {
     injectGrow(shader, initialTime);
     injectInterior(shader, interiorLight);
+    if (detail) injectDetail(shader);
     material.userData.shader = shader;
   };
 

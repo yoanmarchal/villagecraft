@@ -6,6 +6,7 @@ export interface GridState {
 }
 
 export interface LightingState {
+  /** Lumière du ciel (hémisphérique, voir VoxelScene) : intensité et teinte. */
   ambientIntensity: number;
   ambientColor: string;
   directionalIntensity: number;
@@ -24,13 +25,13 @@ export interface LightingState {
 }
 
 export interface SkyFogState {
-  /** Fond en dégradé vertical : haut de l'écran → horizon (voir GradientBackground). */
+  /** Ciel : dégradé du zénith à l'horizon (voir SkyDome). */
   skyTopColor: string;
   skyHorizonColor: string;
   fogColor: string;
   fogNear: number;
   fogFar: number;
-  /** Dessus (herbe) du socle du village ; les flancs sont en terre (GroundTile). */
+  /** Teinte de base de la prairie (voir Terrain). */
   groundColor: string;
   groundRoughness: number;
 }
@@ -51,6 +52,8 @@ export interface PostFxState {
   bloomLuminanceSmoothing: number;
   bloomHeight: number;
   noiseOpacity: number;
+  /** Exposition avant tone mapping (1 = neutre). */
+  exposure: number;
   vignetteOffset: number;
   vignetteDarkness: number;
 }
@@ -132,23 +135,23 @@ const DEFAULT_STATE: GridState &
   CellTransitionState = {
   gridSize: 4,
 
-  ambientIntensity: 0.7,
-  ambientColor: '#fffaed',
-  directionalIntensity: 2.4,
-  directionalColor: '#fffaed',
-  directionalPosition: [12, 16, 10],
+  ambientIntensity: 1.1,
+  ambientColor: '#dfe9ff',
+  directionalIntensity: 3.4,
+  directionalColor: '#ffe2bd',
+  directionalPosition: [16, 11, 5],
   shadowMapSize: 2048,
   shadowRadius: 4,
   shadowBias: -0.0001,
   windowGlow: 0,
   interiorFill: 0.45,
 
-  skyTopColor: '#7fb6e8',
-  skyHorizonColor: '#dcebf5',
-  fogColor: '#dcebf5',
-  fogNear: 30,
-  fogFar: 60,
-  groundColor: '#a9bd84',
+  skyTopColor: '#3f86d9',
+  skyHorizonColor: '#cfe4f5',
+  fogColor: '#cfe4f5',
+  fogNear: 22,
+  fogFar: 110,
+  groundColor: '#6f8a4a',
   groundRoughness: 0.95,
 
   dampingFactor: 0.08,
@@ -164,6 +167,7 @@ const DEFAULT_STATE: GridState &
   bloomLuminanceSmoothing: 0.9,
   bloomHeight: 300,
   noiseOpacity: 0.02,
+  exposure: 1.15,
   vignetteOffset: 0.1,
   vignetteDarkness: 0.5,
 
@@ -173,7 +177,7 @@ const DEFAULT_STATE: GridState &
 
   wallRoughness: 0.94,
   wallBaseColor: '#f5e6d3',
-  roofBaseColor: '#c85a3f',
+  roofBaseColor: '#a65238',
   spireColor: '#56606c',
 
   windowStonesPerFace: 25,
@@ -226,6 +230,30 @@ const V1_REMOVED_KEYS = [
   'groundOpacity',
 ];
 
+/**
+ * v2 → v3 (rendu réaliste : ciel en dôme, paysage, lumière hémisphérique,
+ * tone mapping AgX) : l'éclairage par défaut a été refait pour ce pipeline —
+ * soleil plus bas et plus chaud, ciel plus dense, brouillard bien plus
+ * lointain (le paysage doit se voir), herbe et tuiles moins saturées.
+ */
+const V2_CHANGED_DEFAULTS: PersistedState = {
+  ambientIntensity: 0.7,
+  ambientColor: '#fffaed',
+  directionalIntensity: 2.4,
+  directionalColor: '#fffaed',
+  directionalPosition: [12, 16, 10],
+  skyTopColor: '#7fb6e8',
+  skyHorizonColor: '#dcebf5',
+  fogColor: '#dcebf5',
+  fogNear: 30,
+  fogFar: 60,
+  groundColor: '#a9bd84',
+  roofBaseColor: '#c85a3f',
+};
+
+const sameValue = (a: unknown, b: unknown) =>
+  Array.isArray(a) && Array.isArray(b) ? a.length === b.length && a.every((v, i) => v === b[i]) : a === b;
+
 export function migrateControlState(persisted: unknown, version: number): PersistedState {
   const state: PersistedState = { ...(persisted as PersistedState) };
   if (version < 2) {
@@ -234,6 +262,12 @@ export function migrateControlState(persisted: unknown, version: number): Persis
       if (state[key] === oldDefault) state[key] = defaults[key];
     }
     for (const key of V1_REMOVED_KEYS) delete state[key];
+  }
+  if (version < 3) {
+    const defaults = DEFAULT_STATE as unknown as PersistedState;
+    for (const [key, oldDefault] of Object.entries(V2_CHANGED_DEFAULTS)) {
+      if (sameValue(state[key], oldDefault)) state[key] = defaults[key];
+    }
   }
   return state;
 }
@@ -251,7 +285,7 @@ export const useControlStore = create<ControlState>()(
     }),
     {
       name: 'voxel-control-panel',
-      version: 2,
+      version: 3,
       migrate: (persisted, version) => migrateControlState(persisted, version) as unknown as ControlState,
     },
   ),

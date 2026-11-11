@@ -5,6 +5,7 @@ export const registerPostFxControls = (pane: Pane) =>
   registerStoreFolder(pane, {
     title: 'Post-processing',
     fields: [
+      ['exposure', { min: 0.3, max: 2.5, step: 0.01 }],
       ['aoEnabled', { label: 'ambient occlusion' }],
       ['aoIntensity', { label: 'AO intensity', min: 0, max: 6, step: 0.1 }],
       ['aoRadius', { label: 'AO radius', min: 0.1, max: 2, step: 0.05 }],

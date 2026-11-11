@@ -1,13 +1,16 @@
 import { OrbitControls } from '@react-three/drei';
 import { Canvas, useThree, type ThreeEvent } from '@react-three/fiber';
-import type { DirectionalLight } from 'three';
+import { Color, type DirectionalLight } from 'three';
 import { useShallow } from 'zustand/react/shallow';
 import type { GridCell } from '../types';
 import { VillageMeshes } from './VillageMeshes';
 import { PlacementPreview } from './PlacementPreview';
-import { GradientBackground } from './GradientBackground';
-import { GroundTile } from './GroundTile';
-import { Bloom, EffectComposer, Noise, Vignette } from '@react-three/postprocessing';
+import { SkyDome } from './SkyDome';
+import { Terrain } from './Terrain';
+import { Trees } from './Trees';
+import { Bloom, EffectComposer, Noise, ToneMapping, Vignette } from '@react-three/postprocessing';
+import { ColorGrade } from './ColorGrade';
+import { ToneMappingMode } from 'postprocessing';
 import { useControlStore, type ControlState } from '../store/controlStore';
 import { lazy, Suspense, useEffect, useMemo, useRef, useState, type ComponentType, type RefObject } from 'react';
 import { useUiStore } from '../store/uiStore';
@@ -17,7 +20,12 @@ import { raycastVoxels, targetColumn } from '../utils/voxelRaycast';
 // Chargé seulement quand le moniteur est activé (Debug) : hors du bundle initial.
 const Perf = lazy(() => import('r3f-perf').then((module) => ({ default: module.Perf })));
 
-const BASE_CAMERA_POSITION: [number, number, number] = [10, 12, 14];
+/** Étalonnage appliqué après le tone mapping AgX (voir ColorGrade). */
+const GRADE_CONTRAST = 1.22;
+const GRADE_SATURATION = 1.16;
+
+// Vue assez basse pour montrer l'horizon et le ciel dès l'arrivée.
+const BASE_CAMERA_POSITION: [number, number, number] = [11, 8, 15];
 
 /**
  * Position initiale de la caméra. Le FOV (45°) est vertical : sur un écran
@@ -26,7 +34,7 @@ const BASE_CAMERA_POSITION: [number, number, number] = [10, 12, 14];
  */
 function initialCameraPosition(gridSize: number): [number, number, number] {
   const aspect = window.innerWidth / window.innerHeight;
-  // Plafonné pour rester en deçà du début du brouillard par défaut (fogNear = 30).
+  // Plafonné pour rester en deçà du début du brouillard par défaut.
   const factor = aspect < 1 ? Math.min(1.4, 1 / aspect) : 1;
   const scale = initialCameraScale(gridSize);
   return BASE_CAMERA_POSITION.map((v) => v * factor * scale) as [number, number, number];
@@ -41,6 +49,31 @@ const CLICK_MAX_DRAG_PX = 5;
  * plan, même quand il passe au ras d'une tour en bord de grille.
  */
 const CLICK_PLANE_SIZE = 1000;
+
+/**
+ * Lumière du ciel (hémisphérique) : le dessus des volumes prend la teinte du
+ * ciel, le dessous celle du sol éclairé — des ombres bleutées et des débords
+ * de toit réchauffés par le rebond, là où une ambiante uniforme aplatit tout.
+ */
+function skyLightColors(ambientColor: string, skyTopColor: string, groundColor: string, sunColor: string) {
+  const sky = new Color(ambientColor).lerp(new Color(skyTopColor), 0.45);
+  const bounce = new Color(groundColor).multiply(new Color(sunColor)).multiplyScalar(0.55);
+  return { sky, bounce };
+}
+
+/** Exposition du tone mapping : réglage impératif du renderer → frame à demander. */
+function Exposure({ value }: { value: number }) {
+  const gl = useThree((state) => state.gl);
+  const invalidate = useThree((state) => state.invalidate);
+  useEffect(() => {
+    // Le renderer est un objet impératif de three, pas un état React : son
+    // exposition ne peut être réglée que par affectation.
+    // eslint-disable-next-line react-hooks/immutability
+    gl.toneMappingExposure = value;
+    invalidate();
+  }, [gl, value, invalidate]);
+  return null;
+}
 
 /** Pointeurs enfoncés, et si le geste en cours en a compté plusieurs (pinch). */
 interface GestureState {
@@ -157,6 +190,7 @@ const selectPostFx = (state: ControlState) => ({
   bloomLuminanceSmoothing: state.bloomLuminanceSmoothing,
   bloomHeight: state.bloomHeight,
   noiseOpacity: state.noiseOpacity,
+  exposure: state.exposure,
   vignetteOffset: state.vignetteOffset,
   vignetteDarkness: state.vignetteDarkness,
 });
@@ -213,9 +247,18 @@ export function VoxelScene({
     bloomLuminanceSmoothing,
     bloomHeight,
     noiseOpacity,
+    exposure,
     vignetteOffset,
     vignetteDarkness,
   } = useControlStore(useShallow(selectPostFx));
+
+  const skyLight = useMemo(
+    () => skyLightColors(ambientColor, skyTopColor, groundColor, directionalColor),
+    [ambientColor, skyTopColor, groundColor, directionalColor],
+  );
+  // Paysage : plat partout où la caméra peut orbiter, visible jusqu'au bout du brouillard.
+  const flatRadius = maxDistance * scale + 4;
+  const landscapeReach = Math.max(fogFar * scale, flatRadius + 20);
 
   // N8AO (~85 kB gzip) n'est chargé qu'une fois l'effet activé. Pas de
   // React.lazy + Suspense ici : l'EffectComposer ne recalcule ses passes que
@@ -319,18 +362,25 @@ export function VoxelScene({
       // qu'en boucle continue.
       frameloop={showPerfMonitor ? 'always' : 'demand'}
       dpr={[1, 2]}
-      camera={{ position: cameraPosition, fov: 45, near: 0.1, far: 100 }}
+      camera={{ position: cameraPosition, fov: 45, near: 0.1, far: 1000 }}
       gl={{ antialias: true }}
       onContextMenu={(event) => event.preventDefault()}
     >
-      <GradientBackground top={skyTopColor} horizon={skyHorizonColor} />
+      <SkyDome
+        top={skyTopColor}
+        horizon={skyHorizonColor}
+        sunPosition={directionalPosition}
+        sunColor={directionalColor}
+        sunIntensity={directionalIntensity}
+      />
+      <Exposure value={exposure} />
       <fog attach="fog" args={[fogColor, fogNear * scale, fogFar * scale]} />
       {showPerfMonitor && (
         <Suspense fallback={null}>
           <Perf position="top-left" />
         </Suspense>
       )}
-      <ambientLight intensity={ambientIntensity} color={ambientColor} />
+      <hemisphereLight args={[skyLight.sky, skyLight.bounce, ambientIntensity]} />
       <directionalLight
         ref={sunRef}
         position={directionalPosition}
@@ -350,7 +400,8 @@ export function VoxelScene({
       />
       <ScreenshotBridge />
       <GestureTracker gesture={gestureRef} />
-      <GroundTile width={gridWidth} depth={gridDepth} grassColor={groundColor} roughness={groundRoughness} />
+      <Terrain grassColor={groundColor} roughness={groundRoughness} flatRadius={flatRadius} reach={landscapeReach} />
+      <Trees gridSize={Math.max(gridWidth, gridDepth)} flatRadius={flatRadius} reach={landscapeReach} />
       {/* Quadrillage discret, juste au-dessus de l'herbe (évite le z-fighting). */}
       <gridHelper
         args={[Math.max(gridWidth, gridDepth), Math.max(gridWidth, gridDepth), '#000000', '#000000']}
@@ -406,6 +457,12 @@ export function VoxelScene({
         ) : (
           <></>
         )}
+        {/* AO et bloom travaillent en linéaire HDR (tampon demi-flottant) ; le
+            tone mapping ramène l'image dans [0, 1], puis viennent
+            l'étalonnage et la finition. Le grain passe après : ajouté avant,
+            en HDR, il ressortait en points blancs dans les ombres de nuit. */}
+        <ToneMapping mode={ToneMappingMode.AGX} />
+        <ColorGrade contrast={GRADE_CONTRAST} saturation={GRADE_SATURATION} />
         {noiseOpacity > 0 ? <Noise opacity={noiseOpacity} /> : <></>}
         <Vignette eskil={false} offset={vignetteOffset} darkness={vignetteDarkness} />
       </EffectComposer>

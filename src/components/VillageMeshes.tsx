@@ -42,18 +42,23 @@ interface VillageMeshesProps {
 }
 
 function createMaterialSet(mat: MaterialSpec): GrowMaterialSet {
-  return createGrowMaterialSet({
-    vertexColors: true,
-    roughness: mat.roughness,
-    metalness: mat.metalness ?? 0,
-    transparent: mat.transparent ?? false,
-    opacity: mat.opacity ?? 1,
-    depthWrite: !mat.transparent,
-    side: mat.doubleSide ? THREE.DoubleSide : THREE.FrontSide,
-    // Ombres inchangées : comme un matériau FrontSide, la carte d'ombre
-    // ne rend que les faces arrière (sinon acné sur les murs fins).
-    shadowSide: mat.doubleSide ? THREE.BackSide : null,
-  });
+  // Patine procédurale partout sauf sur le verre et les pièces lumineuses.
+  const detail = !mat.transparent && !mat.glow;
+  return createGrowMaterialSet(
+    {
+      vertexColors: true,
+      roughness: mat.roughness,
+      metalness: mat.metalness ?? 0,
+      transparent: mat.transparent ?? false,
+      opacity: mat.opacity ?? 1,
+      depthWrite: !mat.transparent,
+      side: mat.doubleSide ? THREE.DoubleSide : THREE.FrontSide,
+      // Ombres inchangées : comme un matériau FrontSide, la carte d'ombre
+      // ne rend que les faces arrière (sinon acné sur les murs fins).
+      shadowSide: mat.doubleSide ? THREE.BackSide : null,
+    },
+    { detail },
+  );
 }
 
 export function VillageMeshes({ cells, toWorldPosition, gridWidth, gridDepth }: VillageMeshesProps) {
