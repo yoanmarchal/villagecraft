@@ -27,6 +27,7 @@ import {
   isIsolatedBlock,
   isRampart,
   isTowerColumn,
+  type CellFace,
   type CellLookup,
 } from '../../utils/cellUtils';
 import { shades } from '../../colorPalettes';
@@ -77,7 +78,25 @@ export function archCellParts(ctx: CellContext): Part[] {
   // Parement de pierre sur les têtes de l'arche (les deux faces que traverse
   // le passage), arrêté au-dessus des claveaux : les pierres suivent l'extrados.
   const { centerY, radius } = archCircle(rise, span);
-  const extrados = radius + VOUSSOIR_RING + 0.05; // clé de voûte comprise
+  // Les pierres s'arrêtent DERRIÈRE les claveaux (plus saillants qu'elles), à
+  // 3 cm de l'intrados : leur découpe en marches reste cachée. Arrêtées à
+  // l'extrados, elles dessinaient un escalier tout autour de l'arc.
+  const extrados = radius + 0.03;
+  // Une tête d'arche se prolonge sur les raccords d'angle de ses appuis
+  // (coin arrondi d'une tour, voir abutmentFillets) : sans pierres, ils
+  // faisaient deux bandes lisses de part et d'autre de l'arc.
+  const filletWidth = (end: -1 | 1, face: CellFace): number => {
+    if (end < 0 ? before !== 0 : after !== 0) return 0;
+    const support = getCell(lookup, x + dx * end, y, z + dz * end);
+    if (!support?.isOccupied || support.type === BlockType.Arch || support.type === BlockType.Roof) return 0;
+    // Coin de l'appui tourné vers l'arche, du côté de cette face.
+    const towardsArch = end > 0 ? (spanAlongX ? 'Left' : 'back') : spanAlongX ? 'Right' : 'front';
+    const corner = spanAlongX
+      ? (`${face === 'front' ? 'front' : 'back'}${towardsArch}` as 'frontLeft')
+      : (`${towardsArch}${face === 'right' ? 'Right' : 'Left'}` as 'frontLeft');
+    const r = getCornerRadii(lookup, support, settings)[corner];
+    return r < 0.01 ? 0 : r;
+  };
   // Abscisse dans le repère de l'arche : le long de la portée, x local = ±t
   // (la rotation de 90° envoie le x local vers −z, alors que t suit +z).
   const floorAt = (t: number) => {
@@ -89,7 +108,11 @@ export function archCellParts(ctx: CellContext): Part[] {
       { cell, lookup, radii: NO_RADII },
       ctx.exposedFaces
         .filter((face) => (spanAlongX ? face === 'front' || face === 'back' : face === 'left' || face === 'right'))
-        .map((face) => ({ face, floorAt })),
+        .map((face) => ({
+          face,
+          floorAt,
+          overhang: [filletWidth(-1, face), filletWidth(1, face)] as [number, number],
+        })),
       wall,
       settings.windowStoneRoughness,
     ),

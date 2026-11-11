@@ -41,7 +41,7 @@ const MIN_PIECE = 0.014;
 /** Largeur maximale d'un tronçon de pierre sur un arc, en fraction du rayon (≈ 17°). */
 const ARC_CHUNK = 0.3;
 /** Pas de découpe au-dessus d'une arche. */
-const FLOOR_SLICE = 0.045;
+const FLOOR_SLICE = 0.02;
 
 /** Rectangle (repère de la face : t le long du mur, y vertical) laissé libre de pierres : ouverture, plinthe… */
 export interface MasonryHole {
@@ -56,6 +56,12 @@ export interface MasonryFace {
   holes?: MasonryHole[];
   /** Hauteur minimale des pierres à l'abscisse t (extrados d'une arche) ; absent = jusqu'au pied de la cellule. */
   floorAt?: (t: number) => number;
+  /**
+   * Prolongement à plat de la face au-delà de la cellule, côté t négatif et
+   * côté t positif : une tête d'arche se poursuit sur les raccords qui
+   * comblent le coin arrondi de ses appuis (tours).
+   */
+  overhang?: [number, number];
   /** Bande de hauteur à garnir (repère cellule) ; absent = toute la cellule. Parapet d'une tour, par exemple. */
   yRange?: [number, number];
   /**
@@ -213,7 +219,7 @@ export function masonryParts(
   const palette = stonePalette(color);
   const mat = { roughness };
 
-  for (const { face, holes = [], floorAt, yRange, extent } of faces) {
+  for (const { face, holes = [], floorAt, yRange, extent, overhang = [0, 0] } of faces) {
     const half = extent ?? 0.5;
     const [yLow, yHigh] = yRange ?? [-0.5, 0.5];
     const alongX = face === 'front' || face === 'back';
@@ -228,11 +234,11 @@ export function masonryParts(
     const rounded = (r: number) => r > 0.001;
     const flatNeg = -(half - (rounded(radiusNeg) ? radiusNeg : 0));
     const flatPos = half - (rounded(radiusPos) ? radiusPos : 0);
-    const tMin = flatNeg - (rounded(radiusNeg) ? (radiusNeg * Math.PI) / 4 : 0);
-    const tMax = flatPos + (rounded(radiusPos) ? (radiusPos * Math.PI) / 4 : 0);
+    const tMin = flatNeg - (rounded(radiusNeg) ? (radiusNeg * Math.PI) / 4 : 0) - overhang[0];
+    const tMax = flatPos + (rounded(radiusPos) ? (radiusPos * Math.PI) / 4 : 0) + overhang[1];
     // Au bord de la cellule, la pierre n'a de joint que si le mur s'arrête là.
-    const edgeNeg = extent !== undefined || rounded(radiusNeg) || !continues(lookup, cell, face, -1);
-    const edgePos = extent !== undefined || rounded(radiusPos) || !continues(lookup, cell, face, 1);
+    const edgeNeg = extent !== undefined || overhang[0] > 0 || rounded(radiusNeg) || !continues(lookup, cell, face, -1);
+    const edgePos = extent !== undefined || overhang[1] > 0 || rounded(radiusPos) || !continues(lookup, cell, face, 1);
 
     // Coupes : limite plat / arc, puis tronçons courts le long de l'arc.
     const cuts: number[] = [];
