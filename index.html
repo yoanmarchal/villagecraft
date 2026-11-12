@@ -31,8 +31,349 @@
     <meta name="twitter:description" content="Build a little voxel village in your browser." />
     <meta name="twitter:image" content="https://yoanmarchal.github.io/villagecraft/og-image.png" />
     <meta name="google-site-verification" content="MY5Wj6CrcKy00mtqhMeoPt9q4X1s401oLCPk-7aK1E4" />
+    <!--
+      Écran de chargement : en ligne, pour s'afficher avant même le
+      téléchargement du JavaScript, puis retiré en fondu par hideAppLoader()
+      (src/loader.ts) une fois la première image du village dessinée.
+      Crépuscule sur la silhouette d'un village fortifié dont les fenêtres
+      s'allument une à une. Toutes les animations ne touchent que transform
+      et opacity, sur des éléments HTML (pas SVG) : le navigateur les joue
+      hors du fil principal, elles continuent pendant que la construction du
+      village l'occupe. Silhouette et fenêtres sont générées (coordonnées
+      dans un viewBox de 960 × 240, fenêtres en % de ce cadre).
+    -->
+    <style>
+      #app-loader {
+        position: fixed;
+        inset: 0;
+        z-index: 1000;
+        overflow: hidden;
+        background: linear-gradient(
+          180deg,
+          #0b1124 0%,
+          #18244a 38%,
+          #3d4572 62%,
+          #9a6f7a 80%,
+          #e2a77c 94%,
+          #f0c28f 100%
+        );
+        font-family: 'Palatino Linotype', 'Book Antiqua', Palatino, Georgia, serif;
+        color: #f3e5cc;
+        transition: opacity 0.7s ease;
+      }
+      #app-loader[data-state='done'] {
+        opacity: 0;
+        pointer-events: none;
+      }
+      .app-loader__moon {
+        position: absolute;
+        top: 12%;
+        right: 16%;
+        width: 44px;
+        height: 44px;
+        border-radius: 50%;
+        background: radial-gradient(circle at 38% 36%, #fffaf0 0%, #f1e3c4 62%, #d9c7a2 100%);
+        box-shadow:
+          0 0 30px 8px rgba(255, 236, 200, 0.25),
+          0 0 90px 30px rgba(255, 220, 170, 0.12);
+      }
+      .app-loader__stars i {
+        position: absolute;
+        width: 2px;
+        height: 2px;
+        border-radius: 50%;
+        background: #fff8e8;
+        opacity: 0.25;
+        animation: app-loader-twinkle 3.2s ease-in-out infinite;
+        will-change: opacity;
+      }
+      @keyframes app-loader-twinkle {
+        50% {
+          opacity: 0.95;
+        }
+      }
+      /* Collines lointaines, puis silhouette du bourg. */
+      .app-loader__hills {
+        position: absolute;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        height: 38vh;
+        width: 100%;
+      }
+      .app-loader__town {
+        position: absolute;
+        left: 50%;
+        bottom: 0;
+        width: max(100vw, 760px);
+        transform: translateX(-50%);
+      }
+      .app-loader__skyline {
+        position: relative;
+        aspect-ratio: 960 / 240;
+        width: min(1080px, 100%);
+        margin: 0 auto;
+      }
+      .app-loader__skyline svg {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        display: block;
+      }
+      .app-loader__skyline i,
+      .app-loader__skyline b {
+        position: absolute;
+        background: #ffc874;
+        box-shadow: 0 0 8px 2px rgba(255, 170, 80, 0.55);
+        opacity: 0.06;
+        animation: app-loader-lamp 5.2s ease-in-out infinite both;
+        will-change: opacity;
+      }
+      .app-loader__skyline b {
+        border-radius: 40% 40% 0 0 / 30% 30% 0 0;
+        background: linear-gradient(180deg, #ffb35e, #e07a36);
+        box-shadow: 0 0 18px 4px rgba(255, 150, 70, 0.45);
+        animation: none;
+        opacity: 0.8;
+      }
+      @keyframes app-loader-lamp {
+        0%,
+        6% {
+          opacity: 0.06;
+        }
+        12%,
+        78% {
+          opacity: 1;
+        }
+        92%,
+        100% {
+          opacity: 0.06;
+        }
+      }
+      /* Bande de sol sous la silhouette : elle déborde des deux côtés sur les écrans larges. */
+      .app-loader__ground {
+        height: 4vh;
+        background: #0f1428;
+        margin-top: -1px;
+      }
+      /* Brume chaude à l'horizon, devant les collines. */
+      .app-loader__haze {
+        position: absolute;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        height: 30vh;
+        background: radial-gradient(ellipse 70% 100% at 50% 100%, rgba(255, 170, 110, 0.18), transparent 70%);
+        pointer-events: none;
+      }
+      .app-loader__title {
+        position: absolute;
+        left: 0;
+        right: 0;
+        top: 24%;
+        display: grid;
+        justify-items: center;
+        gap: 14px;
+        text-align: center;
+        padding: 0 16px;
+      }
+      .app-loader__name {
+        display: flex;
+        align-items: center;
+        gap: 18px;
+        margin: 0;
+        font-size: clamp(26px, 5vw, 46px);
+        font-weight: 400;
+        letter-spacing: 0.28em;
+        text-transform: uppercase;
+        text-shadow: 0 2px 18px rgba(255, 200, 140, 0.25);
+        padding-left: 0.28em; /* compense l'espacement de la dernière lettre */
+      }
+      .app-loader__name::before,
+      .app-loader__name::after {
+        content: '';
+        width: clamp(28px, 8vw, 90px);
+        height: 1px;
+        background: linear-gradient(90deg, transparent, rgba(243, 229, 204, 0.7));
+      }
+      .app-loader__name::after {
+        background: linear-gradient(90deg, rgba(243, 229, 204, 0.7), transparent);
+      }
+      /* Messages qui se relaient, en fondu. */
+      .app-loader__steps {
+        position: relative;
+        height: 1.4em;
+        width: 260px;
+        font-size: 15px;
+        font-style: italic;
+        letter-spacing: 0.06em;
+        color: rgba(243, 229, 204, 0.78);
+      }
+      .app-loader__steps span {
+        position: absolute;
+        inset: 0;
+        opacity: 0;
+        animation: app-loader-step 8s ease-in-out infinite both;
+        will-change: opacity, transform;
+      }
+      .app-loader__steps span:nth-child(1) {
+        animation-delay: 0s;
+      }
+      .app-loader__steps span:nth-child(2) {
+        animation-delay: 2s;
+      }
+      .app-loader__steps span:nth-child(3) {
+        animation-delay: 4s;
+      }
+      .app-loader__steps span:nth-child(4) {
+        animation-delay: 6s;
+      }
+      @keyframes app-loader-step {
+        0% {
+          opacity: 0;
+          transform: translateY(6px);
+        }
+        5%,
+        21% {
+          opacity: 1;
+          transform: translateY(0);
+        }
+        26%,
+        100% {
+          opacity: 0;
+          transform: translateY(-6px);
+        }
+      }
+      /* Barre de progression indéterminée, très fine. */
+      .app-loader__bar {
+        position: relative;
+        width: 180px;
+        height: 2px;
+        overflow: hidden;
+        border-radius: 2px;
+        background: rgba(243, 229, 204, 0.16);
+      }
+      .app-loader__bar::after {
+        content: '';
+        position: absolute;
+        inset: 0;
+        width: 60px;
+        background: linear-gradient(90deg, transparent, #ffd49a, transparent);
+        animation: app-loader-sweep 1.8s ease-in-out infinite;
+        will-change: transform;
+      }
+      @keyframes app-loader-sweep {
+        0% {
+          transform: translateX(-60px);
+        }
+        100% {
+          transform: translateX(180px);
+        }
+      }
+      /* Écran étroit : titre resserré, sans filets (ils débordaient). */
+      @media (max-width: 520px) {
+        .app-loader__name {
+          letter-spacing: 0.16em;
+          padding-left: 0.16em;
+          font-size: 28px;
+        }
+        .app-loader__name::before,
+        .app-loader__name::after {
+          display: none;
+        }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        #app-loader,
+        #app-loader * {
+          transition: none !important;
+        }
+        .app-loader__stars i,
+        .app-loader__skyline i,
+        .app-loader__bar::after {
+          animation: none;
+        }
+        .app-loader__skyline i {
+          opacity: 1;
+        }
+        .app-loader__steps span {
+          animation: none;
+        }
+        .app-loader__steps span:first-child {
+          opacity: 1;
+        }
+      }
+    </style>
   </head>
   <body>
+    <div id="app-loader" role="status" aria-live="polite" aria-busy="true">
+      <div class="app-loader__stars" aria-hidden="true">
+        <i style="left: 8%; top: 9%; animation-delay: 0.2s"></i
+        ><i style="left: 14%; top: 22%; animation-delay: 1.4s"></i
+        ><i style="left: 21%; top: 6%; animation-delay: 0.8s"></i
+        ><i style="left: 29%; top: 15%; animation-delay: 2.1s"></i
+        ><i style="left: 35%; top: 30%; animation-delay: 0.5s"></i
+        ><i style="left: 43%; top: 8%; animation-delay: 1.7s"></i
+        ><i style="left: 52%; top: 19%; animation-delay: 1s"></i
+        ><i style="left: 58%; top: 5%; animation-delay: 2.4s"></i
+        ><i style="left: 66%; top: 26%; animation-delay: 0.3s"></i
+        ><i style="left: 71%; top: 12%; animation-delay: 1.9s"></i
+        ><i style="left: 79%; top: 31%; animation-delay: 1.2s"></i
+        ><i style="left: 86%; top: 7%; animation-delay: 0.6s"></i
+        ><i style="left: 92%; top: 18%; animation-delay: 2.2s"></i
+        ><i style="left: 97%; top: 28%; animation-delay: 1.5s"></i
+        ><i style="left: 4%; top: 33%; animation-delay: 0.9s"></i
+        ><i style="left: 25%; top: 38%; animation-delay: 2.6s"></i
+        ><i style="left: 61%; top: 36%; animation-delay: 1.3s"></i
+        ><i style="left: 48%; top: 40%; animation-delay: 0.4s"></i>
+      </div>
+      <div class="app-loader__moon" aria-hidden="true"></div>
+      <svg class="app-loader__hills" viewBox="0 0 100 40" preserveAspectRatio="none" aria-hidden="true">
+        <path d="M0 22C12 14 22 16 34 20S56 10 70 15 90 12 100 17V40H0Z" fill="#2a2f55" opacity="0.75" />
+        <path d="M0 30C10 25 24 27 38 29S62 23 78 27 94 25 100 28V40H0Z" fill="#1b2142" />
+      </svg>
+      <div class="app-loader__haze" aria-hidden="true"></div>
+      <div class="app-loader__town" aria-hidden="true">
+        <div class="app-loader__skyline">
+          <svg viewBox="0 0 960 240" preserveAspectRatio="none">
+            <path
+              fill="#0f1428"
+              d="M36 240H116V192H36ZM31 193L76 160L121 193ZM112 240H186V176H112ZM107 177L149 140L191 177ZM160 160H169V128H160ZM182 240H250V198H182ZM177 199L216 172L255 199ZM252 240H300V96H252ZM244 97L276 26L308 97ZM275 27H277V12H275ZM300 240H402V152H300ZM305 152.5H313V143H305ZM319 152.5H327V143H319ZM333 152.5H341V143H333ZM347 152.5H355V143H347ZM361 152.5H369V143H361ZM375 152.5H383V143H375ZM389 152.5H397V143H389ZM402 240H562V82H402ZM408 82.5H418V71H408ZM426 82.5H436V71H426ZM444 82.5H454V71H444ZM462 82.5H472V71H462ZM480 82.5H490V71H480ZM498 82.5H508V71H498ZM516 82.5H526V71H516ZM530 240H568V56H530ZM523 57L549 14L575 57ZM548 15H550V2H548ZM568 240H662V152H568ZM569 152.5H577V143H569ZM583 152.5H591V143H583ZM597 152.5H605V143H597ZM611 152.5H619V143H611ZM625 152.5H633V143H625ZM639 152.5H647V143H639ZM653 152.5H661V143H653ZM662 240H714V102H662ZM662.5 102.5H671.5V92H662.5ZM676.5 102.5H685.5V92H676.5ZM690.5 102.5H699.5V92H690.5ZM704.5 102.5H713.5V92H704.5ZM714 240H792V186H714ZM709 187L753 151L797 187ZM788 240H862V176H788ZM783 177L825 144L867 177ZM838 156H847V126H838ZM858 240H928V198H858ZM853 199L893 172L933 199Z"
+            />
+          </svg>
+          <i style="left: 6.458%; top: 85.833%; width: 0.729%; height: 4.167%; animation-delay: 0.2s"></i
+          ><i style="left: 9.167%; top: 85.833%; width: 0.729%; height: 4.167%; animation-delay: 1.6s"></i
+          ><i style="left: 14.167%; top: 79.167%; width: 0.729%; height: 4.167%; animation-delay: 0.9s"></i
+          ><i style="left: 16.458%; top: 79.167%; width: 0.729%; height: 4.167%; animation-delay: 2.3s"></i
+          ><i style="left: 21.667%; top: 88.333%; width: 0.729%; height: 3.75%; animation-delay: 1.2s"></i
+          ><i style="left: 28.438%; top: 50.833%; width: 0.521%; height: 5.417%; animation-delay: 0.5s"></i
+          ><i style="left: 28.438%; top: 70%; width: 0.521%; height: 5.417%; animation-delay: 2s"></i
+          ><i style="left: 44.375%; top: 46.667%; width: 0.729%; height: 5%; animation-delay: 0.1s"></i
+          ><i style="left: 47.5%; top: 46.667%; width: 0.729%; height: 5%; animation-delay: 1.4s"></i
+          ><i style="left: 52.083%; top: 46.667%; width: 0.729%; height: 5%; animation-delay: 2.6s"></i
+          ><i style="left: 44.375%; top: 62.5%; width: 0.729%; height: 5%; animation-delay: 0.7s"></i
+          ><i style="left: 52.083%; top: 62.5%; width: 0.729%; height: 5%; animation-delay: 1.9s"></i
+          ><i style="left: 56.875%; top: 33.333%; width: 0.521%; height: 4.583%; animation-delay: 1.1s"></i
+          ><i style="left: 71.354%; top: 53.333%; width: 0.521%; height: 5.417%; animation-delay: 0.4s"></i
+          ><i style="left: 71.354%; top: 71.667%; width: 0.521%; height: 5.417%; animation-delay: 2.2s"></i
+          ><i style="left: 76.875%; top: 84.167%; width: 0.729%; height: 4.167%; animation-delay: 1.7s"></i
+          ><i style="left: 79.583%; top: 84.167%; width: 0.729%; height: 4.167%; animation-delay: 0.8s"></i
+          ><i style="left: 84.167%; top: 79.167%; width: 0.729%; height: 4.167%; animation-delay: 2.5s"></i
+          ><i style="left: 86.875%; top: 79.167%; width: 0.729%; height: 4.167%; animation-delay: 1.3s"></i
+          ><i style="left: 92.292%; top: 88.333%; width: 0.729%; height: 3.75%; animation-delay: 0.6s"></i
+          ><b style="left: 48.542%; top: 81.667%; width: 2.917%; height: 18.333%"></b>
+        </div>
+        <div class="app-loader__ground"></div>
+      </div>
+      <div class="app-loader__title">
+        <p class="app-loader__name">VillageCraft</p>
+        <div class="app-loader__steps">
+          <span>Raising the walls…</span><span>Laying the cobbles…</span><span>Tiling the roofs…</span
+          ><span>Lighting the hearths…</span>
+        </div>
+        <div class="app-loader__bar" aria-hidden="true"></div>
+      </div>
+    </div>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>

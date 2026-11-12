@@ -21,6 +21,7 @@ import {
 import { matKey, type MaterialSpec } from '../render/parts';
 import { pickRenderSettings } from '../render/renderSettings';
 import { useControlStore } from '../store/controlStore';
+import { hideAppLoader } from '../loader';
 
 /** Teinte des fenêtres allumées (lumière de bougie / lampe). */
 const WINDOW_GLOW_COLOR = '#ffb45c';
@@ -155,7 +156,21 @@ export function VillageMeshes({ cells, toWorldPosition, gridWidth, gridDepth }: 
   // frame ; ensuite plus rien ne tourne jusqu'au prochain changement.
   const latestSpawn = useMemo(() => cells.reduce((latest, cell) => Math.max(latest, cell.spawnedAt ?? 0), 0), [cells]);
 
+  // Écran de chargement : retiré après la première image où le village est
+  // monté — ses géométries construites et ses shaders compilés (ce que fait
+  // le rendu de cette image). Le rAF attend que cette image soit affichée.
+  const meshesMounted = useRef(false);
+  const loaderHidden = useRef(false);
+  useEffect(() => {
+    meshesMounted.current = true;
+    invalidate();
+  }, [invalidate]);
+
   useFrame(({ invalidate }) => {
+    if (meshesMounted.current && !loaderHidden.current) {
+      loaderHidden.current = true;
+      requestAnimationFrame(hideAppLoader);
+    }
     // Même horloge que `cell.spawnedAt` (villageGrid.ts), pas celle du canvas.
     const time = performance.now() / 1000;
     for (const set of materials.values()) updateGrowTime(set, time, blockTransitionEnabled);
