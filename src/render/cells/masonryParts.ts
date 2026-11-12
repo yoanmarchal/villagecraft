@@ -29,6 +29,21 @@ import { mul, part, xform, type Part } from '../parts';
 
 /** Assises par étage (1 unité ≈ 2,8 m) : pierres d'une trentaine de centimètres de haut en moyenne. */
 export const MASONRY_COURSES = 9;
+/**
+ * Pierres hautes de deux assises : plus d'une sur trois, dans une assise sur
+ * deux (rangs 0, 2, 4, 6 de l'étage — jamais le dernier, elle déborderait sur
+ * l'étage du dessus). L'assise suivante s'interrompt à leur endroit : les
+ * lits de pose ne filent plus d'un bout à l'autre du mur, ce qui donnait de
+ * longues lignes horizontales trop régulières.
+ */
+const TALL_ROWS = new Set([0, 2, 4, 6]);
+const TALL_CHANCE = 0.36;
+/**
+ * Chaque pierre est un peu moins haute que son assise, de 0 à cette valeur,
+ * en haut comme en bas : des joints d'épaisseur inégale, et des lits qui ne
+ * se lisent plus comme un trait continu.
+ */
+const BED_SLACK = 0.014;
 /** Largeur du joint de mortier entre deux pierres. */
 const JOINT = 0.009;
 /** Saillie des pierres sur le nu du mur : chacune la sienne, entre ces deux bornes. */
@@ -255,16 +270,37 @@ export function masonryParts(
     const bedAt = (row: number) => courseBed(row) - cell.y - 0.5;
     let firstRow = Math.floor((cell.y + 0.5 + yLow) * MASONRY_COURSES) - 1;
     while (bedAt(firstRow + 1) <= yLow + 1e-9) firstRow += 1;
+    // Pierre haute de deux assises ? Seulement si elle tient entière dans la
+    // bande garnie (et dans son étage : voir TALL_ROWS).
+    const isTall = (column: number, row: number) =>
+      TALL_ROWS.has(((row % MASONRY_COURSES) + MASONRY_COURSES) % MASONRY_COURSES) &&
+      hash3(column, row, axis + 21) < TALL_CHANCE &&
+      bedAt(row) >= yLow - 1e-9 &&
+      bedAt(row + 2) <= yHigh + 1e-9;
     for (let row = firstRow; bedAt(row) < yHigh - 1e-9; row += 1) {
       const y0 = Math.max(bedAt(row), yLow);
-      const y1 = Math.min(bedAt(row + 1), yHigh);
-      if (y1 - y0 < MIN_PIECE) continue;
+      const rowTop = Math.min(bedAt(row + 1), yHigh);
+      if (rowTop - y0 < MIN_PIECE) continue;
+
+      // Pierres hautes de l'assise du dessous : elles occupent déjà leur place dans celle-ci.
+      const blockers: MasonryHole[] = [];
+      const blockLast = columnAt(origin + tMax - 1e-6, row - 1, axis);
+      for (let column = columnAt(origin + tMin, row - 1, axis); column <= blockLast; column += 1) {
+        if (!isTall(column, row - 1)) continue;
+        blockers.push({
+          t0: stoneHead(column, row - 1, axis) - origin,
+          t1: stoneHead(column + 1, row - 1, axis) - origin,
+          y0: -Infinity,
+          y1: Infinity,
+        });
+      }
 
       const lastColumn = columnAt(origin + tMax - 1e-6, row, axis);
       for (let column = columnAt(origin + tMin, row, axis); column <= lastColumn; column += 1) {
         const stone0 = stoneHead(column, row, axis) - origin;
         const stone1 = stoneHead(column + 1, row, axis) - origin;
         const seed = hash3(column, row, axis + 7);
+        const y1 = isTall(column, row) ? bedAt(row + 2) : rowTop;
 
         let pieces: Piece[] = [
           {
@@ -279,6 +315,7 @@ export function masonryParts(
           },
         ];
         pieces = pieces.flatMap((piece) => splitAt(piece, cuts));
+        for (const hole of blockers) pieces = pieces.flatMap((piece) => subtract(piece, hole));
         for (const hole of holes) pieces = pieces.flatMap((piece) => subtract(piece, hole));
         if (floorAt) {
           pieces = pieces.flatMap((piece) => {
@@ -303,12 +340,15 @@ export function masonryParts(
         const depth = DEPTH_MIN + (DEPTH_MAX - DEPTH_MIN) * hash3(column, row, axis + 9);
         const stoneColor = palette[Math.floor(seed * PALETTE_SIZE) % PALETTE_SIZE];
 
+        // Jeu propre à la pierre entière (ses morceaux, voisins compris, restent alignés).
+        const slackTop = BED_SLACK * hash3(column, row, axis + 23);
+        const slackBottom = BED_SLACK * hash3(column, row, axis + 29);
         for (const piece of pieces) {
           const inset = JOINT / 2;
           const t0 = piece.t0 + (piece.left ? inset : 0);
           const t1 = piece.t1 - (piece.right ? inset : 0);
-          const bottom = piece.y0 + (piece.bottom ? inset : 0);
-          const top = piece.y1 - (piece.top ? inset : 0);
+          const bottom = piece.y0 + (piece.bottom ? inset + slackBottom : 0);
+          const top = piece.y1 - (piece.top ? inset + slackTop : 0);
           let width = t1 - t0;
           const height = top - bottom;
           if (width < MIN_PIECE || height < MIN_PIECE) continue;

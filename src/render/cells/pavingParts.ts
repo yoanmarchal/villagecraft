@@ -64,6 +64,15 @@ function columnAt(u: number, row: number): number {
   return c;
 }
 
+/**
+ * Gros pavé, sur deux rangs : un sur cinq environ, dans un rang sur deux
+ * (rangs 0, 2, 4 de la case — jamais le dernier, il déborderait sur la case
+ * suivante). Le rang d'après s'interrompt à son endroit : sans eux, les
+ * joints des rangs traçaient de longues lignes droites d'un bout à l'autre
+ * de la rue.
+ */
+const isBig = (column: number, row: number, r: number) => r % 2 === 0 && r < ROWS - 2 && hash3(column, row, 19) < 0.2;
+
 /** Bloc posé à plat : son épaisseur (z local) devient la verticale. */
 const FLAT = new THREE.Matrix4().makeRotationX(-Math.PI / 2);
 
@@ -119,19 +128,41 @@ export function pavingParts(
     for (let r = 0; r < ROWS; r += 1) {
       const row = z * ROWS + r;
       const rowZ0 = -0.5 + r / ROWS;
-      const rowZ1 = -0.5 + (r + 1) / ROWS;
       const last = columnAt(x + 1 - 1e-6, row);
+
+      // Gros pavés du rang précédent : ils occupent déjà leur place dans celui-ci.
+      const blockers: Array<[number, number]> = [];
+      if (r > 0) {
+        const blockLast = columnAt(x + 1 - 1e-6, row - 1);
+        for (let column = columnAt(x, row - 1); column <= blockLast; column += 1) {
+          if (isBig(column, row - 1, r - 1)) {
+            blockers.push([cobbleHead(column, row - 1) - x - 0.5, cobbleHead(column + 1, row - 1) - x - 0.5]);
+          }
+        }
+      }
+
       for (let column = columnAt(x, row); column <= last; column += 1) {
-        // Pavé entier (repère de la case), puis rogné aux limites de la case.
+        const big = isBig(column, row, r);
+        const rowZ1 = -0.5 + (r + (big ? 2 : 1)) / ROWS;
+        // Pavé entier (repère de la case), puis rogné aux limites de la case
+        // et aux gros pavés du rang précédent.
         const full0 = cobbleHead(column, row) - x - 0.5;
         const full1 = cobbleHead(column + 1, row) - x - 0.5;
-        const cut0 = full0 < -0.5;
-        const cut1 = full1 > 0.5;
+        let from = full0;
+        let to = full1;
+        for (const [b0, b1] of blockers) {
+          if (b1 <= from || b0 >= to) continue;
+          // On garde le plus grand des deux restes, de part et d'autre du gros pavé.
+          if (b0 - from >= to - b1) to = b0;
+          else from = b1;
+        }
+        const cut0 = from < -0.5;
+        const cut1 = to > 0.5;
         // Une coupe n'est interne (ni joint ni arrondi) que si la rue continue de l'autre côté.
         const joined0 = cut0 && paved.has(`${x - 1},${z}`);
         const joined1 = cut1 && paved.has(`${x + 1},${z}`);
-        const px0 = Math.max(full0, -0.5) + (joined0 ? 0 : JOINT / 2);
-        const px1 = Math.min(full1, 0.5) - (joined1 ? 0 : JOINT / 2);
+        const px0 = Math.max(from, -0.5) + (joined0 ? 0 : JOINT / 2);
+        const px1 = Math.min(to, 0.5) - (joined1 ? 0 : JOINT / 2);
         if (px1 - px0 < MIN_PIECE) continue;
 
         // Lisière : jugée sur le pavé entier, pour que ses deux moitiés aient le même sort.

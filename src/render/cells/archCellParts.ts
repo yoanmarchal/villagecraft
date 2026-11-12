@@ -32,7 +32,7 @@ import {
 } from '../../utils/cellUtils';
 import { shades } from '../../colorPalettes';
 import { archBodyGeo, archCircle, archVoussoirGeo, archVoussoirMidX, cornerFilletGeo } from '../geometryCache';
-import { masonryParts } from './masonryParts';
+import { masonryFacesOf, masonryParts } from './masonryParts';
 import { mul, part, xform, type MaterialSpec, type Part } from '../parts';
 import { gableRoofParts } from './roofCellParts';
 import { crenellatedWalkwayParts, PARAPET_H, WALKWAY_H, walkwayDeckParts } from './walkwayParts';
@@ -106,7 +106,9 @@ export function archCellParts(ctx: CellContext): Part[] {
   parts.push(
     ...masonryParts(
       { cell, lookup, radii: NO_RADII },
-      ctx.exposedFaces
+      // Comme pour les murs : une tête d'arche derrière un toit (appentis,
+      // maison plus basse) se voit au-dessus de lui — elle restait nue.
+      masonryFacesOf(lookup, cell)
         .filter((face) => (spanAlongX ? face === 'front' || face === 'back' : face === 'left' || face === 'right'))
         .map((face) => ({
           face,
