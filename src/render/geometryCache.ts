@@ -18,7 +18,6 @@ import { mergeVertices, toCreasedNormals } from 'three/examples/jsm/utils/Buffer
 import { Brush, Evaluator, SUBTRACTION } from 'three-bvh-csg';
 import type { CellFace, CornerRadii, HollowShape } from '../utils/cellUtils';
 import { FACE_ROTATION_Y, getRoundedRectContourPoints } from '../utils/cellUtils';
-import { seededRandom } from '../utils/noise';
 
 /**
  * Borne du cache (LRU). Un village complet n'utilise que quelques centaines
@@ -630,60 +629,6 @@ export function archVoussoirGeo(
     const geo = new THREE.ExtrudeGeometry(shape, { depth, bevelEnabled: false });
     geo.applyMatrix4(new THREE.Matrix4().makeTranslation(0, 0, -depth / 2));
     geo.computeVertexNormals();
-    return geo;
-  });
-}
-
-// ── Pavés : dalle de rue d'une cellule ───────────────────────────────────────
-
-/** Nombre de variantes de dalle pavée (tirées puis tournées selon la cellule). */
-export const COBBLE_TILE_VARIANTS = 3;
-const COBBLES_PER_SIDE = 6;
-
-/**
- * Une cellule de rue pavée (1 × 1, posée sur y = 0) : 6 × 6 pavés
- * irréguliers (taille, hauteur, décalage, légère rotation) fusionnés en une
- * seule géométrie, déterministe par variante. Une rue entière ne coûte
- * ainsi qu'une part par cellule.
- */
-export function cobbleTileGeo(variant: number): THREE.BufferGeometry {
-  return getGeo(`cobbles|${variant}`, () => {
-    const random = seededRandom(0xc0bb1e + variant * 7919);
-    const pitch = 1 / COBBLES_PER_SIDE;
-    const positions: number[] = [];
-    const normals: number[] = [];
-    const matrix = new THREE.Matrix4();
-    const quaternion = new THREE.Quaternion();
-    const euler = new THREE.Euler();
-
-    for (let i = 0; i < COBBLES_PER_SIDE; i += 1) {
-      for (let j = 0; j < COBBLES_PER_SIDE; j += 1) {
-        // Rangs décalés d'un demi-pavé une ligne sur deux, comme un vrai
-        // pavage : le dernier pavé d'un rang décalé déborderait de la dalle,
-        // il devient un demi-pavé calé contre le bord opposé.
-        const staggered = j % 2 === 1;
-        const isHalf = staggered && i === COBBLES_PER_SIDE - 1;
-        const w = (isHalf ? pitch / 2 : pitch) * (0.78 + random() * 0.14);
-        const d = pitch * (0.78 + random() * 0.14);
-        const h = 0.028 + random() * 0.018;
-        const jitter = () => (random() - 0.5) * pitch * 0.1;
-        const x = isHalf ? -0.5 + pitch / 4 : -0.5 + pitch * (i + 0.5) + (staggered ? pitch / 2 : 0) + jitter();
-        const z = -0.5 + pitch * (j + 0.5) + jitter();
-        euler.set((random() - 0.5) * 0.08, (random() - 0.5) * 0.25, (random() - 0.5) * 0.08);
-        quaternion.setFromEuler(euler);
-        matrix.compose(new THREE.Vector3(x, h / 2, z), quaternion, new THREE.Vector3(1, 1, 1));
-
-        const box = new THREE.BoxGeometry(w, h, d).toNonIndexed();
-        box.applyMatrix4(matrix);
-        positions.push(...(box.getAttribute('position').array as Float32Array));
-        normals.push(...(box.getAttribute('normal').array as Float32Array));
-        box.dispose();
-      }
-    }
-
-    const geo = new THREE.BufferGeometry();
-    geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
-    geo.setAttribute('normal', new THREE.Float32BufferAttribute(normals, 3));
     return geo;
   });
 }
