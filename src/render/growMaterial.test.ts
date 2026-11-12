@@ -60,27 +60,19 @@ describe('growMaterial shader injection', () => {
     expect(detailed.material.customProgramCacheKey()).not.toBe(plain.material.customProgramCacheKey());
   });
 
-  it('gives mortar backing and roofing their own programs', () => {
+  it('gives mortar backing its own program', () => {
     const detailed = createGrowMaterialSet({}, { detail: true });
     const masonry = createGrowMaterialSet({}, { detail: true, masonry: true });
-    const roofing = createGrowMaterialSet({}, { detail: true, roofing: true });
 
-    // Les blocs sont compilés partout mais gardés par un define, posé sur la seule variante concernée.
+    // Le bloc est compilé partout mais gardé par un define, posé sur la seule variante maçonnée.
     const fragment = compile(detailed.material, THREE.ShaderLib.standard).fragmentShader;
     expect(fragment).toContain('#ifdef VC_MASONRY');
-    expect(fragment).toContain('#ifdef VC_ROOFING');
     expect(detailed.material.defines ?? {}).not.toHaveProperty('VC_MASONRY');
-    expect(detailed.material.defines ?? {}).not.toHaveProperty('VC_ROOFING');
-
     expect(masonry.material.defines).toHaveProperty('VC_MASONRY');
     expect(masonry.material.defines).toHaveProperty('VC_CAVITY_HALF_WIDTH');
-    expect(masonry.material.defines).not.toHaveProperty('VC_ROOFING');
-    // Tuiles et ardoises : seulement sur la couverture, jamais devinées d'après la pente d'une face.
-    expect(roofing.material.defines).toHaveProperty('VC_ROOFING');
-    expect(roofing.material.defines).not.toHaveProperty('VC_MASONRY');
-
-    const keys = [detailed, masonry, roofing].map((set) => set.material.customProgramCacheKey());
-    expect(new Set(keys).size).toBe(3);
+    // Plus aucun motif de couverture dessiné : tuiles et ardoises sont de la géométrie.
+    expect(fragment).not.toContain('VC_ROOFING');
+    expect(masonry.material.customProgramCacheKey()).not.toBe(detailed.material.customProgramCacheKey());
   });
 
   it('only animates the depth material (no interior light in shadows)', () => {

@@ -98,56 +98,11 @@ export const DETAIL_ALBEDO_APPLY = `
     // Dérive de teinte à grande échelle : zones un peu plus chaudes ou plus froides.
     diffuseColor.rgb *= mix(vec3(1.035, 1.0, 0.955), vec3(0.965, 1.0, 1.04), detailStain);
 
-    // Couverture (matériaux roofing : bandes des flèches) : ardoises sur leurs
-    // faces en pente — les toits à deux pans ont de vraies tuiles (roofCellParts). Rangs horizontaux à hauteur
-    // constante, en quinconce le long de la pente — continus d'une cellule à
-    // l'autre puisque tout est en coordonnées monde.
+    // Relief et matité propres à une couverture : aucun (tuiles et ardoises
+    // sont de la vraie géométrie, roofCellParts.ts).
     vcDetailTile = 0.0;
     vcDetailRoof = 0.0;
     vec3 detailNormal = normalize(vInteriorNormal);
-    // Normale de la facette, par dérivées écran — calculée hors de tout
-    // branchement (les dérivées y sont indéfinies) et jamais nulle : un seul
-    // pixel NaN, étalé par le bloom, noircit l'image entière.
-    vec3 detailFaceRaw = cross(dFdx(vDetailPos), dFdy(vDetailPos));
-    vec3 detailFace = detailFaceRaw / max(length(detailFaceRaw), 1e-12);
-    float detailSlope = smoothstep(0.22, 0.36, detailNormal.y) * (1.0 - smoothstep(0.93, 0.97, detailNormal.y))
-      * (1.0 - step(0.5, vInteriorMode));
-    #ifdef VC_ROOFING
-    // Sans branchement : fwidth() doit rester défini partout.
-    {
-      // Sens des rangs : pris sur la normale de la facette (dérivées écran),
-      // constante sur tout un pan. La normale interpolée, elle, tourne d'un
-      // bord à l'autre des pans lissés d'une flèche : projetée dessus, la
-      // position donnait des tuiles larges d'un côté et en lamelles de l'autre.
-      vec3 tileAlong = normalize(cross(vec3(0.0, 1.0, 0.0), detailFace) + vec3(1e-5, 0.0, 0.0));
-      float tileCourse = vDetailPos.y * 12.0;
-      float tileColumn = dot(vDetailPos, tileAlong) * 8.0;
-      // Le motif s'efface dès qu'une tuile approche la taille d'un pixel
-      // (flèches raides vues de loin) : en deçà, il ne fait que du moiré.
-      float tileFootprint = max(fwidth(tileCourse), fwidth(tileColumn));
-      float tileFade = detailSlope
-        * (1.0 - smoothstep(9.0, 30.0, length(vViewPosition)))
-        * (1.0 - smoothstep(0.12, 0.4, tileFootprint));
-      float tileRow = floor(tileCourse);
-      float tileV = fract(tileCourse); // 0 = bas du rang (pureau), 1 = sous le rang du dessus
-      float tileU = tileColumn + mod(tileRow, 2.0) * 0.5;
-      // Aux bords d'une ardoise, teinte et relief changent d'un coup : sur un
-      // pixel de large, on les ramène à leur valeur moyenne, sinon chaque
-      // rang se dessine en marches d'escalier (crénelage).
-      float tileEdge = smoothstep(0.0, 1.5 * fwidth(tileCourse), min(tileV, 1.0 - tileV))
-        * smoothstep(0.0, 1.5 * fwidth(tileU), min(fract(tileU), 1.0 - fract(tileU)));
-      float tileSeed = mix(0.5, vcHash(vec3(floor(tileU), tileRow, 3.0)), tileEdge);
-      float tileJoint = smoothstep(0.0, 0.1, fract(tileU)) * smoothstep(1.0, 0.9, fract(tileU));
-      // Ombre portée par le rang du dessus, joints, et teinte propre à chaque tuile.
-      float tileShade = mix(0.66, 1.0, smoothstep(0.62, 0.95, 1.0 - tileV * 0.45) * (0.35 + 0.65 * tileJoint))
-        * (0.8 + 0.4 * tileSeed);
-      tileShade *= mix(0.74, 1.0, smoothstep(0.0, 0.3, 1.0 - tileV));
-      diffuseColor.rgb *= mix(1.0, mix(0.82, tileShade, tileEdge), tileFade);
-      // Chaque ardoise se relève vers son bord bas, par-dessus la suivante.
-      vcDetailTile = (1.0 - tileV) * (0.6 + 0.4 * tileSeed) * tileJoint * 0.035 * tileFade * tileEdge;
-      vcDetailRoof = detailSlope;
-    }
-    #endif
 
     #ifdef VC_MASONRY
     {

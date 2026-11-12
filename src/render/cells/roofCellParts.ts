@@ -403,8 +403,17 @@ export function gableRoofParts(
 const EAVE_OVERHANG = 1.2;
 /** Hauteur du coyau (partie évasée, moins pentue) au-dessus de l'égout. */
 const FLARE_RISE = 0.08;
-/** Nombre de rangs d'ardoise, en teintes alternées, sur le cône. */
+/** Nombre de bandes du cône (support des ardoises). */
 const SLATE_COURSES = 5;
+/** Ardoises : longueur visée d'un rang le long de la pente, largeur visée, épaisseur, relevé du bas, recouvrement, jour. */
+const SLATE_ROW = 0.105;
+const SLATE_W = 0.105;
+const SLATE_T = 0.014;
+const SLATE_LIFT = 0.011;
+const SLATE_LAP = 0.03;
+const SLATE_GAP = 0.005;
+/** En deçà de cette échelle du contour, la pointe reste nue (couverte par l'épi) : les ardoises s'y chevaucheraient. */
+const SLATE_MIN_SCALE = 0.1;
 
 /**
  * Toiture de tour "en poivrière" façon Carcassonne : corniche de pierre,
@@ -420,7 +429,7 @@ function towerRoofParts({ radii, settings }: CellContext): Part[] {
 
   const { slateLight, slateUnder } = shades(spireColor, { slateLight: 0.08, slateUnder: -0.35 });
   const corniceColor = varyColorBrightness(wallBaseColor, -0.14);
-  const slate = { roughness: 0.62, metalness: 0.08, roofing: true };
+  const slate = { roughness: 0.8 };
 
   const parts: Part[] = [];
 
@@ -456,7 +465,83 @@ function towerRoofParts({ radii, settings }: CellContext): Part[] {
   for (let i = 0; i < rings.length - 1; i += 1) {
     const [y0, s0] = rings[i];
     const [y1, s1] = rings[i + 1];
-    parts.push(part(spireBandGeo(towerR, towerRadii, y0, s0, y1, s1), i % 2 === 0 ? spireColor : slateLight, slate));
+    // Voligeage sombre : il ne se voit qu'entre les ardoises, et à la pointe.
+    parts.push(part(spireBandGeo(towerR, towerRadii, y0, s0, y1, s1), slateUnder, { roughness: 0.9 }));
+  }
+
+  // ── Ardoises ──
+  // De vraies ardoises (blocs aux arêtes arrondies, 12 sommets), en rangs
+  // qui font le tour du contour de la tour, chacune relevée vers le bas
+  // par-dessus le rang du dessous, en quinconce d'un rang à l'autre.
+  const contour = getRoundedRectContourPoints(towerR, towerR, towerRadii);
+  const perimeter = contour.reduce((sum, [x0, z0], i) => {
+    const [x1, z1] = contour[(i + 1) % contour.length];
+    return sum + Math.hypot(x1 - x0, z1 - z0);
+  }, 0);
+  const slateGeo = stoneBlockGeo(STONE_EDGE.left | STONE_EDGE.right | STONE_EDGE.bottom);
+  const slateTones = [
+    spireColor,
+    slateLight,
+    varyColorBrightness(spireColor, -0.08),
+    varyColorBrightness(spireColor, 0.04),
+  ];
+  const bottom = new THREE.Vector3();
+  const top = new THREE.Vector3();
+  const axisX = new THREE.Vector3();
+  const axisY = new THREE.Vector3();
+  const axisZ = new THREE.Vector3();
+  const tilted = new THREE.Vector3();
+  const basis = new THREE.Matrix4();
+  let rowIndex = 0;
+  for (let i = 0; i < rings.length - 1; i += 1) {
+    const [bandY0, bandS0] = rings[i];
+    const [bandY1, bandS1] = rings[i + 1];
+    const slope = Math.hypot(bandY1 - bandY0, (bandS0 - bandS1) * towerR);
+    const rows = Math.max(1, Math.round(slope / SLATE_ROW));
+    for (let r = 0; r < rows; r += 1, rowIndex += 1) {
+      const y0 = bandY0 + ((bandY1 - bandY0) * r) / rows;
+      const y1 = bandY0 + ((bandY1 - bandY0) * (r + 1)) / rows;
+      const s0 = bandS0 + ((bandS1 - bandS0) * r) / rows;
+      const s1 = bandS0 + ((bandS1 - bandS0) * (r + 1)) / rows;
+      const mid = (s0 + s1) / 2;
+      if (mid < SLATE_MIN_SCALE) continue;
+      const count = Math.max(6, Math.round((perimeter * mid) / SLATE_W));
+      const width = (perimeter * mid) / count - SLATE_GAP;
+      for (let j = 0; j < count; j += 1) {
+        const t = (j + (rowIndex % 2 === 0 ? 0 : 0.5)) / count;
+        const at = sampleContourPerimeter(contour, t);
+        const ahead = sampleContourPerimeter(contour, t + 0.002);
+        const behind = sampleContourPerimeter(contour, t - 0.002);
+        // Contour dans le plan de la shape (z = −y de la scène, comme shapedBoxGeo).
+        bottom.set(at.x * s0, y0, -at.z * s0);
+        top.set(at.x * s1, y1, -at.z * s1);
+        axisY.subVectors(top, bottom);
+        const length = axisY.length() + SLATE_LAP;
+        axisY.normalize();
+        axisX.set(ahead.x - behind.x, 0, -(ahead.z - behind.z)).normalize();
+        axisZ.crossVectors(axisX, axisY).normalize();
+        // Normale vers l'extérieur de la tour.
+        if (axisZ.x * at.x - axisZ.z * at.z < 0) axisZ.negate();
+        // Bas de l'ardoise relevé : rotation autour de son axe x.
+        const tilt = Math.asin(Math.min(0.9, SLATE_LIFT / length));
+        tilted.copy(axisY).multiplyScalar(Math.cos(tilt)).addScaledVector(axisZ, -Math.sin(tilt));
+        axisZ.multiplyScalar(Math.cos(tilt)).addScaledVector(axisY, Math.sin(tilt));
+        axisY.copy(tilted);
+        axisX.crossVectors(axisY, axisZ);
+        basis.makeBasis(axisX, axisY, axisZ);
+        const out = SLATE_T / 2 + SLATE_LIFT / 2 + 0.002;
+        const centre = bottom.addScaledVector(tilted, length / 2).addScaledVector(axisZ, out);
+        parts.push({
+          ...part(
+            slateGeo,
+            slateTones[(rowIndex * 5 + j * 3) % slateTones.length],
+            slate,
+            mul(xform([centre.x, centre.y, centre.z]), basis, xform([0, 0, 0], [0, 0, 0], [width, length, SLATE_T])),
+          ),
+          rigidNormals: true,
+        });
+      }
+    }
   }
 
   // Dessous de l'avant-toit, pour qu'il ne soit pas creux vu d'en bas.

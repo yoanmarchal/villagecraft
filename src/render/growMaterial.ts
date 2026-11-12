@@ -222,13 +222,11 @@ export interface GrowMaterialOptions {
   detail?: boolean;
   /** Fond de mur teinté en mortier (voir `MaterialSpec.masonry`) ; suppose `detail`. */
   masonry?: boolean;
-  /** Rangs de tuiles ou d'ardoises (voir `MaterialSpec.roofing`) ; suppose `detail`. */
-  roofing?: boolean;
 }
 
 export function createGrowMaterialSet(
   params: THREE.MeshStandardMaterialParameters,
-  { detail = false, masonry = false, roofing = false }: GrowMaterialOptions = {},
+  { detail = false, masonry = false }: GrowMaterialOptions = {},
 ): GrowMaterialSet {
   const initialTime = performance.now() / 1000;
   // Objet uniform créé ici et non à la compilation : une mise à jour avant
@@ -238,13 +236,11 @@ export function createGrowMaterialSet(
   const material = new THREE.MeshStandardMaterial(params);
   // three partage les programmes dont `onBeforeCompile` a le même texte :
   // sans clé distincte, les variantes avec et sans détail se confondraient.
-  material.customProgramCacheKey = () =>
-    `grow${detail ? '-detail' : ''}${masonry ? '-masonry' : ''}${roofing ? '-roofing' : ''}`;
+  material.customProgramCacheKey = () => `grow${detail ? '-detail' : ''}${masonry ? '-masonry' : ''}`;
   if (masonry) {
     // Les faces de cavité de la coque (mêmes bornes que l'éclairage intérieur) restent enduites.
     material.defines = { ...material.defines, VC_MASONRY: '', VC_CAVITY_HALF_WIDTH: CAVITY_HALF_WIDTH };
   }
-  if (roofing) material.defines = { ...material.defines, VC_ROOFING: '' };
   material.onBeforeCompile = (shader) => {
     injectGrow(shader, initialTime);
     injectInterior(shader, interiorLight);
