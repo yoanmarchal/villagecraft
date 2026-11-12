@@ -8,6 +8,7 @@ import * as THREE from 'three';
 import { shades, varyColorBrightness } from '../../colorPalettes';
 import { boxGeo } from '../geometryCache';
 import { mul, part, xform, type Part } from '../parts';
+import { stoneCourseParts } from './masonryParts';
 
 const JOINT = 0.014;
 
@@ -101,7 +102,12 @@ export function crenellatedWalkwayParts(
 
   for (const side of [1, -1] as const) {
     const z = side * faceZ;
-    parts.push(part(parapetGeo, stone, { roughness: 0.92 }, mul(group, xform([0, parapetY, z]))));
+    // Noyau teinté en mortier, monté en vraies pierres qui le débordent.
+    const parapetMatrix = mul(group, xform([0, parapetY, z]));
+    parts.push(
+      part(parapetGeo, stone, { roughness: 0.92, masonry: true }, parapetMatrix),
+      ...stoneCourseParts(parapetMatrix, 1.0, parapetH, MERLON_DEPTH, stone, 0.9, side > 0 ? 11 : 23),
+    );
     for (const x of [-0.25, 0.25]) {
       parts.push(
         ...piercedMerlonParts(mul(group, xform([x, merlonY, z])), merlonR * MERLON_WIDTH_FACTOR, merlonH, stone),
@@ -127,22 +133,21 @@ function piercedMerlonParts(matrix: THREE.Matrix4, w: number, h: number, stone: 
   const sideW = (w - MERLON_SLIT_W) / 2;
   const bottomH = slitY - slitH / 2 + h / 2;
   const topH = h / 2 - slitY - slitH / 2;
-  const mat = { roughness: 0.92 };
+  const mat = { roughness: 0.92, masonry: true };
   const sideX = MERLON_SLIT_W / 2 + sideW / 2;
+  const jambH = h - topH;
+  const jamb = (x: number) => mul(matrix, xform([x, -topH / 2, 0]));
+  const lintel = mul(matrix, xform([0, h / 2 - topH / 2, 0]));
+  const sill = mul(matrix, xform([0, -h / 2 + bottomH / 2, 0]));
   return [
-    part(boxGeo(+sideW.toFixed(4), h, MERLON_DEPTH), stone, mat, mul(matrix, xform([-sideX, 0, 0]))),
-    part(boxGeo(+sideW.toFixed(4), h, MERLON_DEPTH), stone, mat, mul(matrix, xform([sideX, 0, 0]))),
-    part(
-      boxGeo(MERLON_SLIT_W, +bottomH.toFixed(4), MERLON_DEPTH),
-      stone,
-      mat,
-      mul(matrix, xform([0, -h / 2 + bottomH / 2, 0])),
-    ),
-    part(
-      boxGeo(MERLON_SLIT_W, +topH.toFixed(4), MERLON_DEPTH),
-      stone,
-      mat,
-      mul(matrix, xform([0, h / 2 - topH / 2, 0])),
-    ),
+    // Noyau (mortier) : deux jambages, un linteau d'une pièce, l'appui de la fente.
+    part(boxGeo(+sideW.toFixed(4), +jambH.toFixed(4), MERLON_DEPTH), stone, mat, jamb(-sideX)),
+    part(boxGeo(+sideW.toFixed(4), +jambH.toFixed(4), MERLON_DEPTH), stone, mat, jamb(sideX)),
+    part(boxGeo(+w.toFixed(4), +topH.toFixed(4), MERLON_DEPTH), stone, mat, lintel),
+    part(boxGeo(MERLON_SLIT_W, +bottomH.toFixed(4), MERLON_DEPTH - 0.02), stone, mat, sill),
+    // Pierres : jambages montés en assises, linteau monolithe.
+    ...stoneCourseParts(jamb(-sideX), sideW, jambH, MERLON_DEPTH, stone, 0.9, 31),
+    ...stoneCourseParts(jamb(sideX), sideW, jambH, MERLON_DEPTH, stone, 0.9, 47),
+    ...stoneCourseParts(lintel, w, topH, MERLON_DEPTH, stone, 0.9, 59),
   ];
 }

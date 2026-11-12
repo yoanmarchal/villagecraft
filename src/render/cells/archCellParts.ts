@@ -27,11 +27,13 @@ import {
   isIsolatedBlock,
   isRampart,
   isTowerColumn,
+  type CellFace,
   type CellLookup,
 } from '../../utils/cellUtils';
 import { shades } from '../../colorPalettes';
-import { archBodyGeo, archVoussoirGeo, archVoussoirMidX, cornerFilletGeo } from '../geometryCache';
-import { mul, part, xform, type Part } from '../parts';
+import { archBodyGeo, archCircle, archVoussoirGeo, archVoussoirMidX, cornerFilletGeo } from '../geometryCache';
+import { masonryFacesOf, masonryParts } from './masonryParts';
+import { mul, part, xform, type MaterialSpec, type Part } from '../parts';
 import { gableRoofParts } from './roofCellParts';
 import { crenellatedWalkwayParts, PARAPET_H, WALKWAY_H, walkwayDeckParts } from './walkwayParts';
 import type { RenderSettings } from '../renderSettings';
@@ -41,7 +43,10 @@ import type { CellContext } from './context';
 /** Montée de l'intrados selon la portée (en cases) : l'arc reste surbaissé et laisse une clé épaisse. */
 const ARCH_RISE: Record<number, number> = { 1: 0.42, 2: 0.66 };
 const VOUSSOIR_RING = 0.13;
-const VOUSSOIR_DEPTH = 0.03;
+// Plus épais que la saillie des pierres du parement : l'arc reste en avant du mur.
+const VOUSSOIR_DEPTH = 0.045;
+/** Les têtes d'une arche sont planes : pas de coin arrondi pour son parement. */
+const NO_RADII = { backLeft: 0, backRight: 0, frontLeft: 0, frontRight: 0, max: 0, uniform: true };
 
 export function archCellParts(ctx: CellContext): Part[] {
   const { cell, lookup, settings } = ctx;
@@ -66,9 +71,54 @@ export function archCellParts(ctx: CellContext): Part[] {
 
   const wall = settings.wallBaseColor;
   const { voussoir, keystone } = shades(wall, { voussoir: -0.08, keystone: -0.16 });
-  const stone = { roughness: settings.wallRoughness };
+  const stone: MaterialSpec = { roughness: settings.wallRoughness, masonry: true };
 
   const parts: Part[] = [part(archBodyGeo(rise, span, slice), wall, stone, G)];
+
+  // Parement de pierre sur les têtes de l'arche (les deux faces que traverse
+  // le passage), arrêté au-dessus des claveaux : les pierres suivent l'extrados.
+  const { centerY, radius } = archCircle(rise, span);
+  // Les pierres s'arrêtent DERRIÈRE les claveaux (plus saillants qu'elles), à
+  // 3 cm de l'intrados : leur découpe en marches reste cachée. Arrêtées à
+  // l'extrados, elles dessinaient un escalier tout autour de l'arc.
+  const extrados = radius + 0.03;
+  // Une tête d'arche se prolonge sur les raccords d'angle de ses appuis
+  // (coin arrondi d'une tour, voir abutmentFillets) : sans pierres, ils
+  // faisaient deux bandes lisses de part et d'autre de l'arc.
+  const filletWidth = (end: -1 | 1, face: CellFace): number => {
+    if (end < 0 ? before !== 0 : after !== 0) return 0;
+    const support = getCell(lookup, x + dx * end, y, z + dz * end);
+    if (!support?.isOccupied || support.type === BlockType.Arch || support.type === BlockType.Roof) return 0;
+    // Coin de l'appui tourné vers l'arche, du côté de cette face.
+    const towardsArch = end > 0 ? (spanAlongX ? 'Left' : 'back') : spanAlongX ? 'Right' : 'front';
+    const corner = spanAlongX
+      ? (`${face === 'front' ? 'front' : 'back'}${towardsArch}` as 'frontLeft')
+      : (`${towardsArch}${face === 'right' ? 'Right' : 'Left'}` as 'frontLeft');
+    const r = getCornerRadii(lookup, support, settings)[corner];
+    return r < 0.01 ? 0 : r;
+  };
+  // Abscisse dans le repère de l'arche : le long de la portée, x local = ±t
+  // (la rotation de 90° envoie le x local vers −z, alors que t suit +z).
+  const floorAt = (t: number) => {
+    const xa = (spanAlongX ? t : -t) + offset;
+    return Math.abs(xa) >= extrados ? -0.5 : centerY + Math.sqrt(extrados * extrados - xa * xa);
+  };
+  parts.push(
+    ...masonryParts(
+      { cell, lookup, radii: NO_RADII },
+      // Comme pour les murs : une tête d'arche derrière un toit (appentis,
+      // maison plus basse) se voit au-dessus de lui — elle restait nue.
+      masonryFacesOf(lookup, cell)
+        .filter((face) => (spanAlongX ? face === 'front' || face === 'back' : face === 'left' || face === 'right'))
+        .map((face) => ({
+          face,
+          floorAt,
+          overhang: [filletWidth(-1, face), filletWidth(1, face)] as [number, number],
+        })),
+      wall,
+      settings.windowStoneRoughness,
+    ),
+  );
 
   // Claveaux sur les deux têtes de l'arche, légèrement en saillie ; chaque
   // case pose ceux dont le milieu tombe chez elle.
@@ -187,7 +237,7 @@ function abutmentFillets(
   ddx: number,
   ddz: number,
   topY: number,
-  mat: { roughness: number },
+  mat: MaterialSpec,
 ): Part[] {
   const support = getCell(lookup, cell.x + ddx, cell.y, cell.z + ddz);
   if (!support?.isOccupied || support.type === BlockType.Arch || support.type === BlockType.Roof) return [];

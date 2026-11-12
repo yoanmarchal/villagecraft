@@ -20,7 +20,7 @@ export function shellParts(ctx: CellContext, baseColor: string, openings: Openin
   const body = ctx.hollow ? hollowShellGeo(ctx.radii, ctx.hollow, openings) : shapedBoxGeo(1.0, 1.0, 1.0, ctx.radii);
   return [
     // Coque : seules ses faces de cavité reçoivent la lumière de la pièce.
-    { ...part(body, baseColor, { roughness, doubleSide: ctx.hollow !== null }), interior: 'shell' },
+    { ...part(body, baseColor, { roughness, doubleSide: ctx.hollow !== null, masonry: true }), interior: 'shell' },
     // Pierres d'angle : communes aux deux cell types
     ...quoinParts(ctx, baseColor),
     // Parquet, plafond, poutre, chandelier et mobilier de la pièce

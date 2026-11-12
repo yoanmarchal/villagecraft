@@ -14,11 +14,10 @@
 
 import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three-stdlib';
-import { mergeVertices } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
+import { mergeVertices, toCreasedNormals } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { Brush, Evaluator, SUBTRACTION } from 'three-bvh-csg';
 import type { CellFace, CornerRadii, HollowShape } from '../utils/cellUtils';
 import { FACE_ROTATION_Y, getRoundedRectContourPoints } from '../utils/cellUtils';
-import { seededRandom } from '../utils/noise';
 
 /**
  * Borne du cache (LRU). Un village complet n'utilise que quelques centaines
@@ -120,6 +119,15 @@ export function torusArcGeo(
   );
 }
 
+/**
+ * Angle de pli des contours extrudés : en deçà, deux facettes voisines
+ * partagent leurs normales. Les arcs des tours et des coins arrondis (10
+ * segments par quart de tour, 9° entre facettes) sont ainsi lissés — à plat,
+ * chaque facette se lisait comme une bande verticale sous la lumière du ciel —
+ * tandis que les angles droits et les arêtes haut/bas restent vifs.
+ */
+const CONTOUR_CREASE_ANGLE = Math.PI / 6;
+
 // ── Corps de cellule : contour "carré à coins arrondis" extrudé ──────────────
 
 const radiiKey = (radii: CornerRadii) =>
@@ -140,8 +148,7 @@ export function shapedBoxGeo(w: number, h: number, d: number, radii: CornerRadii
     // Plan shape XY → scène XZ, extrusion Z → hauteur Y, recentrée.
     geo.applyMatrix4(new THREE.Matrix4().makeRotationX(-Math.PI / 2));
     geo.applyMatrix4(new THREE.Matrix4().makeTranslation(0, -h / 2, 0));
-    geo.computeVertexNormals();
-    return geo;
+    return toCreasedNormals(geo, CONTOUR_CREASE_ANGLE);
   });
 }
 
@@ -268,7 +275,7 @@ function verticalPrism(sectionXZ: Array<[number, number]>, y0: number, y1: numbe
   const geo = new THREE.ExtrudeGeometry(shape, { depth: y1 - y0, bevelEnabled: false });
   geo.applyMatrix4(new THREE.Matrix4().makeRotationX(-Math.PI / 2));
   geo.applyMatrix4(new THREE.Matrix4().makeTranslation(0, y0, 0));
-  return geo;
+  return toCreasedNormals(geo, CONTOUR_CREASE_ANGLE);
 }
 
 /** Volume qui perce une ouverture de part en part dans le mur de la face `face`. */
@@ -525,7 +532,7 @@ export function towerSoffitGeo(halfSize: number, radii: CornerRadii, y: number, 
  * les bords bas de la rue (x = ±span/2, y = −0.5) et monte de `rise` en son
  * milieu. Coordonnées centrées sur le milieu de l'arche.
  */
-function archCircle(rise: number, span: number): { centerY: number; radius: number; springAngle: number } {
+export function archCircle(rise: number, span: number): { centerY: number; radius: number; springAngle: number } {
   const halfSpan = span / 2;
   const radius = (halfSpan * halfSpan + rise * rise) / (2 * rise);
   const centerY = -0.5 + rise - radius;
@@ -622,60 +629,6 @@ export function archVoussoirGeo(
     const geo = new THREE.ExtrudeGeometry(shape, { depth, bevelEnabled: false });
     geo.applyMatrix4(new THREE.Matrix4().makeTranslation(0, 0, -depth / 2));
     geo.computeVertexNormals();
-    return geo;
-  });
-}
-
-// ── Pavés : dalle de rue d'une cellule ───────────────────────────────────────
-
-/** Nombre de variantes de dalle pavée (tirées puis tournées selon la cellule). */
-export const COBBLE_TILE_VARIANTS = 3;
-const COBBLES_PER_SIDE = 6;
-
-/**
- * Une cellule de rue pavée (1 × 1, posée sur y = 0) : 6 × 6 pavés
- * irréguliers (taille, hauteur, décalage, légère rotation) fusionnés en une
- * seule géométrie, déterministe par variante. Une rue entière ne coûte
- * ainsi qu'une part par cellule.
- */
-export function cobbleTileGeo(variant: number): THREE.BufferGeometry {
-  return getGeo(`cobbles|${variant}`, () => {
-    const random = seededRandom(0xc0bb1e + variant * 7919);
-    const pitch = 1 / COBBLES_PER_SIDE;
-    const positions: number[] = [];
-    const normals: number[] = [];
-    const matrix = new THREE.Matrix4();
-    const quaternion = new THREE.Quaternion();
-    const euler = new THREE.Euler();
-
-    for (let i = 0; i < COBBLES_PER_SIDE; i += 1) {
-      for (let j = 0; j < COBBLES_PER_SIDE; j += 1) {
-        // Rangs décalés d'un demi-pavé une ligne sur deux, comme un vrai
-        // pavage : le dernier pavé d'un rang décalé déborderait de la dalle,
-        // il devient un demi-pavé calé contre le bord opposé.
-        const staggered = j % 2 === 1;
-        const isHalf = staggered && i === COBBLES_PER_SIDE - 1;
-        const w = (isHalf ? pitch / 2 : pitch) * (0.78 + random() * 0.14);
-        const d = pitch * (0.78 + random() * 0.14);
-        const h = 0.028 + random() * 0.018;
-        const jitter = () => (random() - 0.5) * pitch * 0.1;
-        const x = isHalf ? -0.5 + pitch / 4 : -0.5 + pitch * (i + 0.5) + (staggered ? pitch / 2 : 0) + jitter();
-        const z = -0.5 + pitch * (j + 0.5) + jitter();
-        euler.set((random() - 0.5) * 0.08, (random() - 0.5) * 0.25, (random() - 0.5) * 0.08);
-        quaternion.setFromEuler(euler);
-        matrix.compose(new THREE.Vector3(x, h / 2, z), quaternion, new THREE.Vector3(1, 1, 1));
-
-        const box = new THREE.BoxGeometry(w, h, d).toNonIndexed();
-        box.applyMatrix4(matrix);
-        positions.push(...(box.getAttribute('position').array as Float32Array));
-        normals.push(...(box.getAttribute('normal').array as Float32Array));
-        box.dispose();
-      }
-    }
-
-    const geo = new THREE.BufferGeometry();
-    geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
-    geo.setAttribute('normal', new THREE.Float32BufferAttribute(normals, 3));
     return geo;
   });
 }
@@ -803,6 +756,97 @@ export function gableGeo(eaveY: number, ridgeY: number): THREE.BufferGeometry {
     geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
     geo.setIndex(new THREE.BufferAttribute(idx, 1));
     geo.computeVertexNormals();
+    return geo;
+  });
+}
+
+// ── Pierre de maçonnerie ─────────────────────────────────────────────────────
+
+/** Côtés d'une pierre qui sont de vrais bords (joint, chanfrein) — les autres sont des coupes internes. */
+export const STONE_EDGE = { left: 1, right: 2, top: 4, bottom: 8 } as const;
+
+/** Retrait de la face avant sur un bord, en fraction de la largeur / de la hauteur du bloc. */
+const STONE_INSET_X = 0.06;
+const STONE_INSET_Y = 0.1;
+/** Cote (bloc unité, dos à −0,5 et face à +0,5) où le flanc droit laisse place à l'arrondi. */
+const STONE_SHOULDER_Z = 0.08;
+
+/**
+ * Bloc unité d'une pierre de parement (masonryParts.ts la met à l'échelle) :
+ * dos en z = −0,5 (dans le mur), flancs droits jusqu'à l'épaulement, puis
+ * une face avant en retrait sur les côtés `mask` (STONE_EDGE). Les normales
+ * ne sont pas celles des facettes : elles sont lissées d'un anneau à l'autre
+ * — tournées vers l'extérieur sur l'épaulement, à mi-chemin sur le pourtour
+ * de la face —, ce qui donne à l'éclairage une pierre aux arêtes arrondies et
+ * au parement légèrement bombé pour 12 sommets seulement. Elles sont écrites
+ * pour le bloc à sa taille finale : le part doit porter `rigidNormals` (la
+ * mise à l'échelle, très inégale, les aplatirait toutes vers l'avant).
+ *
+ * Un côté hors masque est une coupe interne (pierre à cheval sur deux
+ * cellules, tronçon d'arc) : ni retrait, ni flanc, ni inclinaison de normale,
+ * le morceau voisin s'y raccorde bord à bord, sans arête visible. Pas de dos.
+ * 16 variantes en cache.
+ */
+export function stoneBlockGeo(mask: number): THREE.BufferGeometry {
+  return getGeo(`stoneBlock|${mask}`, () => {
+    const left = (mask & STONE_EDGE.left) !== 0;
+    const right = (mask & STONE_EDGE.right) !== 0;
+    const top = (mask & STONE_EDGE.top) !== 0;
+    const bottom = (mask & STONE_EDGE.bottom) !== 0;
+
+    // Trois anneaux de quatre sommets (bas-gauche, bas-droite, haut-droite,
+    // haut-gauche) : dos, épaulement, face. `tilt` : part de la normale
+    // tournée vers l'extérieur du côté ; `forward` : part tournée vers l'avant.
+    const corners: Array<[-1 | 1, -1 | 1]> = [
+      [-1, -1],
+      [1, -1],
+      [1, 1],
+      [-1, 1],
+    ];
+    const rings = [
+      { z: -0.5, inset: 0, tilt: 1, forward: 0 },
+      { z: STONE_SHOULDER_Z, inset: 0, tilt: 1, forward: 0.75 },
+      { z: 0.5, inset: 1, tilt: 0.42, forward: 1 },
+    ];
+    const positions: number[] = [];
+    const normals: number[] = [];
+    const normal = new THREE.Vector3();
+    for (const ring of rings) {
+      for (const [sx, sy] of corners) {
+        const edgeX = sx < 0 ? left : right;
+        const edgeY = sy < 0 ? bottom : top;
+        positions.push(
+          sx * (0.5 - (edgeX ? STONE_INSET_X * ring.inset : 0)),
+          sy * (0.5 - (edgeY ? STONE_INSET_Y * ring.inset : 0)),
+          ring.z,
+        );
+        normal.set(edgeX ? sx * ring.tilt : 0, edgeY ? sy * ring.tilt : 0, ring.forward);
+        if (normal.lengthSq() === 0) normal.set(0, 0, 1);
+        normal.normalize();
+        normals.push(normal.x, normal.y, normal.z);
+      }
+    }
+
+    // Faces : avant, puis pour chaque côté qui est un vrai bord, le flanc
+    // (dos → épaulement) et l'arrondi (épaulement → face).
+    const index: number[] = [8, 9, 10, 8, 10, 11];
+    const sides: Array<[number, number, boolean]> = [
+      [0, 1, bottom],
+      [1, 2, right],
+      [2, 3, top],
+      [3, 0, left],
+    ];
+    for (const [a, b, edge] of sides) {
+      if (!edge) continue;
+      for (const base of [0, 4]) {
+        index.push(base + a, base + b, base + 4 + b, base + a, base + 4 + b, base + 4 + a);
+      }
+    }
+
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+    geo.setAttribute('normal', new THREE.Float32BufferAttribute(normals, 3));
+    geo.setIndex(index);
     return geo;
   });
 }

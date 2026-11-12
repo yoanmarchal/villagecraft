@@ -8,6 +8,7 @@ import { shades } from '../../colorPalettes';
 import { roundedBoxGeo } from '../geometryCache';
 import { mul, part, xform, type Part } from '../parts';
 import { shellParts } from './shellParts';
+import { masonryFacesOf, masonryParts } from './masonryParts';
 import type { CellContext } from './context';
 
 export function standardCellParts(ctx: CellContext): Part[] {
@@ -28,11 +29,22 @@ export function standardCellParts(ctx: CellContext): Part[] {
           trimGeo,
           trimColor,
           { roughness: 0.9 },
-          mul(xform([0, 0, 0], [0, FACE_ROTATION_Y[face], 0]), xform([0, -0.46, 0.505])),
+          mul(xform([0, 0, 0], [0, FACE_ROTATION_Y[face], 0]), xform([0, -0.46, 0.518])),
         ),
       );
     }
   }
+
+  // Parement de pierre (masonryParts.ts) ; la plinthe garde sa bande libre.
+  const plinth = isFoundation ? [] : [{ t0: -1, t1: 1, y0: -0.5, y1: -0.42 }];
+  parts.push(
+    ...masonryParts(
+      ctx,
+      masonryFacesOf(ctx.lookup, cell).map((face) => ({ face, holes: exposedFaces.includes(face) ? plinth : [] })),
+      baseColor,
+      settings.windowStoneRoughness,
+    ),
+  );
 
   // (Plus de "dalle de fondation" : posée à mi-hauteur de la cellule, elle
   // n'était qu'enfouie dans le bloc plein ; dans une coque creuse elle

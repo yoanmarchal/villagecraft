@@ -20,7 +20,6 @@ export function pickRenderSettings(state: RenderSettings): RenderSettings {
     roofBaseColor: state.roofBaseColor,
     spireColor: state.spireColor,
 
-    windowStonesPerFace: state.windowStonesPerFace,
     windowStoneRoughness: state.windowStoneRoughness,
     quoinMargin: state.quoinMargin,
     quoinRoughness: state.quoinRoughness,

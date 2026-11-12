@@ -9,51 +9,54 @@
 import type { CellFace } from '../../utils/cellUtils';
 import { FACE_ROTATION_Y, getFaceCorners } from '../../utils/cellUtils';
 import { varyColorBrightness, shades } from '../../colorPalettes';
-import { WINDOW_PROTECTED_AREAS, isInProtectedArea } from '../../config/protectedAreasConfig';
 import {
   boxGeo,
-  cylinderGeo,
   frameWithHoleGeo,
   OPENING_SIZES,
   roundedBoxGeo,
+  torusArcGeo,
   WALL_T,
   type OpeningKind,
   type OpeningSpec,
 } from '../geometryCache';
-import { mul, part, xform, type Part } from '../parts';
+import { asInterior, mul, part, xform, type Part } from '../parts';
 import { shellParts } from './shellParts';
 import { openingKindsOf } from './openings';
-import { stoneParts } from './stoneParts';
-import { isQuoinProtected } from './decorations';
+import { masonryFacesOf, masonryParts, type MasonryHole } from './masonryParts';
 import type { CellContext } from './context';
+
+/** Chêne des portes, et fer forgé de leurs ferrures. */
+const DOOR_WOOD_COLOR = '#6b4a2f';
+const DOOR_PLANKS = 5;
+const IRON_COLOR = '#2a2a2e';
+const IRON_MATERIAL = { metalness: 0.6, roughness: 0.5 };
+/** Rideaux : lin, garance, pastel, vert, ocre. */
+const CURTAINS = ['#d8cdb4', '#8a3434', '#3d5a80', '#56704a', '#b8893f'];
+const CLOTH_MATERIAL = { roughness: 1 };
 
 /** Opacité des vitres : assez faible pour voir l'intérieur depuis la rue, de jour comme de nuit. */
 export const WINDOW_GLASS_OPACITY = 0.3;
 
 export function wallWindowCellParts(ctx: CellContext): Part[] {
-  const { cell, lookup, exposedFaces, radii, isIsolated, isRampart, settings } = ctx;
-  // Tours et courtines sont défensives : meurtrières plutôt que fenêtres.
-  const hasArrowSlits = isIsolated || isRampart;
-  const { windowStonesPerFace, windowStoneRoughness, quoinMargin } = settings;
+  const { cell, radii, settings } = ctx;
+  const { windowStoneRoughness } = settings;
 
   const baseColor = settings.wallBaseColor;
   // Verre clair, à peine teinté : l'intérieur (et demain son mobilier) doit
   // se voir depuis la rue. Le soir, la lumière vient de la pièce elle-même
   // (growMaterial.ts) ; la vitre n'ajoute qu'un voile chaud.
   const windowGlassColor = '#c4dbe6';
-  const { windowFrameColor, doorColor } = shades(baseColor, { windowFrameColor: -0.15, doorColor: -0.2 });
+  const { windowFrameColor } = shades(baseColor, { windowFrameColor: -0.15 });
   const doorFrameColor = windowFrameColor; // même teinte que le cadre de fenêtre
-  const separatorColor = varyColorBrightness(windowFrameColor, -0.05);
+  // Menuiseries en chêne sombre : petits-bois des fenêtres et vantaux des portes.
+  const separatorColor = '#4a3626';
+  // Teinte du vantail propre à chaque maison (hash des coordonnées, jamais Math.random).
+  const doorWood = varyColorBrightness(DOOR_WOOD_COLOR, (((cell.x * 7 + cell.z * 13) % 5) - 2) * 0.03);
 
   // Radius moyen du bloc, réutilisé par tous les éléments
   const avgRadius = (radii.backLeft + radii.backRight + radii.frontLeft + radii.frontRight) / 4;
   const windowRadius = Math.min(0.025, avgRadius * 0.9);
   const glassRadius = Math.min(0.02, avgRadius * 0.8);
-
-  // ── Porte : une par pièce au rez-de-chaussée (planDoors, openings.ts) ──
-  const doorFace = ctx.doorFace;
-
-  const hasBands = exposedFaces.length > 0;
 
   // La face d'un mur n'est plate à z=0.5 que sur la portion non couverte par
   // l'arrondi des coins (largeur `1 - 2*radius`). Le cadre et l'ouverture
@@ -83,67 +86,74 @@ export function wallWindowCellParts(ctx: CellContext): Part[] {
   /** Profondeur (z local de face) du milieu de l'épaisseur du mur. */
   const revealZ = 0.5 - WALL_T / 2;
 
-  // ── Pierres apparentes ─────────────────────────────────────────────────
-  if (exposedFaces.length > 0) {
-    const stoneColor = varyColorBrightness(baseColor, -0.25);
-    const baseStoneW = 0.12 + (Math.abs(cell.x) % 4) * 0.02;
-    const baseStoneH = baseStoneW * 0.75;
-
-    parts.push(
-      ...stoneParts({
-        cell,
-        exposedFaces,
-        isIsolated,
-        radii,
-        cornerMode: 'numeric',
-        wallSurfaceOffset: 0.015,
-        stonesPerFace: windowStonesPerFace,
-        seedSalt: { x: 7, y: 11, z: 13, face: 23, stone: 17 },
-        baseSize: { width: baseStoneW, height: baseStoneH },
-        computeSize: (h1, h2, _h3, base) => ({
-          width: base.width * (0.85 + (h1 % 20) / 100),
-          height: base.height * (0.8 + (h2 % 15) / 100),
-        }),
-        distance: { xBase: 0, xModRange: 45, yBase: 0, yModRange: 45 },
-        visual: {
-          thickness: 0.025,
-          cornerRadius: 0.012,
-          smoothness: 4,
-          color: stoneColor,
-          roughness: windowStoneRoughness,
-          metalness: 0.1,
-          metalnessIsolated: 0.05,
-        },
-        // 🔒 Zone protégée propre à WallWithWindowCell
-        isInProtectedZone: (face, x, y, w, h) => {
-          // Mur de cheminée : plein, pas d'ouverture à dégager.
-          if (face !== ctx.fireplaceFace || face === doorFace) {
-            let area = WINDOW_PROTECTED_AREAS.window;
-            if (face === doorFace) {
-              area = WINDOW_PROTECTED_AREAS.door;
-            } else if (hasArrowSlits) {
-              area = WINDOW_PROTECTED_AREAS.arrowSlit;
-            }
-            if (isInProtectedArea(area, x, y, w, h)) return true;
-          }
-
-          if (hasBands) {
-            if (isInProtectedArea(WINDOW_PROTECTED_AREAS.bandTop, x, y, w, h)) return true;
-            if (isInProtectedArea(WINDOW_PROTECTED_AREAS.bandBottom, x, y, w, h)) return true;
-          }
-
-          if (isQuoinProtected(cell, lookup, isIsolated, face, x, w, quoinMargin)) return true;
-
-          return false;
-        },
+  // ── Parement de pierre ─────────────────────────────────────────────────
+  // De vraies pierres en saillie (masonryParts.ts), découpées au ras des
+  // cadres : fenêtre, porte et son seuil, meurtrière.
+  const openingHoles = (kind: OpeningKind, scale: number): MasonryHole[] => {
+    if (kind === 'window') return [{ t0: -0.3 * scale, t1: 0.3 * scale, y0: -0.25, y1: 0.25 }];
+    if (kind === 'slit') return [{ t0: -0.07 * scale, t1: 0.07 * scale, y0: -0.2, y1: 0.2 }];
+    const door = OPENING_SIZES.door;
+    return [
+      { t0: -0.24 * scale, t1: 0.24 * scale, y0: -0.5, y1: door.y + (door.h + 0.08) / 2 },
+      { t0: -0.25 * scale, t1: 0.25 * scale, y0: -0.5, y1: -0.47 },
+    ];
+  };
+  parts.push(
+    ...masonryParts(
+      ctx,
+      masonryFacesOf(ctx.lookup, cell).map((face) => {
+        const opening = openings.find((o) => o.face === face);
+        return { face, holes: opening ? openingHoles(opening.kind, opening.scale) : [] };
       }),
-    );
-  }
+      baseColor,
+      windowStoneRoughness,
+    ),
+  );
+
+  // ── Rideaux ────────────────────────────────────────────────────────────
+  // Côté pièce, tirés de part et d'autre de la fenêtre, sous une tringle :
+  // le premier pli mord de 4 cm sur le jour (sans lui, le mur les cache
+  // entièrement depuis la rue), le reste de la baie reste dégagé. Deux plis
+  // par pan ; une teinte par maison. Éclairés par la pièce (`room`).
+  const curtainColor = CURTAINS[Math.abs(cell.x * 3 + cell.z * 5 + cell.y) % CURTAINS.length];
+  const curtainParts = (faceRot: ReturnType<typeof xform>, scale: number): Part[] => {
+    const win = OPENING_SIZES.window;
+    const edge = (win.w * scale) / 2;
+    const z = 0.5 - WALL_T - 0.008;
+    const dropH = win.h + 0.05;
+    const dropY = win.y + 0.015;
+    const out: Part[] = [
+      part(
+        boxGeo(edge * 2 + 0.12, 0.01, 0.01),
+        IRON_COLOR,
+        IRON_MATERIAL,
+        mul(faceRot, xform([0, win.y + win.h / 2 + 0.035, z])),
+      ),
+    ];
+    for (const side of [-1, 1]) {
+      out.push(
+        part(
+          boxGeo(0.045, dropH, 0.01),
+          curtainColor,
+          CLOTH_MATERIAL,
+          mul(faceRot, xform([side * (edge - 0.018), dropY, z])),
+        ),
+        part(
+          boxGeo(0.04, dropH, 0.006),
+          varyColorBrightness(curtainColor, -0.12),
+          CLOTH_MATERIAL,
+          mul(faceRot, xform([side * (edge + 0.024), dropY, z + 0.002])),
+        ),
+      );
+    }
+    return asInterior('room', out);
+  };
 
   // ── Fenêtre ────────────────────────────────────────────────────────────
   const windowParts = (rotation: number, scale: number): Part[] => {
     const faceRot = xform([0, 0, 0], [0, rotation, 0]);
     return [
+      ...(ctx.hollow ? curtainParts(faceRot, scale) : []),
       // Cadre percé sur la face extérieure, son jour aligné sur l'ouverture de la coque
       part(
         frameWithHoleGeo(0.6 * scale, 0.5, windowRadius, 0.54 * scale, 0.44, glassRadius, 0.02),
@@ -185,18 +195,37 @@ export function wallWindowCellParts(ctx: CellContext): Part[] {
         { roughness: 0.88 },
         mul(faceRot, xform([0, door.y, 0.502])),
       ),
-      // Vantail logé dans l'épaisseur du mur
+      // Vantail logé dans l'épaisseur du mur : un fond sombre (il se voit dans
+      // les joints) et des planches verticales, de teintes légèrement inégales.
       part(
-        roundedBoxGeo(door.w * scale, door.h, 0.04, doorPanelRadius, 6),
-        doorColor,
-        { roughness: 0.92 },
+        boxGeo(door.w * scale, door.h, 0.03),
+        varyColorBrightness(doorWood, -0.12),
+        { roughness: 0.95 },
         mul(faceRot, xform([0, door.y, panelZ])),
       ),
+      ...Array.from({ length: DOOR_PLANKS }, (_, i) => {
+        const plankW = (door.w * scale) / DOOR_PLANKS;
+        return part(
+          boxGeo(plankW - 0.008, door.h - 0.01, 0.014),
+          varyColorBrightness(doorWood, ((i * 3 + cell.x + cell.z) % 3) * 0.035 - 0.035),
+          { roughness: 0.9 },
+          mul(faceRot, xform([(i - (DOOR_PLANKS - 1) / 2) * plankW, door.y, panelZ + 0.02])),
+        );
+      }),
+      // Pentures en fer forgé, côté gonds, et anneau de tirage.
+      ...[-0.22, 0.22].map((dy) =>
+        part(
+          boxGeo(door.w * scale * 0.78, 0.032, 0.008),
+          IRON_COLOR,
+          IRON_MATERIAL,
+          mul(faceRot, xform([-door.w * scale * 0.09, door.y + dy, panelZ + 0.03])),
+        ),
+      ),
       part(
-        cylinderGeo(0.01, 0.01, 0.04, 8),
-        '#8a6a3a',
-        { metalness: 0.55, roughness: 0.35 },
-        mul(faceRot, xform([0.14 * scale, -0.14, panelZ + 0.03], [Math.PI / 2, 0, 0])),
+        torusArcGeo(0.022, 0.005, 5, 10, Math.PI * 2),
+        IRON_COLOR,
+        IRON_MATERIAL,
+        mul(faceRot, xform([0.13 * scale, door.y - 0.03, panelZ + 0.034])),
       ),
       part(
         roundedBoxGeo(0.5 * scale, 0.04, 0.03, thresholdRadius, 4),

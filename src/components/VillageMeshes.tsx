@@ -21,17 +21,24 @@ import {
 import { matKey, type MaterialSpec } from '../render/parts';
 import { pickRenderSettings } from '../render/renderSettings';
 import { useControlStore } from '../store/controlStore';
+import { hideAppLoader } from '../loader';
 
 /** Teinte des fenêtres allumées (lumière de bougie / lampe). */
 const WINDOW_GLOW_COLOR = '#ffb45c';
 /** Intensité d'émission à `windowGlow` = 1 — assez pour passer le seuil du bloom. */
 const WINDOW_GLOW_INTENSITY = 2.2;
 /** Lueur des vitres une fois fondue (après opacité), à `windowGlow` = 1. */
-const GLASS_GLOW_INTENSITY = 0.9;
+const GLASS_GLOW_INTENSITY = 0.1;
 /** Teinte de l'appoint de jour des pièces : lumière du ciel entrée par les fenêtres. */
 const INTERIOR_DAY_COLOR = '#fff3e3';
 /** Intensité de la lampe des pièces à `windowGlow` = 1 (× albédo des surfaces). */
-const INTERIOR_LAMP_INTENSITY = 1.3;
+const INTERIOR_LAMP_INTENSITY = 0.9;
+/**
+ * Teinte de la lampe des pièces : plus pâle que la lueur des vitres. Aussi
+ * saturée qu'elle, elle noyait tout l'intérieur dans le même orange — bois,
+ * tentures et rideaux ne se distinguaient plus depuis la rue.
+ */
+const INTERIOR_LAMP_COLOR = '#ffd9a8';
 
 interface VillageMeshesProps {
   cells: GridCell[];
@@ -42,18 +49,23 @@ interface VillageMeshesProps {
 }
 
 function createMaterialSet(mat: MaterialSpec): GrowMaterialSet {
-  return createGrowMaterialSet({
-    vertexColors: true,
-    roughness: mat.roughness,
-    metalness: mat.metalness ?? 0,
-    transparent: mat.transparent ?? false,
-    opacity: mat.opacity ?? 1,
-    depthWrite: !mat.transparent,
-    side: mat.doubleSide ? THREE.DoubleSide : THREE.FrontSide,
-    // Ombres inchangées : comme un matériau FrontSide, la carte d'ombre
-    // ne rend que les faces arrière (sinon acné sur les murs fins).
-    shadowSide: mat.doubleSide ? THREE.BackSide : null,
-  });
+  // Patine procédurale partout sauf sur le verre et les pièces lumineuses.
+  const detail = !mat.transparent && !mat.glow;
+  return createGrowMaterialSet(
+    {
+      vertexColors: true,
+      roughness: mat.roughness,
+      metalness: mat.metalness ?? 0,
+      transparent: mat.transparent ?? false,
+      opacity: mat.opacity ?? 1,
+      depthWrite: !mat.transparent,
+      side: mat.doubleSide ? THREE.DoubleSide : THREE.FrontSide,
+      // Ombres inchangées : comme un matériau FrontSide, la carte d'ombre
+      // ne rend que les faces arrière (sinon acné sur les murs fins).
+      shadowSide: mat.doubleSide ? THREE.BackSide : null,
+    },
+    { detail, masonry: detail && mat.masonry === true },
+  );
 }
 
 export function VillageMeshes({ cells, toWorldPosition, gridWidth, gridDepth }: VillageMeshesProps) {
@@ -134,7 +146,7 @@ export function VillageMeshes({ cells, toWorldPosition, gridWidth, gridDepth }: 
   useEffect(() => {
     const light = new THREE.Color(INTERIOR_DAY_COLOR)
       .multiplyScalar(interiorFill * (1 - windowGlow))
-      .add(new THREE.Color(WINDOW_GLOW_COLOR).multiplyScalar(windowGlow * INTERIOR_LAMP_INTENSITY));
+      .add(new THREE.Color(INTERIOR_LAMP_COLOR).multiplyScalar(windowGlow * INTERIOR_LAMP_INTENSITY));
     for (const set of materials.values()) set.interiorLight.value.copy(light);
     invalidate();
   }, [materials, interiorFill, windowGlow, invalidate]);
@@ -144,7 +156,21 @@ export function VillageMeshes({ cells, toWorldPosition, gridWidth, gridDepth }: 
   // frame ; ensuite plus rien ne tourne jusqu'au prochain changement.
   const latestSpawn = useMemo(() => cells.reduce((latest, cell) => Math.max(latest, cell.spawnedAt ?? 0), 0), [cells]);
 
+  // Écran de chargement : retiré après la première image où le village est
+  // monté — ses géométries construites et ses shaders compilés (ce que fait
+  // le rendu de cette image). Le rAF attend que cette image soit affichée.
+  const meshesMounted = useRef(false);
+  const loaderHidden = useRef(false);
+  useEffect(() => {
+    meshesMounted.current = true;
+    invalidate();
+  }, [invalidate]);
+
   useFrame(({ invalidate }) => {
+    if (meshesMounted.current && !loaderHidden.current) {
+      loaderHidden.current = true;
+      requestAnimationFrame(hideAppLoader);
+    }
     // Même horloge que `cell.spawnedAt` (villageGrid.ts), pas celle du canvas.
     const time = performance.now() / 1000;
     for (const set of materials.values()) updateGrowTime(set, time, blockTransitionEnabled);

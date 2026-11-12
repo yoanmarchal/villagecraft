@@ -37,6 +37,7 @@ import { wallWindowCellParts } from './cells/wallWindowCellParts';
 import { roofCellParts } from './cells/roofCellParts';
 import { archCellParts } from './cells/archCellParts';
 import { pavingParts } from './cells/pavingParts';
+import { propsParts } from './cells/propsParts';
 import { FLUE_OFFSET, planFireplaces } from './cells/furnitureParts';
 import { planDoors } from './cells/openings';
 import type { RenderSettings } from './renderSettings';
@@ -159,6 +160,7 @@ function hashParts(parts: CollectedPart[]): string {
     num(p.interiorMode);
     num(p.lampDx);
     num(p.lampDz);
+    mix(p.rigidNormals ? 1 : 0);
   }
   return `${parts.length}:${(h1 >>> 0).toString(36)}:${(h2 >>> 0).toString(36)}`;
 }
@@ -271,6 +273,12 @@ function collectVillageParts(
       // spawn = 0 : les pavés sont déjà "posés", sans animation d'apparition.
       addParts(parts, x, z, new THREE.Vector3(wx, 0, wz), 0, 0, undefined);
     }
+    // Décor de l'herbe libre près du village (puits, charrettes, foin…).
+    for (const { x, z, parts } of propsParts(lookup, ground, settings)) {
+      const [wx, , wz] = toWorldPosition(x, 0, z);
+      translation.makeTranslation(wx, 0, wz);
+      addParts(parts, x, z, new THREE.Vector3(wx, 0, wz), 0, 0, undefined);
+    }
   }
 
   return collected;
@@ -346,7 +354,17 @@ function mergeParts(allParts: PositionedPart[]): THREE.BufferGeometry {
       indexOffset += count;
     }
 
-    normalMatrix.getNormalMatrix(p.matrix);
+    if (p.rigidNormals) {
+      // Rotation seule : les colonnes de la matrice, ramenées à l'unité.
+      normalMatrix.setFromMatrix4(p.matrix);
+      const e = normalMatrix.elements;
+      for (let column = 0; column < 3; column += 1) {
+        const length = Math.hypot(e[column * 3], e[column * 3 + 1], e[column * 3 + 2]) || 1;
+        for (let row = 0; row < 3; row += 1) e[column * 3 + row] /= length;
+      }
+    } else {
+      normalMatrix.getNormalMatrix(p.matrix);
+    }
     color.set(p.color);
     const r = Math.round(color.r * 255);
     const g = Math.round(color.g * 255);

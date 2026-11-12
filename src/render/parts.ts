@@ -28,6 +28,14 @@ export interface MaterialSpec {
    * moins que le plan proche) verrait sinon à travers, faces arrière éliminées.
    */
   doubleSide?: boolean;
+  /**
+   * Fond de mur maçonné (coque des blocs, corps des arches, noyau des
+   * parapets, merlons et souches) : ses faces verticales extérieures sont
+   * teintées en mortier par le shader (surfaceDetail.ts). Il ne se voit
+   * qu'entre les pierres, qui sont de vrais blocs posés devant lui
+   * (masonryParts.ts). Jamais sur les menuiseries, pierres de taille, cadres…
+   */
+  masonry?: boolean;
 }
 
 /**
@@ -50,6 +58,13 @@ export interface Part {
   color: string;
   mat: MaterialSpec;
   interior?: InteriorKind;
+  /**
+   * Normales de la géométrie écrites pour le part à sa taille finale : la
+   * fusion ne leur applique que la rotation de `matrix`, pas sa mise à
+   * l'échelle (pierres de parement : un bloc unité aux normales lissées,
+   * étiré très inégalement — voir `stoneBlockGeo`).
+   */
+  rigidNormals?: boolean;
 }
 
 /** Marque des parts comme intérieurs (voir `InteriorKind`). */
@@ -88,7 +103,7 @@ const quantize = (v: number) => Math.round(v * 20) / 20;
 
 export function matKey(m: MaterialSpec): string {
   const t = m.transparent ? `t${m.opacity ?? 1}` : 'o';
-  return `${quantize(m.roughness)}|${quantize(m.metalness ?? 0)}|${t}${m.glow ? '|glow' : ''}${m.doubleSide ? '|ds' : ''}`;
+  return `${quantize(m.roughness)}|${quantize(m.metalness ?? 0)}|${t}${m.glow ? '|glow' : ''}${m.doubleSide ? '|ds' : ''}${m.masonry ? '|m' : ''}`;
 }
 
 const _euler = new THREE.Euler();

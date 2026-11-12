@@ -19,21 +19,42 @@ import {
 } from '../../utils/cellUtils';
 import type { GridCell } from '../../types';
 import { shades, varyColorBrightness } from '../../colorPalettes';
-import { boxGeo, cylinderGeo, gableGeo, shapedBoxGeo, sphereGeo, spireBandGeo, towerSoffitGeo } from '../geometryCache';
+import * as THREE from 'three';
+import {
+  boxGeo,
+  cylinderGeo,
+  gableGeo,
+  shapedBoxGeo,
+  sphereGeo,
+  spireBandGeo,
+  STONE_EDGE,
+  stoneBlockGeo,
+  towerSoffitGeo,
+} from '../geometryCache';
 import { mul, part, xform, type Part } from '../parts';
 import type { RenderSettings } from '../renderSettings';
 import type { CellContext } from './context';
 import { crenellatedWalkwayParts, MERLON_DEPTH, MERLON_WIDTH_FACTOR, PARAPET_H, stoneColors } from './walkwayParts';
+import { masonryParts, stoneCourseParts } from './masonryParts';
 
 // ── Constantes géométriques (espace local cellule : Y=0 centre, ±0.5 bords) ──
 const RUN = 0.5; // course horizontale = demi-cellule
 const PANEL_LEN = 1.08; // longueur de pan le long du faîtage
 const PANEL_T = 0.055; // épaisseur de pan
 const GABLE_Z = 0.466;
+/** Bardage des pignons : chêne grisé, et le fond sombre visible dans ses joints. */
+const GABLE_WOOD = '#7b5a3c';
+const GABLE_BACKING = '#3a2a1c';
 const FLUE_W = 0.14; // section de la souche de cheminée                                // plan médian du remplissage de pignon
 
 // Décalages Z des liteaux (4 rangées de tuiles le long du faîtage)
-const RIB_OFFSETS = [-0.4, -0.13, 0.13, 0.4];
+/** Tuiles : rangs par unité de hauteur, largeur visée, épaisseur, relevé du bas, recouvrement, jour entre deux tuiles. */
+const TILE_ROWS = 10;
+const TILE_W = 0.14;
+const TILE_T = 0.02;
+const TILE_LIFT = 0.016;
+const TILE_LAP = 0.03;
+const TILE_GAP = 0.006;
 
 export function roofCellParts(ctx: CellContext): Part[] {
   const { cell, lookup, isIsolated, settings } = ctx;
@@ -164,7 +185,7 @@ export function gableRoofParts(
   const CENTER_Y = (EAVE_Y + RIDGE_Y) / 2;
 
   const roofColor = settings.roofBaseColor;
-  const { colorDark, colorLight } = shades(roofColor, { colorDark: -0.18, colorLight: 0.07 });
+  const { colorDark } = shades(roofColor, { colorDark: -0.18 });
 
   // Faîtage le long du Z local ; rotation 90° si axe X.
   const G = xform([0, baseY, 0], [0, axis === 'x' ? Math.PI / 2 : 0, 0]); // groupe racine
@@ -183,29 +204,73 @@ export function gableRoofParts(
 
   const parts: Part[] = [];
   const panelGeo = boxGeo(SLOPE_LEN, PANEL_T, panelLen);
-  const ribGeo = boxGeo(SLOPE_LEN, 0.022, 0.042);
 
-  // ── Pans droit (+X) et gauche (−X) avec liteaux ──
+  // ── Pans droit (+X) et gauche (−X), couverts de vraies tuiles ──
+  // Chaque tuile est un bloc aux arêtes arrondies (stoneBlockGeo, 12 sommets),
+  // relevé vers l'égout par-dessus le rang du dessous : des rangs en relief,
+  // avec leurs ombres, là où un motif dessiné par le shader crénelait.
+  const tileCount = Math.max(1, Math.round(panelLen / TILE_W));
+  const tileW = panelLen / tileCount;
+  const tileGeo = stoneBlockGeo(STONE_EDGE.left | STONE_EDGE.right | STONE_EDGE.bottom);
+  const tileTones = [-0.1, -0.05, 0, 0.04, 0.08].map((tone) => varyColorBrightness(roofColor, tone));
+  const tileBasis = new THREE.Matrix4();
+  const tileX = new THREE.Vector3();
+  const tileY = new THREE.Vector3();
+  const tileZ = new THREE.Vector3();
+
   for (const side of [1, -1] as const) {
     const run = side === 1 ? panRunPos : panRunNeg;
     const full = run >= RUN;
     const slopeLen = full ? SLOPE_LEN : +((SLOPE_LEN * run) / RUN).toFixed(4);
     // Centre du pan : à mi-portée, depuis le faîtage.
-    const panelM = mul(G, xform([(side * run) / 2, RIDGE_Y - (RISE * run) / RUN / 2, zMid], [0, 0, -side * SLOPE_ANG]));
-    parts.push(
-      part(
-        full ? panelGeo : boxGeo(slopeLen, PANEL_T, panelLen),
-        side === 1 ? roofColor : colorLight,
-        { roughness: 0.84 },
-        panelM,
-      ),
-    );
-    const sideRibGeo = full ? ribGeo : boxGeo(slopeLen, 0.022, 0.042);
-    for (const z of RIB_OFFSETS) {
-      if (z < z0 || z > z1) continue;
-      parts.push(
-        part(sideRibGeo, colorDark, { roughness: 0.92 }, mul(panelM, xform([0, PANEL_T / 2 + 0.012, z - zMid]))),
-      );
+    const centreY = RIDGE_Y - (RISE * run) / RUN / 2;
+    const panelM = mul(G, xform([(side * run) / 2, centreY, zMid], [0, 0, -side * SLOPE_ANG]));
+    // Volige sombre : elle ne se voit qu'entre les tuiles et en rive.
+    parts.push(part(full ? panelGeo : boxGeo(slopeLen, PANEL_T, panelLen), colorDark, { roughness: 0.9 }, panelM));
+
+    // Rangs à hauteur constante (TILE_ROWS par unité, depuis l'égout) : ils
+    // se suivent d'un pan, d'une cellule et d'une demi-aile à l'autre.
+    const lowY = RIDGE_Y - (RISE * run) / RUN;
+    const sin = Math.sin(SLOPE_ANG);
+    for (let row = Math.floor((lowY - EAVE_Y) * TILE_ROWS); EAVE_Y + row / TILE_ROWS < RIDGE_Y - 0.01; row += 1) {
+      const y0 = Math.max(lowY, EAVE_Y + row / TILE_ROWS);
+      const y1 = Math.min(RIDGE_Y, EAVE_Y + (row + 1) / TILE_ROWS);
+      // Longueur vue (pureau) + recouvrement sous le rang du dessus.
+      const length = (y1 - y0) / sin + TILE_LAP;
+      if (length < 0.03) continue;
+      // Position le long de la pente, depuis le centre du pan, vers le faîtage.
+      const along = ((y0 + y1) / 2 - centreY) / sin + TILE_LAP / 2;
+      const tilt = Math.asin(Math.min(0.9, TILE_LIFT / length));
+      // Repère de la tuile dans celui du pan (x : pente, descendant vers
+      // l'égout du côté `side` ; y : normale) — y tuile vers le faîtage, bas relevé.
+      tileY.set(-side * Math.cos(tilt), -Math.sin(tilt), 0);
+      tileZ.set(-side * Math.sin(tilt), Math.cos(tilt), 0);
+      tileX.crossVectors(tileY, tileZ);
+      tileBasis.makeBasis(tileX, tileY, tileZ);
+      const lift = PANEL_T / 2 + TILE_T / 2 + TILE_LIFT / 2;
+
+      // Quinconce : un rang sur deux commence par une demi-tuile.
+      const offset = row % 2 === 0 ? 0 : tileW / 2;
+      for (let i = offset === 0 ? 0 : -1; i < tileCount; i += 1) {
+        const za = Math.max(0, i * tileW + offset);
+        const zb = Math.min(panelLen, (i + 1) * tileW + offset);
+        if (zb - za < 0.02) continue;
+        const tone = tileTones[Math.abs(row * 7 + i * 13 + (side > 0 ? 3 : 0)) % tileTones.length];
+        parts.push({
+          ...part(
+            tileGeo,
+            tone,
+            { roughness: 0.86 },
+            mul(
+              panelM,
+              xform([-side * along, lift, (za + zb) / 2 - panelLen / 2]),
+              tileBasis,
+              xform([0, 0, 0], [0, 0, 0], [zb - za - TILE_GAP, length, TILE_T]),
+            ),
+          ),
+          rigidNormals: true,
+        });
+      }
     }
   }
 
@@ -261,17 +326,37 @@ export function gableRoofParts(
   const addGable = (sign: 1 | -1) => {
     const zEnd = sign * 0.502;
     parts.push(
-      // Remplissage triangulaire
+      // Fond du pignon, sombre : il ne se voit qu'entre les planches du bardage.
       part(
         gableGeo(EAVE_Y, RIDGE_Y),
-        roofColor,
-        { roughness: 0.88 },
+        GABLE_BACKING,
+        { roughness: 0.95 },
         mul(G, xform([0, 0, sign * GABLE_Z], [0, sign === 1 ? 0 : Math.PI, 0])),
       ),
       // Rives (barge boards) le long des pentes
       part(bargeGeo, colorDark, { roughness: 0.91 }, mul(G, xform([RUN / 2, CENTER_Y, zEnd], [0, 0, -SLOPE_ANG]))),
       part(bargeGeo, colorDark, { roughness: 0.91 }, mul(G, xform([-RUN / 2, CENTER_Y, zEnd], [0, 0, SLOPE_ANG]))),
     );
+    // Bardage : planches de bois verticales, de teintes inégales, du bandeau
+    // bas jusqu'aux rives. Chaque planche monte jusqu'à la pente en son milieu ;
+    // son coin haut dépasse à peine, sous la rive qui le recouvre — d'où une
+    // largeur bornée par la pente (un toit raide veut des planches étroites).
+    const plankCount = Math.ceil(1 / Math.min(0.07, (0.068 * RUN) / RISE));
+    const plankW = 1 / plankCount;
+    for (let i = 0; i < plankCount; i += 1) {
+      const px = -0.5 + plankW * (i + 0.5);
+      const height = RISE * (1 - Math.abs(px) / RUN);
+      if (height < 0.03) continue;
+      const tone = (((i * 7 + 3) % 5) - 2) * 0.045;
+      parts.push(
+        part(
+          boxGeo(+(plankW - 0.006).toFixed(4), +height.toFixed(3), 0.008),
+          varyColorBrightness(GABLE_WOOD, tone),
+          { roughness: 0.9 },
+          mul(G, xform([sign * px, EAVE_Y + height / 2, sign * 0.5005])),
+        ),
+      );
+    }
     // Bandeau bas de pignon
     parts.push(
       part(
@@ -296,7 +381,9 @@ export function gableRoofParts(
     const height = +(top - bottom).toFixed(3);
     const C = xform([x, baseY + top - height / 2, z]);
     parts.push(
-      part(boxGeo(FLUE_W, height, FLUE_W), '#a09080', { roughness: 0.93 }, C.clone()),
+      // Noyau (mortier) monté en assises de vraies pierres.
+      part(boxGeo(FLUE_W, height, FLUE_W), '#a09080', { roughness: 0.93, masonry: true }, C.clone()),
+      ...stoneCourseParts(C, FLUE_W, height, FLUE_W, '#b3a391', 0.9, Math.round((x + z) * 1000)),
       part(boxGeo(0.19, 0.04, 0.19), '#7a6a5a', { roughness: 0.91 }, mul(C, xform([0, height / 2 + 0.02, 0]))),
       part(
         cylinderGeo(0.034, 0.042, 0.09, 8),
@@ -316,8 +403,17 @@ export function gableRoofParts(
 const EAVE_OVERHANG = 1.2;
 /** Hauteur du coyau (partie évasée, moins pentue) au-dessus de l'égout. */
 const FLARE_RISE = 0.08;
-/** Nombre de rangs d'ardoise, en teintes alternées, sur le cône. */
+/** Nombre de bandes du cône (support des ardoises). */
 const SLATE_COURSES = 5;
+/** Ardoises : longueur visée d'un rang le long de la pente, largeur visée, épaisseur, relevé du bas, recouvrement, jour. */
+const SLATE_ROW = 0.105;
+const SLATE_W = 0.105;
+const SLATE_T = 0.014;
+const SLATE_LIFT = 0.011;
+const SLATE_LAP = 0.03;
+const SLATE_GAP = 0.005;
+/** En deçà de cette échelle du contour, la pointe reste nue (couverte par l'épi) : les ardoises s'y chevaucheraient. */
+const SLATE_MIN_SCALE = 0.1;
 
 /**
  * Toiture de tour "en poivrière" façon Carcassonne : corniche de pierre,
@@ -333,7 +429,7 @@ function towerRoofParts({ radii, settings }: CellContext): Part[] {
 
   const { slateLight, slateUnder } = shades(spireColor, { slateLight: 0.08, slateUnder: -0.35 });
   const corniceColor = varyColorBrightness(wallBaseColor, -0.14);
-  const slate = { roughness: 0.62, metalness: 0.08 };
+  const slate = { roughness: 0.8 };
 
   const parts: Part[] = [];
 
@@ -369,7 +465,83 @@ function towerRoofParts({ radii, settings }: CellContext): Part[] {
   for (let i = 0; i < rings.length - 1; i += 1) {
     const [y0, s0] = rings[i];
     const [y1, s1] = rings[i + 1];
-    parts.push(part(spireBandGeo(towerR, towerRadii, y0, s0, y1, s1), i % 2 === 0 ? spireColor : slateLight, slate));
+    // Voligeage sombre : il ne se voit qu'entre les ardoises, et à la pointe.
+    parts.push(part(spireBandGeo(towerR, towerRadii, y0, s0, y1, s1), slateUnder, { roughness: 0.9 }));
+  }
+
+  // ── Ardoises ──
+  // De vraies ardoises (blocs aux arêtes arrondies, 12 sommets), en rangs
+  // qui font le tour du contour de la tour, chacune relevée vers le bas
+  // par-dessus le rang du dessous, en quinconce d'un rang à l'autre.
+  const contour = getRoundedRectContourPoints(towerR, towerR, towerRadii);
+  const perimeter = contour.reduce((sum, [x0, z0], i) => {
+    const [x1, z1] = contour[(i + 1) % contour.length];
+    return sum + Math.hypot(x1 - x0, z1 - z0);
+  }, 0);
+  const slateGeo = stoneBlockGeo(STONE_EDGE.left | STONE_EDGE.right | STONE_EDGE.bottom);
+  const slateTones = [
+    spireColor,
+    slateLight,
+    varyColorBrightness(spireColor, -0.08),
+    varyColorBrightness(spireColor, 0.04),
+  ];
+  const bottom = new THREE.Vector3();
+  const top = new THREE.Vector3();
+  const axisX = new THREE.Vector3();
+  const axisY = new THREE.Vector3();
+  const axisZ = new THREE.Vector3();
+  const tilted = new THREE.Vector3();
+  const basis = new THREE.Matrix4();
+  let rowIndex = 0;
+  for (let i = 0; i < rings.length - 1; i += 1) {
+    const [bandY0, bandS0] = rings[i];
+    const [bandY1, bandS1] = rings[i + 1];
+    const slope = Math.hypot(bandY1 - bandY0, (bandS0 - bandS1) * towerR);
+    const rows = Math.max(1, Math.round(slope / SLATE_ROW));
+    for (let r = 0; r < rows; r += 1, rowIndex += 1) {
+      const y0 = bandY0 + ((bandY1 - bandY0) * r) / rows;
+      const y1 = bandY0 + ((bandY1 - bandY0) * (r + 1)) / rows;
+      const s0 = bandS0 + ((bandS1 - bandS0) * r) / rows;
+      const s1 = bandS0 + ((bandS1 - bandS0) * (r + 1)) / rows;
+      const mid = (s0 + s1) / 2;
+      if (mid < SLATE_MIN_SCALE) continue;
+      const count = Math.max(6, Math.round((perimeter * mid) / SLATE_W));
+      const width = (perimeter * mid) / count - SLATE_GAP;
+      for (let j = 0; j < count; j += 1) {
+        const t = (j + (rowIndex % 2 === 0 ? 0 : 0.5)) / count;
+        const at = sampleContourPerimeter(contour, t);
+        const ahead = sampleContourPerimeter(contour, t + 0.002);
+        const behind = sampleContourPerimeter(contour, t - 0.002);
+        // Contour dans le plan de la shape (z = −y de la scène, comme shapedBoxGeo).
+        bottom.set(at.x * s0, y0, -at.z * s0);
+        top.set(at.x * s1, y1, -at.z * s1);
+        axisY.subVectors(top, bottom);
+        const length = axisY.length() + SLATE_LAP;
+        axisY.normalize();
+        axisX.set(ahead.x - behind.x, 0, -(ahead.z - behind.z)).normalize();
+        axisZ.crossVectors(axisX, axisY).normalize();
+        // Normale vers l'extérieur de la tour.
+        if (axisZ.x * at.x - axisZ.z * at.z < 0) axisZ.negate();
+        // Bas de l'ardoise relevé : rotation autour de son axe x.
+        const tilt = Math.asin(Math.min(0.9, SLATE_LIFT / length));
+        tilted.copy(axisY).multiplyScalar(Math.cos(tilt)).addScaledVector(axisZ, -Math.sin(tilt));
+        axisZ.multiplyScalar(Math.cos(tilt)).addScaledVector(axisY, Math.sin(tilt));
+        axisY.copy(tilted);
+        axisX.crossVectors(axisY, axisZ);
+        basis.makeBasis(axisX, axisY, axisZ);
+        const out = SLATE_T / 2 + SLATE_LIFT / 2 + 0.002;
+        const centre = bottom.addScaledVector(tilted, length / 2).addScaledVector(axisZ, out);
+        parts.push({
+          ...part(
+            slateGeo,
+            slateTones[(rowIndex * 5 + j * 3) % slateTones.length],
+            slate,
+            mul(xform([centre.x, centre.y, centre.z]), basis, xform([0, 0, 0], [0, 0, 0], [width, length, SLATE_T])),
+          ),
+          rigidNormals: true,
+        });
+      }
+    }
   }
 
   // Dessous de l'avant-toit, pour qu'il ne soit pas creux vu d'en bas.
@@ -398,7 +570,7 @@ function isCrenellatedTower(cell: GridCell): boolean {
  * continu, puis merlons rectangulaires répartis sur le contour réel de la
  * tour et orientés selon sa tangente.
  */
-function crenellatedTowerParts({ radii, settings }: CellContext): Part[] {
+function crenellatedTowerParts({ cell, lookup, radii, settings }: CellContext): Part[] {
   const { towerR, merlonCount, merlonR, merlonH, wallBaseColor } = settings;
   const { stone, cornice } = stoneColors(wallBaseColor);
   const BASE_Y = -0.5;
@@ -416,8 +588,19 @@ function crenellatedTowerParts({ radii, settings }: CellContext): Part[] {
     part(
       shapedBoxGeo(towerR * 2, PARAPET_H, towerR * 2, towerRadii),
       stone,
-      { roughness: 0.92 },
+      { roughness: 0.92, masonry: true },
       xform([0, BASE_Y + 0.06 + PARAPET_H / 2, 0]),
+    ),
+    // Parement du parapet : le même appareil que le mur de la tour, sur son contour.
+    ...masonryParts(
+      { cell, lookup, radii: towerRadii },
+      (['front', 'back', 'left', 'right'] as const).map((face) => ({
+        face,
+        extent: towerR,
+        yRange: [BASE_Y + 0.06, BASE_Y + 0.06 + PARAPET_H] as [number, number],
+      })),
+      stone,
+      settings.windowStoneRoughness,
     ),
   ];
 
@@ -452,7 +635,11 @@ function crenellatedTowerParts({ radii, settings }: CellContext): Part[] {
     // Tangente en coordonnées scène (z = −y de la shape).
     const tx = ahead.x - behind.x;
     const tz = -(ahead.z - behind.z);
-    parts.push(part(merlonGeo, stone, { roughness: 0.92 }, xform([x, merlonY, -z], [0, Math.atan2(-tz, tx), 0])));
+    const merlonMatrix = xform([x, merlonY, -z], [0, Math.atan2(-tz, tx), 0]);
+    parts.push(
+      part(merlonGeo, stone, { roughness: 0.92, masonry: true }, merlonMatrix),
+      ...stoneCourseParts(merlonMatrix, merlonR * MERLON_WIDTH_FACTOR, merlonH, MERLON_DEPTH, stone, 0.9, i * 7 + 3),
+    );
   }
 
   return parts;
