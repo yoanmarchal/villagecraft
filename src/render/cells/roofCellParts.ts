@@ -19,7 +19,18 @@ import {
 } from '../../utils/cellUtils';
 import type { GridCell } from '../../types';
 import { shades, varyColorBrightness } from '../../colorPalettes';
-import { boxGeo, cylinderGeo, gableGeo, shapedBoxGeo, sphereGeo, spireBandGeo, towerSoffitGeo } from '../geometryCache';
+import * as THREE from 'three';
+import {
+  boxGeo,
+  cylinderGeo,
+  gableGeo,
+  shapedBoxGeo,
+  sphereGeo,
+  spireBandGeo,
+  STONE_EDGE,
+  stoneBlockGeo,
+  towerSoffitGeo,
+} from '../geometryCache';
 import { mul, part, xform, type Part } from '../parts';
 import type { RenderSettings } from '../renderSettings';
 import type { CellContext } from './context';
@@ -31,10 +42,19 @@ const RUN = 0.5; // course horizontale = demi-cellule
 const PANEL_LEN = 1.08; // longueur de pan le long du faîtage
 const PANEL_T = 0.055; // épaisseur de pan
 const GABLE_Z = 0.466;
+/** Bardage des pignons : chêne grisé, et le fond sombre visible dans ses joints. */
+const GABLE_WOOD = '#7b5a3c';
+const GABLE_BACKING = '#3a2a1c';
 const FLUE_W = 0.14; // section de la souche de cheminée                                // plan médian du remplissage de pignon
 
 // Décalages Z des liteaux (4 rangées de tuiles le long du faîtage)
-const RIB_OFFSETS = [-0.4, -0.13, 0.13, 0.4];
+/** Tuiles : rangs par unité de hauteur, largeur visée, épaisseur, relevé du bas, recouvrement, jour entre deux tuiles. */
+const TILE_ROWS = 10;
+const TILE_W = 0.14;
+const TILE_T = 0.02;
+const TILE_LIFT = 0.016;
+const TILE_LAP = 0.03;
+const TILE_GAP = 0.006;
 
 export function roofCellParts(ctx: CellContext): Part[] {
   const { cell, lookup, isIsolated, settings } = ctx;
@@ -165,7 +185,7 @@ export function gableRoofParts(
   const CENTER_Y = (EAVE_Y + RIDGE_Y) / 2;
 
   const roofColor = settings.roofBaseColor;
-  const { colorDark, colorLight } = shades(roofColor, { colorDark: -0.18, colorLight: 0.07 });
+  const { colorDark } = shades(roofColor, { colorDark: -0.18 });
 
   // Faîtage le long du Z local ; rotation 90° si axe X.
   const G = xform([0, baseY, 0], [0, axis === 'x' ? Math.PI / 2 : 0, 0]); // groupe racine
@@ -184,29 +204,73 @@ export function gableRoofParts(
 
   const parts: Part[] = [];
   const panelGeo = boxGeo(SLOPE_LEN, PANEL_T, panelLen);
-  const ribGeo = boxGeo(SLOPE_LEN, 0.022, 0.042);
 
-  // ── Pans droit (+X) et gauche (−X) avec liteaux ──
+  // ── Pans droit (+X) et gauche (−X), couverts de vraies tuiles ──
+  // Chaque tuile est un bloc aux arêtes arrondies (stoneBlockGeo, 12 sommets),
+  // relevé vers l'égout par-dessus le rang du dessous : des rangs en relief,
+  // avec leurs ombres, là où un motif dessiné par le shader crénelait.
+  const tileCount = Math.max(1, Math.round(panelLen / TILE_W));
+  const tileW = panelLen / tileCount;
+  const tileGeo = stoneBlockGeo(STONE_EDGE.left | STONE_EDGE.right | STONE_EDGE.bottom);
+  const tileTones = [-0.1, -0.05, 0, 0.04, 0.08].map((tone) => varyColorBrightness(roofColor, tone));
+  const tileBasis = new THREE.Matrix4();
+  const tileX = new THREE.Vector3();
+  const tileY = new THREE.Vector3();
+  const tileZ = new THREE.Vector3();
+
   for (const side of [1, -1] as const) {
     const run = side === 1 ? panRunPos : panRunNeg;
     const full = run >= RUN;
     const slopeLen = full ? SLOPE_LEN : +((SLOPE_LEN * run) / RUN).toFixed(4);
     // Centre du pan : à mi-portée, depuis le faîtage.
-    const panelM = mul(G, xform([(side * run) / 2, RIDGE_Y - (RISE * run) / RUN / 2, zMid], [0, 0, -side * SLOPE_ANG]));
-    parts.push(
-      part(
-        full ? panelGeo : boxGeo(slopeLen, PANEL_T, panelLen),
-        side === 1 ? roofColor : colorLight,
-        { roughness: 0.84, roofing: true },
-        panelM,
-      ),
-    );
-    const sideRibGeo = full ? ribGeo : boxGeo(slopeLen, 0.022, 0.042);
-    for (const z of RIB_OFFSETS) {
-      if (z < z0 || z > z1) continue;
-      parts.push(
-        part(sideRibGeo, colorDark, { roughness: 0.92 }, mul(panelM, xform([0, PANEL_T / 2 + 0.012, z - zMid]))),
-      );
+    const centreY = RIDGE_Y - (RISE * run) / RUN / 2;
+    const panelM = mul(G, xform([(side * run) / 2, centreY, zMid], [0, 0, -side * SLOPE_ANG]));
+    // Volige sombre : elle ne se voit qu'entre les tuiles et en rive.
+    parts.push(part(full ? panelGeo : boxGeo(slopeLen, PANEL_T, panelLen), colorDark, { roughness: 0.9 }, panelM));
+
+    // Rangs à hauteur constante (TILE_ROWS par unité, depuis l'égout) : ils
+    // se suivent d'un pan, d'une cellule et d'une demi-aile à l'autre.
+    const lowY = RIDGE_Y - (RISE * run) / RUN;
+    const sin = Math.sin(SLOPE_ANG);
+    for (let row = Math.floor((lowY - EAVE_Y) * TILE_ROWS); EAVE_Y + row / TILE_ROWS < RIDGE_Y - 0.01; row += 1) {
+      const y0 = Math.max(lowY, EAVE_Y + row / TILE_ROWS);
+      const y1 = Math.min(RIDGE_Y, EAVE_Y + (row + 1) / TILE_ROWS);
+      // Longueur vue (pureau) + recouvrement sous le rang du dessus.
+      const length = (y1 - y0) / sin + TILE_LAP;
+      if (length < 0.03) continue;
+      // Position le long de la pente, depuis le centre du pan, vers le faîtage.
+      const along = ((y0 + y1) / 2 - centreY) / sin + TILE_LAP / 2;
+      const tilt = Math.asin(Math.min(0.9, TILE_LIFT / length));
+      // Repère de la tuile dans celui du pan (x : pente, descendant vers
+      // l'égout du côté `side` ; y : normale) — y tuile vers le faîtage, bas relevé.
+      tileY.set(-side * Math.cos(tilt), -Math.sin(tilt), 0);
+      tileZ.set(-side * Math.sin(tilt), Math.cos(tilt), 0);
+      tileX.crossVectors(tileY, tileZ);
+      tileBasis.makeBasis(tileX, tileY, tileZ);
+      const lift = PANEL_T / 2 + TILE_T / 2 + TILE_LIFT / 2;
+
+      // Quinconce : un rang sur deux commence par une demi-tuile.
+      const offset = row % 2 === 0 ? 0 : tileW / 2;
+      for (let i = offset === 0 ? 0 : -1; i < tileCount; i += 1) {
+        const za = Math.max(0, i * tileW + offset);
+        const zb = Math.min(panelLen, (i + 1) * tileW + offset);
+        if (zb - za < 0.02) continue;
+        const tone = tileTones[Math.abs(row * 7 + i * 13 + (side > 0 ? 3 : 0)) % tileTones.length];
+        parts.push({
+          ...part(
+            tileGeo,
+            tone,
+            { roughness: 0.86 },
+            mul(
+              panelM,
+              xform([-side * along, lift, (za + zb) / 2 - panelLen / 2]),
+              tileBasis,
+              xform([0, 0, 0], [0, 0, 0], [zb - za - TILE_GAP, length, TILE_T]),
+            ),
+          ),
+          rigidNormals: true,
+        });
+      }
     }
   }
 
@@ -262,17 +326,37 @@ export function gableRoofParts(
   const addGable = (sign: 1 | -1) => {
     const zEnd = sign * 0.502;
     parts.push(
-      // Remplissage triangulaire
+      // Fond du pignon, sombre : il ne se voit qu'entre les planches du bardage.
       part(
         gableGeo(EAVE_Y, RIDGE_Y),
-        roofColor,
-        { roughness: 0.88 },
+        GABLE_BACKING,
+        { roughness: 0.95 },
         mul(G, xform([0, 0, sign * GABLE_Z], [0, sign === 1 ? 0 : Math.PI, 0])),
       ),
       // Rives (barge boards) le long des pentes
       part(bargeGeo, colorDark, { roughness: 0.91 }, mul(G, xform([RUN / 2, CENTER_Y, zEnd], [0, 0, -SLOPE_ANG]))),
       part(bargeGeo, colorDark, { roughness: 0.91 }, mul(G, xform([-RUN / 2, CENTER_Y, zEnd], [0, 0, SLOPE_ANG]))),
     );
+    // Bardage : planches de bois verticales, de teintes inégales, du bandeau
+    // bas jusqu'aux rives. Chaque planche monte jusqu'à la pente en son milieu ;
+    // son coin haut dépasse à peine, sous la rive qui le recouvre — d'où une
+    // largeur bornée par la pente (un toit raide veut des planches étroites).
+    const plankCount = Math.ceil(1 / Math.min(0.07, (0.068 * RUN) / RISE));
+    const plankW = 1 / plankCount;
+    for (let i = 0; i < plankCount; i += 1) {
+      const px = -0.5 + plankW * (i + 0.5);
+      const height = RISE * (1 - Math.abs(px) / RUN);
+      if (height < 0.03) continue;
+      const tone = (((i * 7 + 3) % 5) - 2) * 0.045;
+      parts.push(
+        part(
+          boxGeo(+(plankW - 0.006).toFixed(4), +height.toFixed(3), 0.008),
+          varyColorBrightness(GABLE_WOOD, tone),
+          { roughness: 0.9 },
+          mul(G, xform([sign * px, EAVE_Y + height / 2, sign * 0.5005])),
+        ),
+      );
+    }
     // Bandeau bas de pignon
     parts.push(
       part(

@@ -98,8 +98,8 @@ export const DETAIL_ALBEDO_APPLY = `
     // Dérive de teinte à grande échelle : zones un peu plus chaudes ou plus froides.
     diffuseColor.rgb *= mix(vec3(1.035, 1.0, 0.955), vec3(0.965, 1.0, 1.04), detailStain);
 
-    // Couverture (matériaux roofing : pans de toit, bandes des flèches) :
-    // tuiles ou ardoises sur leurs faces en pente. Rangs horizontaux à hauteur
+    // Couverture (matériaux roofing : bandes des flèches) : ardoises sur leurs
+    // faces en pente — les toits à deux pans ont de vraies tuiles (roofCellParts). Rangs horizontaux à hauteur
     // constante, en quinconce le long de la pente — continus d'une cellule à
     // l'autre puisque tout est en coordonnées monde.
     vcDetailTile = 0.0;
@@ -131,15 +131,20 @@ export const DETAIL_ALBEDO_APPLY = `
       float tileRow = floor(tileCourse);
       float tileV = fract(tileCourse); // 0 = bas du rang (pureau), 1 = sous le rang du dessus
       float tileU = tileColumn + mod(tileRow, 2.0) * 0.5;
-      float tileSeed = vcHash(vec3(floor(tileU), tileRow, 3.0));
+      // Aux bords d'une ardoise, teinte et relief changent d'un coup : sur un
+      // pixel de large, on les ramène à leur valeur moyenne, sinon chaque
+      // rang se dessine en marches d'escalier (crénelage).
+      float tileEdge = smoothstep(0.0, 1.5 * fwidth(tileCourse), min(tileV, 1.0 - tileV))
+        * smoothstep(0.0, 1.5 * fwidth(tileU), min(fract(tileU), 1.0 - fract(tileU)));
+      float tileSeed = mix(0.5, vcHash(vec3(floor(tileU), tileRow, 3.0)), tileEdge);
       float tileJoint = smoothstep(0.0, 0.1, fract(tileU)) * smoothstep(1.0, 0.9, fract(tileU));
       // Ombre portée par le rang du dessus, joints, et teinte propre à chaque tuile.
       float tileShade = mix(0.66, 1.0, smoothstep(0.62, 0.95, 1.0 - tileV * 0.45) * (0.35 + 0.65 * tileJoint))
         * (0.8 + 0.4 * tileSeed);
       tileShade *= mix(0.74, 1.0, smoothstep(0.0, 0.3, 1.0 - tileV));
-      diffuseColor.rgb *= mix(1.0, tileShade, tileFade);
-      // Chaque tuile se relève vers son bord bas, par-dessus la suivante.
-      vcDetailTile = (1.0 - tileV) * (0.6 + 0.4 * tileSeed) * tileJoint * 0.035 * tileFade;
+      diffuseColor.rgb *= mix(1.0, mix(0.82, tileShade, tileEdge), tileFade);
+      // Chaque ardoise se relève vers son bord bas, par-dessus la suivante.
+      vcDetailTile = (1.0 - tileV) * (0.6 + 0.4 * tileSeed) * tileJoint * 0.035 * tileFade * tileEdge;
       vcDetailRoof = detailSlope;
     }
     #endif
