@@ -37,6 +37,7 @@ import { wallWindowCellParts } from './cells/wallWindowCellParts';
 import { roofCellParts } from './cells/roofCellParts';
 import { archCellParts } from './cells/archCellParts';
 import { pavingParts } from './cells/pavingParts';
+import { propsParts } from './cells/propsParts';
 import { FLUE_OFFSET, planFireplaces } from './cells/furnitureParts';
 import { planDoors } from './cells/openings';
 import type { RenderSettings } from './renderSettings';
@@ -270,6 +271,12 @@ function collectVillageParts(
       const [wx, , wz] = toWorldPosition(x, 0, z);
       translation.makeTranslation(wx, 0, wz);
       // spawn = 0 : les pavés sont déjà "posés", sans animation d'apparition.
+      addParts(parts, x, z, new THREE.Vector3(wx, 0, wz), 0, 0, undefined);
+    }
+    // Décor de l'herbe libre près du village (puits, charrettes, foin…).
+    for (const { x, z, parts } of propsParts(lookup, ground, settings)) {
+      const [wx, , wz] = toWorldPosition(x, 0, z);
+      translation.makeTranslation(wx, 0, wz);
       addParts(parts, x, z, new THREE.Vector3(wx, 0, wz), 0, 0, undefined);
     }
   }

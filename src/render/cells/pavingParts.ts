@@ -76,13 +76,12 @@ const isBig = (column: number, row: number, r: number) => r % 2 === 0 && r < ROW
 /** Bloc posé à plat : son épaisseur (z local) devient la verticale. */
 const FLAT = new THREE.Matrix4().makeRotationX(-Math.PI / 2);
 
-export function pavingParts(
-  lookup: CellLookup,
-  { width, depth }: { width: number; depth: number },
-): Array<{ x: number; z: number; parts: Part[] }> {
+/**
+ * Cases pavées ("x,z") : les cases vides au sol qui touchent un bâtiment,
+ * diagonales comprises, et celles sous une arche.
+ */
+export function pavedCells(lookup: CellLookup, { width, depth }: { width: number; depth: number }): Set<string> {
   const builtAt = (x: number, z: number) => hasOccupiedCell(lookup, x, 0, z);
-
-  // Cases pavées d'abord : la lisière dépend des voisines.
   const paved = new Set<string>();
   for (let x = 0; x < width; x += 1) {
     for (let z = 0; z < depth; z += 1) {
@@ -97,6 +96,21 @@ export function pavingParts(
       if (nearBuilding) paved.add(`${x},${z}`);
     }
   }
+  return paved;
+}
+
+/** La case est de l'herbe libre : ni pavée, ni bâtie, ni sous une arche (le décor s'y pose, propsParts.ts). */
+export function isGrassCell(lookup: CellLookup, paved: Set<string>, x: number, z: number): boolean {
+  return !paved.has(`${x},${z}`) && !hasOccupiedCell(lookup, x, 0, z) && !hasOccupiedCell(lookup, x, 1, z);
+}
+
+export function pavingParts(
+  lookup: CellLookup,
+  ground: { width: number; depth: number },
+): Array<{ x: number; z: number; parts: Part[] }> {
+  const builtAt = (x: number, z: number) => hasOccupiedCell(lookup, x, 0, z);
+  // Cases pavées d'abord : la lisière dépend des voisines.
+  const paved = pavedCells(lookup, ground);
   /** La case voisine est de l'herbe : ni pavée, ni bâtie. */
   const grassAt = (x: number, z: number) => !paved.has(`${x},${z}`) && !builtAt(x, z);
   const mat = { roughness: 0.92 };
