@@ -40,6 +40,9 @@ import { pavingParts } from './cells/pavingParts';
 import { propsParts } from './cells/propsParts';
 import { FLUE_OFFSET, planFireplaces } from './cells/furnitureParts';
 import { planDoors } from './cells/openings';
+import { plinthParts } from './cells/plinthParts';
+import { createGround } from './ground';
+import { reliefFor } from './relief';
 import type { RenderSettings } from './renderSettings';
 
 export interface MergedGroup {
@@ -52,6 +55,8 @@ export interface MergedGroup {
 export interface GroundExtent {
   width: number;
   depth: number;
+  /** Amplitude du relief du terrain (relief.ts) ; absent ou 0 : terrain plat. */
+  relief?: number;
 }
 
 type ToWorld = (x: number, y: number, z: number) => [number, number, number];
@@ -179,6 +184,22 @@ function collectVillageParts(
   const collected: CollectedPart[] = [];
   // Un chandelier par pièce (ou par zone d'une grande salle), pas par cellule.
   const roomLamps = assignRoomLamps(cells, lookup);
+  // Terrain en pente : niveau de chaque bâtiment et hauteur du sol (ground.ts).
+  const terrain = ground?.relief
+    ? createGround(cells, toWorldPosition, reliefFor(Math.max(ground.width, ground.depth), ground.relief))
+    : null;
+  /** Hauteur du terrain (y monde) autour de la case (x, z), en coordonnées locales à la case. */
+  const groundOf = terrain
+    ? (x: number, z: number) => {
+        const [wx, , wz] = toWorldPosition(x, 0, z);
+        return (lx: number, lz: number) => terrain.heightAt(wx + lx, wz + lz);
+      }
+    : undefined;
+  /** Position monde du centre d'une cellule, relevée au niveau de son bâtiment. */
+  const cellWorld = (cell: GridCell): [number, number, number] => {
+    const [wx, wy, wz] = toWorldPosition(cell.x, cell.y, cell.z);
+    return [wx, wy + (terrain ? terrain.baseAt(cell.x, cell.z) : 0), wz];
+  };
 
   const translation = new THREE.Matrix4();
 
@@ -204,9 +225,15 @@ function collectVillageParts(
   // (elles peuvent prendre la place d'une fenêtre).
   const contexts = cells.map((cell): CellContext => {
     const lamp = roomLamps.get(cell);
+    let groundAt: CellContext['groundAt'] = null;
+    if (terrain) {
+      const [wx, wy, wz] = cellWorld(cell);
+      groundAt = (lx, lz) => terrain.heightAt(wx + lx, wz + lz) - wy;
+    }
     return {
       cell,
       lookup,
+      groundAt,
       settings,
       exposedFaces: getExposedFaces(lookup, cell),
       radii: getCornerRadii(lookup, cell, settings),
@@ -257,7 +284,10 @@ function collectVillageParts(
         break;
     }
 
-    const [wx, wy, wz] = toWorldPosition(cell.x, cell.y, cell.z);
+    // Soubassement : du pied du bâtiment jusqu'au terrain, côté aval.
+    if (cell.y === 0 && isHollowType(cell.type)) cellParts.push(...plinthParts(ctx));
+
+    const [wx, wy, wz] = cellWorld(cell);
     translation.makeTranslation(wx, wy, wz);
     const cellCenter = new THREE.Vector3(wx, wy, wz);
     const spawn = cell.spawnedAt ?? 0;
@@ -267,14 +297,14 @@ function collectVillageParts(
   }
 
   if (ground) {
-    for (const { x, z, parts } of pavingParts(lookup, ground)) {
+    for (const { x, z, parts } of pavingParts(lookup, ground, groundOf)) {
       const [wx, , wz] = toWorldPosition(x, 0, z);
       translation.makeTranslation(wx, 0, wz);
       // spawn = 0 : les pavés sont déjà "posés", sans animation d'apparition.
       addParts(parts, x, z, new THREE.Vector3(wx, 0, wz), 0, 0, undefined);
     }
     // Décor de l'herbe libre près du village (puits, charrettes, foin…).
-    for (const { x, z, parts } of propsParts(lookup, ground, settings)) {
+    for (const { x, z, parts } of propsParts(lookup, ground, settings, groundOf)) {
       const [wx, , wz] = toWorldPosition(x, 0, z);
       translation.makeTranslation(wx, 0, wz);
       addParts(parts, x, z, new THREE.Vector3(wx, 0, wz), 0, 0, undefined);
@@ -303,12 +333,13 @@ function isFinitePart(p: Part): boolean {
  *  - position : Float32 × 3 ;
  *  - normal   : Int8 normalisé × 3 (précision 1/127, invisible à l'éclairage) ;
  *  - color    : Uint8 normalisé × 3 (couleurs plates par part) ;
- *  - aCell    : Int16 × 4 = (pivot de la cellule × 2, w) avec
+ *  - aCell    : Int16 × 4 = (pivot de la cellule : x et z × 2, y × 100 ; w) avec
  *    w = code × 4 + mode d'éclairage intérieur (0, 1 coque, 2 aménagement) ;
  *    code = hauteur de chute × 100 (mode 0) ou décalage vers le chandelier
  *    de la pièce, (dx + 16) × 32 + (dz + 16) (mode > 0 : une pièce ne tombe pas).
- *    Les pivots sont toujours sur des demi-unités (toWorldPosition), donc
- *    exacts ; lu en flottants par le shader (growMaterial.ts) ;
+ *    En plan les pivots sont sur des demi-unités (toWorldPosition) ; en
+ *    hauteur, au centième (niveau du bâtiment sur un terrain en pente, voir
+ *    ground.ts) : exacts ; lu en flottants par le shader (growMaterial.ts) ;
  *  - aSpawn   : Float32 (horodatage en secondes, a besoin de la précision).
  */
 function mergeParts(allParts: PositionedPart[]): THREE.BufferGeometry {
@@ -370,7 +401,7 @@ function mergeParts(allParts: PositionedPart[]): THREE.BufferGeometry {
     const g = Math.round(color.g * 255);
     const b = Math.round(color.b * 255);
     const cx = Math.round(p.cellCenter.x * 2);
-    const cy = Math.round(p.cellCenter.y * 2);
+    const cy = Math.round(p.cellCenter.y * 100);
     const cz = Math.round(p.cellCenter.z * 2);
     // w = code × 4 + mode d'éclairage intérieur (décodé dans growMaterial.ts).
     // Code : hauteur de chute × 100 hors pièces (seuls les toits tombent) ;

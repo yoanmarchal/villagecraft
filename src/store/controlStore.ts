@@ -34,6 +34,8 @@ export interface SkyFogState {
   /** Teinte de base de la prairie (voir Terrain). */
   groundColor: string;
   groundRoughness: number;
+  /** Amplitude du relief du terrain sous le village (relief.ts) ; 0 = plat. */
+  terrainRelief: number;
 }
 
 export interface CameraState {
@@ -153,6 +155,7 @@ const DEFAULT_STATE: GridState &
   fogFar: 110,
   groundColor: '#66804a',
   groundRoughness: 0.95,
+  terrainRelief: 1,
 
   dampingFactor: 0.08,
   maxPolarAngle: Math.PI / 2.08,

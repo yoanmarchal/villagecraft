@@ -20,6 +20,7 @@ import * as THREE from 'three';
 import { hasOccupiedCell, type CellLookup } from '../../utils/cellUtils';
 import { boxGeo, STONE_EDGE, stoneBlockGeo } from '../geometryCache';
 import { mul, part, xform, type Part } from '../parts';
+import { drapeMatrix, type HeightFn } from './drape';
 
 /** Lit de terre et de sable, visible entre les pavés. */
 const BEDDING_COLOR = '#5f574c';
@@ -42,6 +43,12 @@ const FRINGE_MISSING = 0.42;
 const BEDDING_INSET = FRINGE;
 /** En deçà, un bout de pavé (reste d'une coupe en limite de case) n'est pas posé. */
 const MIN_PIECE = 0.03;
+/**
+ * Terrain en pente : le lit de pose est découpé en dalles (par côté de case),
+ * chacune couchée sur la pente — une seule dalle plane décollerait du sol
+ * courbe, ou s'y enfoncerait.
+ */
+const BEDDING_PATCHES = 3;
 
 /** Hash entier → [0, 1), stable (jamais Math.random : même village → mêmes pavés). */
 function hash3(a: number, b: number, c: number): number {
@@ -107,6 +114,8 @@ export function isGrassCell(lookup: CellLookup, paved: Set<string>, x: number, z
 export function pavingParts(
   lookup: CellLookup,
   ground: { width: number; depth: number },
+  /** Terrain en pente : hauteur du sol autour de chaque case (absent : sol plat à y = 0). */
+  groundOf?: (x: number, z: number) => HeightFn,
 ): Array<{ x: number; z: number; parts: Part[] }> {
   const builtAt = (x: number, z: number) => hasOccupiedCell(lookup, x, 0, z);
   // Cases pavées d'abord : la lisière dépend des voisines.
@@ -130,14 +139,19 @@ export function pavingParts(
     const x1 = 0.5 - (grass.right ? BEDDING_INSET : 0);
     const z0 = -0.5 + (grass.back ? BEDDING_INSET : 0);
     const z1 = 0.5 - (grass.front ? BEDDING_INSET : 0);
-    const parts: Part[] = [
-      part(
-        boxGeo(+(x1 - x0).toFixed(3), BEDDING_H, +(z1 - z0).toFixed(3)),
-        BEDDING_COLOR,
-        { roughness: 1 },
-        xform([(x0 + x1) / 2, BEDDING_H / 2, (z0 + z1) / 2]),
-      ),
-    ];
+    const heightAt = groundOf?.(x, z);
+    const parts: Part[] = [];
+    const patches = heightAt ? BEDDING_PATCHES : 1;
+    const patchGeo = boxGeo(+((x1 - x0) / patches).toFixed(3), BEDDING_H, +((z1 - z0) / patches).toFixed(3));
+    for (let i = 0; i < patches; i += 1) {
+      for (let j = 0; j < patches; j += 1) {
+        const px = x0 + ((i + 0.5) * (x1 - x0)) / patches;
+        const pz = z0 + ((j + 0.5) * (z1 - z0)) / patches;
+        const bedding = part(patchGeo, BEDDING_COLOR, { roughness: 1 }, xform([px, BEDDING_H / 2, pz]));
+        if (heightAt) bedding.matrix.premultiply(drapeMatrix(heightAt, px, pz));
+        parts.push(bedding);
+      }
+    }
 
     for (let r = 0; r < ROWS; r += 1) {
       const row = z * ROWS + r;
@@ -194,19 +208,15 @@ export function pavingParts(
         // Bloc à plat : son « haut » (y local) regarde vers −z, son « bas » vers +z.
         const mask =
           (joined0 ? 0 : STONE_EDGE.left) | (joined1 ? 0 : STONE_EDGE.right) | STONE_EDGE.top | STONE_EDGE.bottom;
-        parts.push({
-          ...part(
-            stoneBlockGeo(mask),
-            tone,
-            mat,
-            mul(
-              xform([(px0 + px1) / 2, (height - SUNK) / 2, centreZ]),
-              FLAT,
-              xform([0, 0, 0], [0, 0, 0], [px1 - px0, rowZ1 - rowZ0 - JOINT, height + SUNK]),
-            ),
-          ),
-          rigidNormals: true,
-        });
+        const matrix = mul(
+          xform([(px0 + px1) / 2, (height - SUNK) / 2, centreZ]),
+          FLAT,
+          xform([0, 0, 0], [0, 0, 0], [px1 - px0, rowZ1 - rowZ0 - JOINT, height + SUNK]),
+        );
+        // Couché sur la pente, autour du centre du pavé ENTIER : ses deux
+        // moitiés (une par case) reçoivent exactement la même pose.
+        if (heightAt) matrix.premultiply(drapeMatrix(heightAt, centreX, centreZ));
+        parts.push({ ...part(stoneBlockGeo(mask), tone, mat, matrix), rigidNormals: true });
       }
     }
 

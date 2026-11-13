@@ -20,6 +20,7 @@ import {
 } from '../render/growMaterial';
 import { matKey, type MaterialSpec } from '../render/parts';
 import { pickRenderSettings } from '../render/renderSettings';
+import { reliefUniform, type Relief } from '../render/relief';
 import { useControlStore } from '../store/controlStore';
 import { hideAppLoader } from '../loader';
 
@@ -46,9 +47,11 @@ interface VillageMeshesProps {
   /** Emprise de la grille : sert à paver les ruelles autour des bâtiments. */
   gridWidth: number;
   gridDepth: number;
+  /** Relief du terrain : les bâtiments s'y posent de niveau, rues et décor suivent la pente. */
+  relief: Relief;
 }
 
-function createMaterialSet(mat: MaterialSpec): GrowMaterialSet {
+function createMaterialSet(mat: MaterialSpec, relief: { value: THREE.Vector3 }): GrowMaterialSet {
   // Patine procédurale partout sauf sur le verre et les pièces lumineuses.
   const detail = !mat.transparent && !mat.glow;
   return createGrowMaterialSet(
@@ -64,11 +67,11 @@ function createMaterialSet(mat: MaterialSpec): GrowMaterialSet {
       // ne rend que les faces arrière (sinon acné sur les murs fins).
       shadowSide: mat.doubleSide ? THREE.BackSide : null,
     },
-    { detail, masonry: detail && mat.masonry === true },
+    { detail, masonry: detail && mat.masonry === true, relief },
   );
 }
 
-export function VillageMeshes({ cells, toWorldPosition, gridWidth, gridDepth }: VillageMeshesProps) {
+export function VillageMeshes({ cells, toWorldPosition, gridWidth, gridDepth, relief }: VillageMeshesProps) {
   // Référence stable tant qu'aucune valeur ne change (useShallow).
   const settings = useControlStore(useShallow(pickRenderSettings));
   const blockTransitionEnabled = useControlStore((state) => state.blockTransitionEnabled);
@@ -79,9 +82,22 @@ export function VillageMeshes({ cells, toWorldPosition, gridWidth, gridDepth }: 
   // Cache des chunks fusionnés, propre à cette instance (survit aux rendus).
   const [chunkCache] = useState(() => new VillageChunkCache());
   const groups = useMemo(
-    () => chunkCache.build(cells, toWorldPosition, settings, { width: gridWidth, depth: gridDepth }),
-    [chunkCache, cells, toWorldPosition, settings, gridWidth, gridDepth],
+    () =>
+      chunkCache.build(cells, toWorldPosition, settings, {
+        width: gridWidth,
+        depth: gridDepth,
+        relief: relief.amplitude,
+      }),
+    [chunkCache, cells, toWorldPosition, settings, gridWidth, gridDepth, relief.amplitude],
   );
+
+  // Relief connu des shaders (pied des murs sali au ras du sol) : uniform
+  // partagé par tous les matériaux, réglé en place.
+  const [reliefValue] = useState(() => ({ value: new THREE.Vector3(0, 1, 2) }));
+  useEffect(() => {
+    reliefValue.value.set(...reliefUniform(relief));
+    invalidate();
+  }, [reliefValue, relief, invalidate]);
 
   // Un jeu de matériaux "grow" (voir growMaterial.ts) par groupe de
   // matériau, partagé par tous les chunks de ce groupe. Ceux qui servent
@@ -93,7 +109,7 @@ export function VillageMeshes({ cells, toWorldPosition, gridWidth, gridDepth }: 
     const next = new Map<string, GrowMaterialSet>();
     for (const { mat } of groups) {
       const key = matKey(mat);
-      if (!next.has(key)) next.set(key, materials.get(key) ?? createMaterialSet(mat));
+      if (!next.has(key)) next.set(key, materials.get(key) ?? createMaterialSet(mat, reliefValue));
     }
     setMaterials(next);
   }

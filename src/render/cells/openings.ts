@@ -32,6 +32,14 @@ export function lampZones(contexts: CellContext[], lamps: Map<GridCell, RoomLamp
 }
 
 const FACE_SALT: Record<CellFace, number> = { front: 1, back: 2, left: 3, right: 4 };
+const FACE_OUT: Record<CellFace, [number, number]> = { front: [0, 1], back: [0, -1], left: [-1, 0], right: [1, 0] };
+
+/** Hauteur du seuil au-dessus du terrain devant la face (0 sur terrain plat) : autant de marches à monter. */
+export function doorDrop(ctx: Pick<CellContext, 'groundAt'>, face: CellFace): number {
+  if (!ctx.groundAt) return 0;
+  const [ox, oz] = FACE_OUT[face];
+  return Math.max(0, -0.5 - ctx.groundAt(ox * 0.6, oz * 0.6));
+}
 const hashOf = (x: number, z: number, salt: number) => Math.abs((x * 73856093) ^ (z * 19349663) ^ (salt * 83492791));
 
 /**
@@ -57,6 +65,8 @@ export function planDoors(contexts: CellContext[], lamps: Map<GridCell, RoomLamp
         const rank =
           (rounded ? 1000 : 0) +
           Math.hypot(cell.x - hx, cell.z - hz) * 10 +
+          // Terrain en pente : de préférence côté amont, là où le seuil est au ras du sol.
+          doorDrop(ctx, face) * 20 +
           (hashOf(cell.x, cell.z, FACE_SALT[face]) % 10) / 10;
         if (!best || rank < best.rank) best = { cell, face, rank };
       }

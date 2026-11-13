@@ -1,12 +1,12 @@
 import { OrbitControls } from '@react-three/drei';
-import { Canvas, useThree, type ThreeEvent } from '@react-three/fiber';
-import { Color, type DirectionalLight } from 'three';
+import { Canvas, useFrame, useThree, type ThreeEvent } from '@react-three/fiber';
+import { BufferAttribute, BufferGeometry, Color, type DirectionalLight } from 'three';
 import { useShallow } from 'zustand/react/shallow';
 import type { GridCell } from '../types';
 import { VillageMeshes } from './VillageMeshes';
 import { PlacementPreview } from './PlacementPreview';
 import { SkyDome } from './SkyDome';
-import { Terrain } from './Terrain';
+import { Terrain, TERRAIN_FINE_STEP } from './Terrain';
 import { Trees } from './Trees';
 import { Bloom, EffectComposer, Noise, ToneMapping, Vignette } from '@react-three/postprocessing';
 import { ColorGrade } from './ColorGrade';
@@ -16,6 +16,9 @@ import { lazy, Suspense, useEffect, useMemo, useRef, useState, type ComponentTyp
 import { useUiStore } from '../store/uiStore';
 import { GRID_HEIGHT, initialCameraScale, sceneScale, shadowCameraHalfSize } from '../config/gridConfig';
 import { raycastVoxels, targetColumn } from '../utils/voxelRaycast';
+import { createGround, raycastGround } from '../render/ground';
+import { groundHeight } from '../render/landscape';
+import { RELIEF_MAX, reliefFor, reliefHeight, type Relief } from '../render/relief';
 
 // Chargé seulement quand le moniteur est activé (Debug) : hors du bundle initial.
 const Perf = lazy(() => import('r3f-perf').then((module) => ({ default: module.Perf })));
@@ -49,6 +52,54 @@ const CLICK_MAX_DRAG_PX = 5;
  * plan, même quand il passe au ras d'une tour en bord de grille.
  */
 const CLICK_PLANE_SIZE = 1000;
+/** Garde de la caméra au-dessus du terrain. */
+const CAMERA_CLEARANCE = 0.4;
+
+/**
+ * Quadrillage discret de la grille, drapé sur le terrain : ses sommets sont
+ * ceux de la maille fine du terrain (Terrain.tsx), les lignes suivent donc
+ * exactement la surface, juste au-dessus de l'herbe (évite le z-fighting).
+ */
+function GridLines({ width, depth, relief }: { width: number; depth: number; relief: Relief }) {
+  const geometry = useMemo(() => {
+    const points: number[] = [];
+    const line = (count: number, length: number, at: (index: number, along: number) => [number, number]) => {
+      const steps = Math.round(length / TERRAIN_FINE_STEP);
+      for (let index = 0; index <= count; index += 1) {
+        for (let s = 0; s < steps; s += 1) {
+          for (const along of [s, s + 1]) {
+            const [x, z] = at(index, (along * length) / steps);
+            points.push(x, reliefHeight(x, z, relief) + 0.004, z);
+          }
+        }
+      }
+    };
+    line(width, depth, (index, along) => [index - width / 2, along - depth / 2]);
+    line(depth, width, (index, along) => [along - width / 2, index - depth / 2]);
+    const lines = new BufferGeometry();
+    lines.setAttribute('position', new BufferAttribute(new Float32Array(points), 3));
+    return lines;
+  }, [width, depth, relief]);
+  useEffect(() => () => geometry.dispose(), [geometry]);
+
+  return (
+    <lineSegments geometry={geometry}>
+      <lineBasicMaterial color="#000000" transparent opacity={0.08} depthWrite={false} />
+    </lineSegments>
+  );
+}
+
+/**
+ * Le terrain n'est plus plat sous la caméra : après OrbitControls (priorité
+ * −1), on la remonte si elle passerait sous le sol.
+ */
+function CameraFloor({ heightAt }: { heightAt: (x: number, z: number) => number }) {
+  useFrame(({ camera }) => {
+    const floor = heightAt(camera.position.x, camera.position.z) + CAMERA_CLEARANCE;
+    if (camera.position.y < floor) camera.position.y = floor;
+  });
+  return null;
+}
 
 /**
  * Lumière du ciel (hémisphérique) : le dessus des volumes prend la teinte du
@@ -172,6 +223,7 @@ const selectSkyFog = (state: ControlState) => ({
   fogFar: state.fogFar,
   groundColor: state.groundColor,
   groundRoughness: state.groundRoughness,
+  terrainRelief: state.terrainRelief,
 });
 
 const selectCamera = (state: ControlState) => ({
@@ -234,9 +286,8 @@ export function VoxelScene({
     shadowRadius,
     shadowBias,
   } = useControlStore(useShallow(selectLighting));
-  const { skyTopColor, skyHorizonColor, fogColor, fogNear, fogFar, groundColor, groundRoughness } = useControlStore(
-    useShallow(selectSkyFog),
-  );
+  const { skyTopColor, skyHorizonColor, fogColor, fogNear, fogFar, groundColor, groundRoughness, terrainRelief } =
+    useControlStore(useShallow(selectSkyFog));
   const { dampingFactor, maxPolarAngle, minDistance, maxDistance } = useControlStore(useShallow(selectCamera));
   const {
     aoEnabled,
@@ -256,9 +307,19 @@ export function VoxelScene({
     () => skyLightColors(ambientColor, skyTopColor, groundColor, directionalColor),
     [ambientColor, skyTopColor, groundColor, directionalColor],
   );
-  // Paysage : plat partout où la caméra peut orbiter, visible jusqu'au bout du brouillard.
+  // Paysage : sans colline partout où la caméra peut orbiter, visible jusqu'au bout du brouillard.
   const flatRadius = maxDistance * scale + 4;
   const landscapeReach = Math.max(fogFar * scale, flatRadius + 20);
+  // Relief sous le village, et niveau de chaque bâtiment posé dessus (ground.ts).
+  const relief = useMemo(
+    () => reliefFor(Math.max(gridWidth, gridDepth), terrainRelief),
+    [gridWidth, gridDepth, terrainRelief],
+  );
+  const ground = useMemo(() => createGround(cells, toWorldPosition, relief), [cells, toWorldPosition, relief]);
+  const cameraFloor = useMemo(
+    () => (x: number, z: number) => groundHeight(x, z, flatRadius, relief),
+    [flatRadius, relief],
+  );
 
   // N8AO (~85 kB gzip) n'est chargé qu'une fois l'effet activé. Pas de
   // React.lazy + Suspense ici : l'EffectComposer ne recalcule ses passes que
@@ -291,7 +352,8 @@ export function VoxelScene({
   /**
    * Colonne visée : le premier bloc que traverse le rayon du pointeur (sur
    * un flanc, en construction, la colonne voisine — on bâtit contre le mur) ;
-   * à défaut, la case du sol sous le pointeur.
+   * à défaut, la case du terrain sous le pointeur (le terrain, en pente,
+   * peut aussi masquer un bloc : le plus proche des deux l'emporte).
    */
   const pickColumn = (event: ThreeEvent<PointerEvent>, build: boolean) => {
     const { origin, direction } = event.ray;
@@ -300,14 +362,17 @@ export function VoxelScene({
       [direction.x, direction.y, direction.z],
       [gridWidth, GRID_HEIGHT, gridDepth],
       (x, y, z) => solidCells.has(voxelKey(x, y, z)),
+      ground.relief.amplitude > 0 ? ground.baseAt : undefined,
     );
-    if (hit) {
+    const soil = raycastGround(ground, [origin.x, origin.y, origin.z], [direction.x, direction.y, direction.z]);
+    if (hit && (!soil || hit.t <= soil.t + 1e-6)) {
       const { x, z } = targetColumn(hit, build, gridWidth, gridDepth);
       return { gridX: x, gridZ: z };
     }
+    const point = soil ?? event.point;
     return {
-      gridX: Math.floor(event.point.x + gridWidth / 2),
-      gridZ: Math.floor(event.point.z + gridDepth / 2),
+      gridX: Math.floor(point.x + gridWidth / 2),
+      gridZ: Math.floor(point.z + gridDepth / 2),
     };
   };
 
@@ -400,19 +465,22 @@ export function VoxelScene({
       />
       <ScreenshotBridge />
       <GestureTracker gesture={gestureRef} />
-      <Terrain grassColor={groundColor} roughness={groundRoughness} flatRadius={flatRadius} reach={landscapeReach} />
-      <Trees gridSize={Math.max(gridWidth, gridDepth)} flatRadius={flatRadius} reach={landscapeReach} />
-      {/* Quadrillage discret, juste au-dessus de l'herbe (évite le z-fighting). */}
-      <gridHelper
-        args={[Math.max(gridWidth, gridDepth), Math.max(gridWidth, gridDepth), '#000000', '#000000']}
-        position={[0, 0.003, 0]}
-        material-transparent
-        material-opacity={0.08}
-        material-depthWrite={false}
+      <Terrain
+        grassColor={groundColor}
+        roughness={groundRoughness}
+        flatRadius={flatRadius}
+        reach={landscapeReach}
+        relief={relief}
       />
+      <Trees gridSize={Math.max(gridWidth, gridDepth)} flatRadius={flatRadius} reach={landscapeReach} relief={relief} />
+      <GridLines width={gridWidth} depth={gridDepth} relief={relief} />
+      <CameraFloor heightAt={cameraFloor} />
       {/* Surface de clic : invisible (ni couleur ni profondeur), seulement
-          raycastée — c'est son rayon qui sert ensuite à viser les blocs. */}
+          raycastée — c'est son rayon qui sert ensuite à viser les blocs et le
+          terrain (pickColumn). Sous le creux le plus bas du relief, pour que
+          tout rayon qui touche le sol la rencontre aussi. */}
       <mesh
+        position={[0, -(relief.amplitude * RELIEF_MAX + 0.5), 0]}
         rotation={[-Math.PI / 2, 0, 0]}
         onPointerMove={handlePointerMove}
         onPointerDown={handlePointerDown}
@@ -422,13 +490,20 @@ export function VoxelScene({
         <planeGeometry args={[CLICK_PLANE_SIZE, CLICK_PLANE_SIZE]} />
         <meshBasicMaterial colorWrite={false} depthWrite={false} />
       </mesh>
-      <VillageMeshes cells={cells} toWorldPosition={toWorldPosition} gridWidth={gridWidth} gridDepth={gridDepth} />
+      <VillageMeshes
+        cells={cells}
+        toWorldPosition={toWorldPosition}
+        gridWidth={gridWidth}
+        gridDepth={gridDepth}
+        relief={relief}
+      />
       <PlacementPreview
         previewCell={previewCell}
         mode={toolMode}
         toWorldPosition={toWorldPosition}
         getNextPlacementY={getNextPlacementY}
         getRemovalY={getRemovalY}
+        baseAt={ground.baseAt}
       />
       <OrbitControls
         enableDamping

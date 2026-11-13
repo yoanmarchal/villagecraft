@@ -7,6 +7,8 @@ interface PlacementPreviewProps {
   toWorldPosition: (x: number, y: number, z: number) => [number, number, number];
   getNextPlacementY: (x: number, z: number, minimumY: number) => number | null;
   getRemovalY: (x: number, z: number) => number | null;
+  /** Niveau de la colonne sur le terrain en pente (ground.ts). */
+  baseAt: (x: number, z: number) => number;
 }
 
 /**
@@ -20,6 +22,7 @@ export function PlacementPreview({
   toWorldPosition,
   getNextPlacementY,
   getRemovalY,
+  baseAt,
 }: PlacementPreviewProps) {
   if (!previewCell) {
     return null;
@@ -32,7 +35,8 @@ export function PlacementPreview({
     return null;
   }
 
-  const position = toWorldPosition(previewCell.x, y, previewCell.z);
+  const [wx, wy, wz] = toWorldPosition(x, y, z);
+  const position: [number, number, number] = [wx, wy + baseAt(x, z), wz];
 
   return isDemolish ? (
     // Légèrement plus grand que la cellule pour envelopper le bloc existant.

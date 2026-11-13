@@ -3,13 +3,14 @@
  * déterministe (mêmes paramètres → même paysage), sans three.js : utilisé par
  * `Terrain.tsx` et `Trees.tsx`, et testé.
  *
- * Le terrain est parfaitement plat jusqu'à `flatRadius` (la grille, et toute
- * la zone où la caméra peut orbiter : elle ne doit jamais passer sous une
- * colline), puis ondule doucement vers l'horizon, où le brouillard le fond
- * dans le ciel.
+ * Hors du relief propre au village (relief.ts, qui s'éteint à ses abords), le
+ * terrain est parfaitement plat jusqu'à `flatRadius` (toute la zone où la
+ * caméra peut orbiter : elle ne doit jamais passer sous une colline), puis
+ * ondule doucement vers l'horizon, où le brouillard le fond dans le ciel.
  */
 
 import { createValueNoise } from '../utils/noise';
+import { FLAT_RELIEF, reliefHeight, type Relief } from './relief';
 
 const hillNoise = createValueNoise(7919);
 const forestNoise = createValueNoise(104729);
@@ -37,6 +38,14 @@ export function terrainHeight(x: number, z: number, flatRadius: number): number 
   return rise * hillNoise(x * frequency + 31.7, z * frequency + 11.3) * flatRadius * 0.22;
 }
 
+/**
+ * Hauteur du sol en (x, z) monde, relief du village compris (relief.ts) : il
+ * s'éteint bien avant `flatRadius`, les deux ne se recouvrent pas.
+ */
+export function groundHeight(x: number, z: number, flatRadius: number, relief: Relief): number {
+  return terrainHeight(x, z, flatRadius) + reliefHeight(x, z, relief);
+}
+
 export type TreeKind = 'broadleaf' | 'conifer';
 
 export interface TreeInstance {
@@ -62,7 +71,12 @@ export const MAX_TREES = 2600;
  * près du village — ils masqueraient les façades vues en rase-mottes — puis
  * de plus en plus denses, jusqu'à `reach`.
  */
-export function scatterTrees(gridSize: number, flatRadius: number, reach: number): TreeInstance[] {
+export function scatterTrees(
+  gridSize: number,
+  flatRadius: number,
+  reach: number,
+  relief: Relief = FLAT_RELIEF,
+): TreeInstance[] {
   const half = gridSize / 2;
   // Maille élargie avec la scène : le nombre d'arbres reste borné.
   const spacing = 2.3 * Math.max(1, reach / 75);
@@ -85,7 +99,7 @@ export function scatterTrees(gridSize: number, flatRadius: number, reach: number
       trees.push({
         kind: conifer ? 'conifer' : 'broadleaf',
         x,
-        y: terrainHeight(x, z, flatRadius),
+        y: groundHeight(x, z, flatRadius, relief),
         z,
         scale: 0.75 + hash2(ix, iz, 5) * 0.6,
         rotation: hash2(ix, iz, 6) * Math.PI * 2,
