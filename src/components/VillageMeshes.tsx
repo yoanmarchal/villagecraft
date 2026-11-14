@@ -20,7 +20,13 @@ import {
 } from '../render/growMaterial';
 import { matKey, type MaterialSpec } from '../render/parts';
 import { pickRenderSettings } from '../render/renderSettings';
-import { reliefUniform, type Relief } from '../render/relief';
+import type { Relief } from '../render/relief';
+import {
+  createReliefUniforms,
+  disposeReliefUniforms,
+  updateReliefUniforms,
+  type ReliefUniforms,
+} from '../render/reliefUniforms';
 import { useControlStore } from '../store/controlStore';
 import { hideAppLoader } from '../loader';
 
@@ -51,7 +57,7 @@ interface VillageMeshesProps {
   relief: Relief;
 }
 
-function createMaterialSet(mat: MaterialSpec, relief: { value: THREE.Vector3 }): GrowMaterialSet {
+function createMaterialSet(mat: MaterialSpec, relief: ReliefUniforms): GrowMaterialSet {
   // Patine procédurale partout sauf sur le verre et les pièces lumineuses.
   const detail = !mat.transparent && !mat.glow;
   return createGrowMaterialSet(
@@ -86,18 +92,19 @@ export function VillageMeshes({ cells, toWorldPosition, gridWidth, gridDepth, re
       chunkCache.build(cells, toWorldPosition, settings, {
         width: gridWidth,
         depth: gridDepth,
-        relief: relief.amplitude,
+        relief,
       }),
-    [chunkCache, cells, toWorldPosition, settings, gridWidth, gridDepth, relief.amplitude],
+    [chunkCache, cells, toWorldPosition, settings, gridWidth, gridDepth, relief],
   );
 
-  // Relief connu des shaders (pied des murs sali au ras du sol) : uniform
-  // partagé par tous les matériaux, réglé en place.
-  const [reliefValue] = useState(() => ({ value: new THREE.Vector3(0, 1, 2) }));
+  // Relief connu des shaders (pied des murs sali au ras du sol) : uniforms
+  // partagés par tous les matériaux, réglés en place.
+  const [reliefValue] = useState(createReliefUniforms);
   useEffect(() => {
-    reliefValue.value.set(...reliefUniform(relief));
+    updateReliefUniforms(reliefValue, relief);
     invalidate();
   }, [reliefValue, relief, invalidate]);
+  useEffect(() => () => disposeReliefUniforms(reliefValue), [reliefValue]);
 
   // Un jeu de matériaux "grow" (voir growMaterial.ts) par groupe de
   // matériau, partagé par tous les chunks de ce groupe. Ceux qui servent

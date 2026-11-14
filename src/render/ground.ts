@@ -16,7 +16,7 @@
  */
 
 import type { GridCell } from '../types';
-import { RELIEF_MAX, reliefHeight, type Relief } from './relief';
+import { isFlatRelief, reliefBound, reliefHeight, type Relief } from './relief';
 
 type ToWorld = (x: number, y: number, z: number) => [number, number, number];
 
@@ -37,7 +37,7 @@ const SAMPLES = 5;
 const columnKey = (x: number, z: number) => `${x},${z}`;
 
 export function createGround(cells: GridCell[], toWorldPosition: ToWorld, relief: Relief): Ground {
-  if (relief.amplitude === 0) {
+  if (isFlatRelief(relief)) {
     return { relief, heightAt: () => 0, baseAt: () => 0 };
   }
   const heightAt = (worldX: number, worldZ: number) => reliefHeight(worldX, worldZ, relief);
@@ -125,13 +125,13 @@ export function raycastGround(
   const [dx, dy, dz] = direction;
   const above = (t: number) => oy + dy * t - ground.heightAt(ox + dx * t, oz + dz * t);
   if (above(0) <= 0) return { t: 0, x: ox, z: oz };
-  if (ground.relief.amplitude === 0) {
+  if (isFlatRelief(ground.relief)) {
     if (dy >= 0) return null;
     const t = -oy / dy;
     return t <= maxDistance ? { t, x: ox + dx * t, z: oz + dz * t } : null;
   }
   // Rien à chercher tant que le rayon vole au-dessus du plus haut relief possible.
-  const ceiling = ground.relief.amplitude * RELIEF_MAX + 0.01;
+  const ceiling = reliefBound(ground.relief) + 0.01;
   let t = dy < 0 && oy > ceiling ? (ceiling - oy) / dy : 0;
   const step = 0.25;
   while (t < maxDistance) {

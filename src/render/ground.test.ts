@@ -6,7 +6,17 @@ import { getExposedFaces, makeCellLookup } from '../utils/cellUtils';
 import { buildVillage } from './buildVillage';
 import { createGround, raycastGround } from './ground';
 import { pavedCells } from './cells/pavingParts';
-import { FLAT_RELIEF, RELIEF_GLSL, RELIEF_MAX, reliefFor, reliefHeight } from './relief';
+import {
+  FLAT_RELIEF,
+  RELIEF_GLSL,
+  SCULPT_STEP_HEIGHT,
+  isFlatRelief,
+  reliefBound,
+  reliefFor,
+  reliefHeight,
+  reliefReach,
+} from './relief';
+import { sculptTerrain, type TerrainShape } from '../terrainShape';
 import { pickRenderSettings } from './renderSettings';
 
 const SETTINGS = pickRenderSettings(useControlStore.getState());
@@ -30,7 +40,7 @@ describe('relief', () => {
         const height = reliefHeight(x, z, RELIEF);
         low = Math.min(low, height);
         high = Math.max(high, height);
-        expect(Math.abs(height)).toBeLessThanOrEqual(RELIEF_MAX);
+        expect(Math.abs(height)).toBeLessThanOrEqual(reliefBound(RELIEF));
         // Pente douce : une rue reste praticable.
         expect(Math.abs(height - reliefHeight(x + 0.25, z, RELIEF))).toBeLessThan(0.25 * 0.45);
       }
@@ -44,8 +54,128 @@ describe('relief', () => {
 
   it('expose la même formule aux shaders', () => {
     expect(RELIEF_GLSL).toContain('float vcGroundHeight(vec2 p)');
-    expect(RELIEF_GLSL.match(/sin\(/g)).toHaveLength(3);
+    expect(RELIEF_GLSL).toContain('uniform vec4 uReliefWaves[3]');
+    expect(RELIEF_GLSL).toContain('uniform sampler2D uSculpt');
     expect(RELIEF_GLSL).not.toMatch(/NaN|undefined/);
+  });
+});
+
+describe('graine du terrain', () => {
+  const heights = (seed: number) => {
+    const relief = reliefFor(SIZE, 1, { seed, sculpt: [] });
+    const values: number[] = [];
+    for (let x = -6; x <= 6; x += 1.5) for (let z = -6; z <= 6; z += 1.5) values.push(reliefHeight(x, z, relief));
+    return values;
+  };
+
+  it('donne le même terrain pour la même graine, un autre pour une autre', () => {
+    expect(heights(1234)).toEqual(heights(1234));
+    expect(heights(1234)).not.toEqual(heights(1235));
+    // Graine 0 : le terrain d'origine (villages sauvegardés avant les graines).
+    expect(heights(0)).toEqual(
+      heights(0).map((_, i) => reliefHeight(-6 + 1.5 * Math.floor(i / 9), -6 + 1.5 * (i % 9), RELIEF)),
+    );
+  });
+
+  it('garde, quelle que soit la graine, le centre à y = 0, un vrai dénivelé et une pente douce', () => {
+    for (let seed = 1; seed <= 40; seed += 1) {
+      const relief = reliefFor(SIZE, 1, { seed: seed * 7919, sculpt: [] });
+      expect(Math.abs(reliefHeight(0, 0, relief))).toBeLessThan(1e-9);
+      let low = Infinity;
+      let high = -Infinity;
+      for (let x = -SIZE / 2; x <= SIZE / 2; x += 0.25) {
+        for (let z = -SIZE / 2; z <= SIZE / 2; z += 0.25) {
+          const height = reliefHeight(x, z, relief);
+          low = Math.min(low, height);
+          high = Math.max(high, height);
+          expect(Math.abs(height)).toBeLessThanOrEqual(reliefBound(relief));
+          expect(Math.abs(height - reliefHeight(x + 0.25, z, relief))).toBeLessThan(0.25 * 0.6);
+        }
+      }
+      expect(high - low).toBeGreaterThan(0.4);
+    }
+  });
+});
+
+describe('modelage du terrain', () => {
+  const shape = (entries: Array<[number, number, number]>): TerrainShape => ({ seed: 0, sculpt: entries });
+  // Centre monde de la case (x, z) d'une grille de côté SIZE.
+  const centre = (x: number, z: number): [number, number] => [x - SIZE / 2 + 0.5, z - SIZE / 2 + 0.5];
+
+  it('soulève une bosse lisse sous la case relevée, qui retombe à zéro deux cases plus loin', () => {
+    const relief = reliefFor(SIZE, 0, shape([[5, 5, 3]]));
+    expect(isFlatRelief(relief)).toBe(false);
+    const [cx, cz] = centre(5, 5);
+    const top = reliefHeight(cx, cz, relief);
+    expect(top).toBeCloseTo(3 * SCULPT_STEP_HEIGHT * (2 / 3) ** 2, 5);
+    expect(reliefHeight(cx + 1, cz, relief)).toBeGreaterThan(0);
+    expect(reliefHeight(cx + 1, cz, relief)).toBeLessThan(top);
+    expect(reliefHeight(cx + 2, cz, relief)).toBeCloseTo(0, 6);
+    expect(reliefHeight(cx, cz - 2.5, relief)).toBe(0);
+    // Sans marche : la pente reste finie d'un nœud à l'autre du treillis.
+    for (let x = cx - 2.5; x < cx + 2.5; x += 0.05) {
+      expect(Math.abs(reliefHeight(x + 0.05, cz, relief) - reliefHeight(x, cz, relief))).toBeLessThan(0.05);
+    }
+    expect(reliefBound(relief)).toBeCloseTo(top, 5);
+  });
+
+  it('creuse avec des crans négatifs, et fait un plateau de cases voisines au même cran', () => {
+    const hollow = reliefFor(SIZE, 0, shape([[2, 8, -4]]));
+    expect(reliefHeight(...centre(2, 8), hollow)).toBeLessThan(-0.6);
+
+    const entries: Array<[number, number, number]> = [];
+    for (let x = 3; x <= 8; x += 1) for (let z = 3; z <= 8; z += 1) entries.push([x, z, 2]);
+    const plateau = reliefFor(SIZE, 0, shape(entries));
+    for (const [x, z] of [centre(5, 5), centre(6, 6), [0.3, -0.2]]) {
+      expect(reliefHeight(x, z, plateau)).toBeCloseTo(2 * SCULPT_STEP_HEIGHT, 5);
+    }
+  });
+
+  it('s’ajoute aux ondulations, et couvre la grille même en bordure', () => {
+    const base = reliefHeight(...centre(0, 0), RELIEF);
+    const relief = reliefFor(SIZE, 1, shape([[0, 0, 5]]));
+    expect(reliefHeight(...centre(0, 0), relief)).toBeCloseTo(base + 5 * SCULPT_STEP_HEIGHT * (2 / 3) ** 2, 5);
+    expect(reliefReach(relief)).toBeGreaterThanOrEqual(SIZE / 2 + 2);
+    expect(reliefReach(FLAT_RELIEF)).toBe(0);
+    // Hors de la grille, à plus de deux cases : plus rien du modelage.
+    expect(reliefHeight(-SIZE / 2 - 1.6, -SIZE / 2 - 1.6, relief)).toBeCloseTo(
+      reliefHeight(-SIZE / 2 - 1.6, -SIZE / 2 - 1.6, RELIEF),
+      6,
+    );
+  });
+
+  it('borne les crans et rend la même forme quand rien ne change', () => {
+    let terrain: TerrainShape = { seed: 9, sculpt: [] };
+    for (let i = 0; i < 20; i += 1) terrain = sculptTerrain(terrain, 1, 1, 1);
+    expect(terrain.sculpt).toEqual([[1, 1, 8]]);
+    expect(sculptTerrain(terrain, 1, 1, 1)).toBe(terrain);
+    // Revenu à zéro : la case disparaît de la liste.
+    for (let i = 0; i < 8; i += 1) terrain = sculptTerrain(terrain, 1, 1, -1);
+    expect(terrain).toEqual({ seed: 9, sculpt: [] });
+  });
+
+  it('monte un bâtiment avec la bosse soulevée sous lui, sur terrain plat par ailleurs', () => {
+    const grid = new VillageGrid(SIZE, 10, SIZE);
+    grid.addBlockInColumn(5, 5);
+    grid.addBlockInColumn(6, 5);
+    const cells = grid.getOccupiedCells();
+    const relief = reliefFor(SIZE, 0, shape([[5, 5, 4]]));
+    const ground = createGround(cells, (x, y, z) => grid.toWorldPosition(x, y, z), relief);
+    expect(ground.baseAt(5, 5)).toBeGreaterThan(0.6);
+    expect(ground.baseAt(6, 5)).toBe(ground.baseAt(5, 5));
+    const sloped = buildVillage(cells, (x, y, z) => grid.toWorldPosition(x, y, z), SETTINGS, {
+      width: SIZE,
+      depth: SIZE,
+      relief,
+    });
+    const flat = buildVillage(cells, (x, y, z) => grid.toWorldPosition(x, y, z), SETTINGS, {
+      width: SIZE,
+      depth: SIZE,
+    });
+    const count = (groups: typeof flat) =>
+      groups.reduce((sum, { geometry }) => sum + geometry.getAttribute('position').count, 0);
+    // Soubassements en plus côté aval.
+    expect(count(sloped)).toBeGreaterThan(count(flat));
   });
 });
 

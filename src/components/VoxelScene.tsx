@@ -18,7 +18,8 @@ import { GRID_HEIGHT, initialCameraScale, sceneScale, shadowCameraHalfSize } fro
 import { raycastVoxels, targetColumn } from '../utils/voxelRaycast';
 import { createGround, raycastGround } from '../render/ground';
 import { groundHeight } from '../render/landscape';
-import { RELIEF_MAX, reliefFor, reliefHeight, type Relief } from '../render/relief';
+import { isFlatRelief, reliefBound, reliefFor, reliefHeight, type Relief } from '../render/relief';
+import type { TerrainShape } from '../terrainShape';
 
 // Chargé seulement quand le moniteur est activé (Debug) : hors du bundle initial.
 const Perf = lazy(() => import('r3f-perf').then((module) => ({ default: module.Perf })));
@@ -174,6 +175,10 @@ interface VoxelSceneProps {
   selectedHeight: number;
   onAddBlock: (x: number, y: number, z: number) => void;
   onRemoveColumn: (x: number, z: number) => void;
+  /** Relève (`delta` > 0) ou creuse (`delta` < 0) le terrain à la case (x, z). */
+  onSculpt: (x: number, z: number, delta: number) => void;
+  /** Forme du terrain du village : graine des ondulations et modelage (terrainShape.ts). */
+  terrain: TerrainShape;
   onPreviewMove: (x: number, z: number) => void;
   onPreviewLeave: () => void;
   previewCell: { x: number; z: number } | null;
@@ -254,6 +259,8 @@ export function VoxelScene({
   selectedHeight,
   onAddBlock,
   onRemoveColumn,
+  onSculpt,
+  terrain,
   onPreviewMove,
   onPreviewLeave,
   previewCell,
@@ -312,8 +319,8 @@ export function VoxelScene({
   const landscapeReach = Math.max(fogFar * scale, flatRadius + 20);
   // Relief sous le village, et niveau de chaque bâtiment posé dessus (ground.ts).
   const relief = useMemo(
-    () => reliefFor(Math.max(gridWidth, gridDepth), terrainRelief),
-    [gridWidth, gridDepth, terrainRelief],
+    () => reliefFor(Math.max(gridWidth, gridDepth), terrainRelief, terrain),
+    [gridWidth, gridDepth, terrainRelief, terrain],
   );
   const ground = useMemo(() => createGround(cells, toWorldPosition, relief), [cells, toWorldPosition, relief]);
   const cameraFloor = useMemo(
@@ -362,7 +369,7 @@ export function VoxelScene({
       [direction.x, direction.y, direction.z],
       [gridWidth, GRID_HEIGHT, gridDepth],
       (x, y, z) => solidCells.has(voxelKey(x, y, z)),
-      ground.relief.amplitude > 0 ? ground.baseAt : undefined,
+      isFlatRelief(ground.relief) ? undefined : ground.baseAt,
     );
     const soil = raycastGround(ground, [origin.x, origin.y, origin.z], [direction.x, direction.y, direction.z]);
     if (hit && (!soil || hit.t <= soil.t + 1e-6)) {
@@ -382,6 +389,8 @@ export function VoxelScene({
     onPreviewMove(gridX, gridZ);
   };
 
+  const sculpting = toolMode === 'raise' || toolMode === 'lower';
+
   const handlePointerDown = (event: ThreeEvent<PointerEvent>) => {
     event.stopPropagation();
     const { clientX, clientY, pointerId } = event.nativeEvent;
@@ -397,6 +406,16 @@ export function VoxelScene({
 
     const dragDistance = Math.hypot(event.nativeEvent.clientX - down.x, event.nativeEvent.clientY - down.y);
     if (dragDistance > CLICK_MAX_DRAG_PX) return;
+
+    // Outils du terrain : le clic gauche / tap relève ou creuse la case visée
+    // (celle du bloc sous le curseur, s'il y en a un), le clic droit fait l'inverse.
+    if (sculpting) {
+      if (event.button !== 0 && event.button !== 2) return;
+      const { gridX, gridZ } = pickColumn(event, false);
+      onPreviewMove(gridX, gridZ);
+      onSculpt(gridX, gridZ, (toolMode === 'raise') === (event.button === 0) ? 1 : -1);
+      return;
+    }
 
     // Clic droit : toujours démolir. Clic gauche / tap : selon l'outil actif.
     const demolish = event.button === 2 || (event.button === 0 && toolMode === 'demolish');
@@ -480,7 +499,7 @@ export function VoxelScene({
           terrain (pickColumn). Sous le creux le plus bas du relief, pour que
           tout rayon qui touche le sol la rencontre aussi. */}
       <mesh
-        position={[0, -(relief.amplitude * RELIEF_MAX + 0.5), 0]}
+        position={[0, -(reliefBound(relief) + 0.5), 0]}
         rotation={[-Math.PI / 2, 0, 0]}
         onPointerMove={handlePointerMove}
         onPointerDown={handlePointerDown}
@@ -504,6 +523,7 @@ export function VoxelScene({
         getNextPlacementY={getNextPlacementY}
         getRemovalY={getRemovalY}
         baseAt={ground.baseAt}
+        heightAt={ground.heightAt}
       />
       <OrbitControls
         enableDamping

@@ -49,6 +49,33 @@ describe('gridControllerStore — annuler / rétablir', () => {
     expect(store().canUndo).toBe(false);
   });
 
+  it('annule et rétablit le modelage du terrain, bornes comprises', () => {
+    store().sculpt(1, 1, 1);
+    store().sculpt(1, 1, 1);
+    expect(grid.terrain.sculpt).toEqual([[1, 1, 2]]);
+    expect(onMutate).toHaveBeenCalledTimes(2);
+
+    store().undo();
+    expect(grid.terrain.sculpt).toEqual([[1, 1, 1]]);
+    store().redo();
+    expect(grid.terrain.sculpt).toEqual([[1, 1, 2]]);
+
+    // Hors grille : rien, pas d'étape d'historique.
+    store().sculpt(7, 0, 1);
+    expect(onMutate).toHaveBeenCalledTimes(4);
+  });
+
+  it('régénérer change le terrain, et annuler rend le précédent', async () => {
+    store().sculpt(0, 0, -1);
+    const before = grid.terrain;
+    await store().generateTerrain();
+    expect(grid.terrain.seed).not.toBe(before.seed);
+    expect(grid.terrain.sculpt).toEqual([]);
+
+    store().undo();
+    expect(grid.terrain).toEqual(before);
+  });
+
   it("Clear s'annule", () => {
     grid.addBlock(1, 0, 1);
     store().commit();

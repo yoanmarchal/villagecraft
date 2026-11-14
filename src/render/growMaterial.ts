@@ -23,6 +23,7 @@
  */
 
 import * as THREE from 'three';
+import { createReliefUniforms, type ReliefUniforms } from './reliefUniforms';
 import { FLOOR_T, WALL_T } from './geometryCache';
 import { INTERIOR_LAMP_Y } from './cells/interiorParts';
 import {
@@ -157,8 +158,8 @@ function injectInterior(shader: THREE.WebGLProgramParametersWithUniforms, interi
  * Après `injectInterior` (lit `vInteriorMode`) et `injectGrow` (la position
  * monde est celle du sommet une fois animé).
  */
-function injectDetail(shader: THREE.WebGLProgramParametersWithUniforms, relief: { value: THREE.Vector3 }): void {
-  shader.uniforms.uRelief = relief;
+function injectDetail(shader: THREE.WebGLProgramParametersWithUniforms, relief: ReliefUniforms): void {
+  Object.assign(shader.uniforms, relief);
   shader.vertexShader = shader.vertexShader
     .replace(
       '#include <common>',
@@ -224,15 +225,15 @@ export interface GrowMaterialOptions {
   /** Fond de mur teinté en mortier (voir `MaterialSpec.masonry`) ; suppose `detail`. */
   masonry?: boolean;
   /**
-   * Relief du terrain (`reliefUniform()`, relief.ts) : uniform partagé, à
-   * muter en place. Sert à salir le pied des murs au ras du sol réel.
+   * Relief du terrain (reliefUniforms.ts) : uniforms partagés, à
+   * régler en place. Sert à salir le pied des murs au ras du sol réel.
    */
-  relief?: { value: THREE.Vector3 };
+  relief?: ReliefUniforms;
 }
 
 export function createGrowMaterialSet(
   params: THREE.MeshStandardMaterialParameters,
-  { detail = false, masonry = false, relief = { value: new THREE.Vector3(0, 1, 2) } }: GrowMaterialOptions = {},
+  { detail = false, masonry = false, relief = createReliefUniforms() }: GrowMaterialOptions = {},
 ): GrowMaterialSet {
   const initialTime = performance.now() / 1000;
   // Objet uniform créé ici et non à la compilation : une mise à jour avant

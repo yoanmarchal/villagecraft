@@ -42,7 +42,7 @@ import { FLUE_OFFSET, planFireplaces } from './cells/furnitureParts';
 import { planDoors } from './cells/openings';
 import { plinthParts } from './cells/plinthParts';
 import { createGround } from './ground';
-import { reliefFor } from './relief';
+import { isFlatRelief, reliefFor, type Relief } from './relief';
 import type { RenderSettings } from './renderSettings';
 
 export interface MergedGroup {
@@ -55,8 +55,11 @@ export interface MergedGroup {
 export interface GroundExtent {
   width: number;
   depth: number;
-  /** Amplitude du relief du terrain (relief.ts) ; absent ou 0 : terrain plat. */
-  relief?: number;
+  /**
+   * Relief du terrain (relief.ts), ou seulement l'amplitude de ses ondulations
+   * d'origine ; absent, 0 ou relief plat : terrain plat.
+   */
+  relief?: number | Relief;
 }
 
 type ToWorld = (x: number, y: number, z: number) => [number, number, number];
@@ -185,9 +188,11 @@ function collectVillageParts(
   // Un chandelier par pièce (ou par zone d'une grande salle), pas par cellule.
   const roomLamps = assignRoomLamps(cells, lookup);
   // Terrain en pente : niveau de chaque bâtiment et hauteur du sol (ground.ts).
-  const terrain = ground?.relief
-    ? createGround(cells, toWorldPosition, reliefFor(Math.max(ground.width, ground.depth), ground.relief))
-    : null;
+  const relief =
+    typeof ground?.relief === 'number'
+      ? reliefFor(Math.max(ground.width, ground.depth), ground.relief)
+      : ground?.relief;
+  const terrain = relief && !isFlatRelief(relief) ? createGround(cells, toWorldPosition, relief) : null;
   /** Hauteur du terrain (y monde) autour de la case (x, z), en coordonnées locales à la case. */
   const groundOf = terrain
     ? (x: number, z: number) => {

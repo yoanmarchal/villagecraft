@@ -1,5 +1,6 @@
 import { BlockType, type CellCoordinate, type GridCell } from './types';
 import { createValueNoise, seededRandom } from './utils/noise';
+import { DEFAULT_TERRAIN, sculptTerrain, shiftTerrain, terrainSeed, type TerrainShape } from './terrainShape';
 
 /** Taille (en cases) des "taches" du bruit : des îlots de ~3-4 cases. */
 const NOISE_CELL_SCALE = 3.5;
@@ -31,6 +32,7 @@ export class VillageGrid {
   private readonly sizeZ: number;
   private readonly grid: GridCell[][][];
   private nextPlacementOrder: number = 0;
+  private terrainShape: TerrainShape = DEFAULT_TERRAIN;
 
   constructor(sizeX: number, sizeY: number, sizeZ: number) {
     this.sizeX = sizeX;
@@ -202,6 +204,8 @@ export class VillageGrid {
    */
   public generateTerrain(gridSize: number = this.sizeX, seed: number = Math.floor(Math.random() * 2 ** 32)): void {
     this.clear();
+    // Nouveau village, nouveau terrain : d'autres vallons, sans le modelage du précédent.
+    this.terrainShape = { seed: terrainSeed(seed), sculpt: [] };
 
     const size = Math.max(1, Math.min(gridSize, this.sizeX, this.sizeZ));
     const random = seededRandom(seed);
@@ -249,6 +253,31 @@ export class VillageGrid {
     }
 
     this.importBlocks(blocks);
+  }
+
+  /**
+   * Forme du terrain sous le village (terrainShape.ts) : valeur immuable,
+   * remplacée à chaque modification — même objet tant que rien ne change.
+   */
+  public get terrain(): TerrainShape {
+    return this.terrainShape;
+  }
+
+  /** Remplace la forme du terrain (restauration, annuler/rétablir) ; `offset` : décalage du modelage, comme `importBlocks`. */
+  public setTerrain(terrain: TerrainShape, offsetX = 0, offsetZ = 0): void {
+    this.terrainShape =
+      offsetX === 0 && offsetZ === 0
+        ? terrain
+        : shiftTerrain(terrain, offsetX, offsetZ, Math.min(this.sizeX, this.sizeZ));
+  }
+
+  /** Relève (`delta` > 0) ou creuse (`delta` < 0) le terrain à la case (x, z). Rend false si rien ne change. */
+  public sculptTerrain(x: number, z: number, delta: number): boolean {
+    if (!this.isValidCoordinate(x, 0, z)) return false;
+    const next = sculptTerrain(this.terrainShape, x, z, delta);
+    if (next === this.terrainShape) return false;
+    this.terrainShape = next;
+    return true;
   }
 
   public get width(): number {

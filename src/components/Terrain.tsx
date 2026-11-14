@@ -12,7 +12,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import * as THREE from 'three';
 import { groundHeight } from '../render/landscape';
-import type { Relief } from '../render/relief';
+import { reliefReach, type Relief } from '../render/relief';
 import { injectWorldDetail } from '../render/surfaceDetail';
 
 interface TerrainProps {
@@ -75,7 +75,7 @@ const GRASS_ALBEDO = `
 
 export function Terrain({ grassColor, roughness, flatRadius, reach, relief }: TerrainProps) {
   const geometry = useMemo(() => {
-    const coords = axisCoords(reach, relief.amplitude > 0 ? Math.min(Math.ceil(relief.outer), reach - 1) : 0);
+    const coords = axisCoords(reach, Math.min(Math.ceil(reliefReach(relief)), reach - 1));
     const n = coords.length;
     const positions = new Float32Array(n * n * 3);
     for (let j = 0; j < n; j += 1) {

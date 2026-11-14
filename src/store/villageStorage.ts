@@ -4,6 +4,8 @@
  * elles ne doivent pas être touchées par "Reset to Defaults".
  */
 
+import { parseTerrain, type TerrainShape } from '../terrainShape';
+
 const STORAGE_KEY = 'villagecraft-village';
 const VERSION = 1;
 
@@ -12,6 +14,8 @@ export type SavedBlock = [number, number, number];
 export interface SavedVillage {
   gridSize: number;
   blocks: SavedBlock[];
+  /** Forme du terrain ; absente des sauvegardes d'avant le relief aléatoire (terrain d'origine). */
+  terrain?: TerrainShape;
 }
 
 const isSavedBlock = (value: unknown): value is SavedBlock =>
@@ -38,10 +42,19 @@ export function loadVillage(): SavedVillage | null {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return null;
-    const data = JSON.parse(raw) as { version?: unknown; gridSize?: unknown; blocks?: unknown } | null;
+    const data = JSON.parse(raw) as {
+      version?: unknown;
+      gridSize?: unknown;
+      blocks?: unknown;
+      terrain?: unknown;
+    } | null;
     if (data?.version !== VERSION || typeof data.gridSize !== 'number' || !Number.isInteger(data.gridSize)) return null;
     if (!Array.isArray(data.blocks)) return null;
-    return { gridSize: data.gridSize, blocks: dropFloatingBlocks(data.blocks.filter(isSavedBlock)) };
+    return {
+      gridSize: data.gridSize,
+      blocks: dropFloatingBlocks(data.blocks.filter(isSavedBlock)),
+      terrain: parseTerrain(data.terrain, data.gridSize),
+    };
   } catch {
     return null;
   }

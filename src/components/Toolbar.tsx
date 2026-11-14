@@ -18,6 +18,8 @@ import {
   DemolishIcon,
   GenerateIcon,
   HelpIcon,
+  LowerIcon,
+  RaiseIcon,
   RedoIcon,
   ShareIcon,
   UndoIcon,
@@ -140,7 +142,7 @@ export function Toolbar() {
   const share = async () => {
     const { grid } = controller();
     if (!grid) return;
-    const result = await copyShareLink({ gridSize: grid.width, blocks: grid.exportBlocks() });
+    const result = await copyShareLink({ gridSize: grid.width, blocks: grid.exportBlocks(), terrain: grid.terrain });
     if (result === 'copied') showToast('Share link copied');
   };
 
@@ -170,6 +172,20 @@ export function Toolbar() {
             onClick={() => setToolMode('demolish')}
           >
             <DemolishIcon />
+          </ToolButton>
+          <ToolButton
+            label="Raise the ground (R; right click lowers)"
+            pressed={toolMode === 'raise'}
+            onClick={() => setToolMode('raise')}
+          >
+            <RaiseIcon />
+          </ToolButton>
+          <ToolButton
+            label="Lower the ground (L; right click raises)"
+            pressed={toolMode === 'lower'}
+            onClick={() => setToolMode('lower')}
+          >
+            <LowerIcon />
           </ToolButton>
         </div>
 
