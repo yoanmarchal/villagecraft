@@ -58,7 +58,7 @@ const ARC_CHUNK = 0.3;
 /** Pas de découpe au-dessus d'une arche. */
 const FLOOR_SLICE = 0.02;
 
-/** Rectangle (repère de la face : t le long du mur, y vertical) laissé libre de pierres : ouverture, plinthe… */
+/** Rectangle (repère de la face : t le long du mur, y vertical) laissé libre de pierres : ouverture, seuil… */
 export interface MasonryHole {
   t0: number;
   t1: number;
