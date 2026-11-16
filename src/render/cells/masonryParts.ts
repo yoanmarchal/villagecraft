@@ -197,6 +197,14 @@ function isFacedAt(lookup: CellLookup, x: number, y: number, z: number, face: Ce
   return !front?.isOccupied || front.type === BlockType.Roof;
 }
 
+/** Faces voisines d'une face, côté t négatif puis positif (mêmes coins que `getFaceCorners`). */
+const ADJACENT_FACES: Record<CellFace, [CellFace, CellFace]> = {
+  front: ['left', 'right'],
+  back: ['left', 'right'],
+  left: ['back', 'front'],
+  right: ['back', 'front'],
+};
+
 /** Faces d'une cellule de mur qui reçoivent un parement de pierre (voir `isFacedAt`). */
 export function masonryFacesOf(lookup: CellLookup, cell: GridCell): CellFace[] {
   return (['front', 'back', 'left', 'right'] as const).filter((face) =>
@@ -244,13 +252,20 @@ export function masonryParts(
 
     // Étendue de la face en abscisse déroulée : jusqu'au bord de la cellule,
     // ou jusqu'à la diagonale du coin arrondi (l'autre moitié de l'arc
-    // revient à la face voisine).
+    // revient à la face voisine) — tout l'arc si la face voisine n'a pas de
+    // parement, parce qu'une case est bâtie devant : c'est la gorge d'une
+    // jonction arrondie (« interior corner roundness »), qui restait nue au fond.
     const [radiusNeg, radiusPos] = getFaceCorners(face, radii, 'numeric');
     const rounded = (r: number) => r > 0.001;
+    const [sideNeg, sidePos] = ADJACENT_FACES[face];
+    const wholeArc = (side: CellFace) =>
+      !faces.some((other) => other.face === side) && !isFacedAt(lookup, cell.x, cell.y, cell.z, side);
+    const arcNeg = rounded(radiusNeg) ? (radiusNeg * Math.PI) / (wholeArc(sideNeg) ? 2 : 4) : 0;
+    const arcPos = rounded(radiusPos) ? (radiusPos * Math.PI) / (wholeArc(sidePos) ? 2 : 4) : 0;
     const flatNeg = -(half - (rounded(radiusNeg) ? radiusNeg : 0));
     const flatPos = half - (rounded(radiusPos) ? radiusPos : 0);
-    const tMin = flatNeg - (rounded(radiusNeg) ? (radiusNeg * Math.PI) / 4 : 0) - overhang[0];
-    const tMax = flatPos + (rounded(radiusPos) ? (radiusPos * Math.PI) / 4 : 0) + overhang[1];
+    const tMin = flatNeg - arcNeg - overhang[0];
+    const tMax = flatPos + arcPos + overhang[1];
     // Au bord de la cellule, la pierre n'a de joint que si le mur s'arrête là.
     const edgeNeg = extent !== undefined || overhang[0] > 0 || rounded(radiusNeg) || !continues(lookup, cell, face, -1);
     const edgePos = extent !== undefined || overhang[1] > 0 || rounded(radiusPos) || !continues(lookup, cell, face, 1);

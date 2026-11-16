@@ -24,7 +24,7 @@
 
 import * as THREE from 'three';
 import { createReliefUniforms, type ReliefUniforms } from './reliefUniforms';
-import { FLOOR_T, WALL_T } from './geometryCache';
+import { FLOOR_T } from './geometryCache';
 import { INTERIOR_LAMP_Y } from './cells/interiorParts';
 import {
   DETAIL_ALBEDO_APPLY,
@@ -82,9 +82,21 @@ const GROW_APPLY = `
  * d'ombre ni de vraie lumière three : un terme d'émission, calculé par
  * fragment, gratuit quel que soit le nombre de maisons.
  */
-/** Cavité de la coque : entre plancher et plafond, en deçà de la face intérieure des murs. */
+/** Cavité de la coque : entre plancher et plafond… */
 const CAVITY_HALF_HEIGHT = (0.5 - FLOOR_T + 0.005).toFixed(3);
-const CAVITY_HALF_WIDTH = (0.5 - WALL_T + 0.005).toFixed(3);
+/**
+ * …et du côté intérieur des murs. Une face verticale de la coque est
+ * extérieure quand sa normale horizontale s'éloigne de l'axe de la cellule
+ * et que son plan passe à au moins `EXTERIOR_SUPPORT` de lui (`dot(n, p)`) :
+ * le contour extérieur, convexe, contient le cercle de rayon 0,5. Les faces
+ * de la cavité regardent l'axe (valeur négative) ; tableaux des ouvertures et
+ * bords de trémie en sont bien plus près. L'ancien test — distance à l'axe
+ * le long de la normale, < 0,5 − WALL_T — prenait pour la pièce le fond des
+ * gorges des jonctions arrondies (« interior corner roundness ») : enduit et
+ * lumière de la lampe derrière les pierres, une bande jaune sur la façade.
+ */
+export const EXTERIOR_SUPPORT = 0.45;
+const EXTERIOR_SUPPORT_GLSL = EXTERIOR_SUPPORT.toFixed(3);
 const LAMP_Y = INTERIOR_LAMP_Y.toFixed(3);
 /** Atténuation horizontale de la lampe : moitié de l'éclairage à 2 cases du chandelier. */
 const LAMP_FALLOFF = '0.25';
@@ -122,17 +134,14 @@ const INTERIOR_FRAGMENT_DECLARATIONS = `
 
 const INTERIOR_FRAGMENT_APPLY = `
   if (vInteriorMode > 0.5) {
-    // Cavité testée selon l'axe de la normale seulement : face intérieure d'un
-    // mur (|z| < demi-cavité, quel que soit x), jamais sa face extérieure
-    // (|z| = 0.5). Tester x et z ensemble laissait dans le noir la bande de
-    // mur de 8 cm de chaque côté d'une jonction entre deux cellules d'une
-    // pièce (le mur file jusqu'au bord de la cellule le long d'un côté ouvert).
+    // Cavité : face intérieure d'un mur, où qu'elle soit le long du mur (il
+    // file jusqu'au bord de la cellule le long d'un côté ouvert), jamais une
+    // face extérieure, même au fond d'une gorge (voir EXTERIOR_SUPPORT).
     vec3 interiorAxis = abs(vInteriorNormal);
-    vec3 interiorPos = abs(vInteriorLocal);
-    float interiorDepth = interiorAxis.y > max(interiorAxis.x, interiorAxis.z)
+    float interiorSupport = interiorAxis.y > max(interiorAxis.x, interiorAxis.z)
       ? 0.0 // plancher, plafond : seule la hauteur compte
-      : (interiorAxis.x > interiorAxis.z ? interiorPos.x : interiorPos.z);
-    bool inCavity = interiorPos.y < ${CAVITY_HALF_HEIGHT} && interiorDepth < ${CAVITY_HALF_WIDTH};
+      : dot(vInteriorNormal.xz, vInteriorLocal.xz) / max(length(vInteriorNormal.xz), 1e-4);
+    bool inCavity = abs(vInteriorLocal.y) < ${CAVITY_HALF_HEIGHT} && interiorSupport < ${EXTERIOR_SUPPORT_GLSL};
     if (vInteriorMode > 1.5 || inCavity) {
       vec3 toLamp = vInteriorLamp - vInteriorLocal + vec3(1e-4);
       float lampDistance = length(toLamp.xz);
@@ -245,8 +254,8 @@ export function createGrowMaterialSet(
   // sans clé distincte, les variantes avec et sans détail se confondraient.
   material.customProgramCacheKey = () => `grow${detail ? '-detail' : ''}${masonry ? '-masonry' : ''}`;
   if (masonry) {
-    // Les faces de cavité de la coque (mêmes bornes que l'éclairage intérieur) restent enduites.
-    material.defines = { ...material.defines, VC_MASONRY: '', VC_CAVITY_HALF_WIDTH: CAVITY_HALF_WIDTH };
+    // Les faces de cavité de la coque (même critère que l'éclairage intérieur) restent enduites.
+    material.defines = { ...material.defines, VC_MASONRY: '', VC_EXTERIOR_SUPPORT: EXTERIOR_SUPPORT_GLSL };
   }
   material.onBeforeCompile = (shader) => {
     injectGrow(shader, initialTime);

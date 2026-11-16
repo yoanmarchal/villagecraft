@@ -1,6 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import { VillageGrid } from '../villageGrid';
-import { getCell, getColumnTop, isIsolatedBlock, isRampart, isTowerColumn, makeCellLookup } from './cellUtils';
+import {
+  getCell,
+  getColumnTop,
+  getCornerRadii,
+  isIsolatedBlock,
+  isRampart,
+  isTowerColumn,
+  makeCellLookup,
+} from './cellUtils';
 
 describe('isTowerColumn / isIsolatedBlock', () => {
   // Colonne (0,0) sur 3 étages, collée à une colonne (1,0) de 2 étages :
@@ -76,5 +84,37 @@ describe('isRampart', () => {
   it('getColumnTop remonte au sommet de la colonne', () => {
     const lookup = build();
     expect(getColumnTop(lookup, getCell(lookup, 0, 0, 0)!).y).toBe(2);
+  });
+});
+
+describe('getCornerRadii', () => {
+  const SHAPE = { isolatedWallRadius: 0.22, connectedWallExposedRadius: 0.1, connectedWallInteriorRadius: 0.3 };
+  // Bloc 2 × 2 en (2..3, 2..3) et une aile en (4, 2) : un angle rentrant en (4, 3).
+  const grid = new VillageGrid(7, 10, 7);
+  for (const [x, z] of [
+    [2, 2],
+    [3, 2],
+    [2, 3],
+    [3, 3],
+    [4, 2],
+  ])
+    grid.addBlock(x, 0, z);
+  const lookup = makeCellLookup(grid.getOccupiedCells());
+  const radiiAt = (x: number, z: number) => getCornerRadii(lookup, getCell(lookup, x, 0, z)!, SHAPE);
+
+  it('arrondit les angles saillants et les jonctions sur une façade droite', () => {
+    expect(radiiAt(2, 2).backLeft).toBe(0.1); // angle du bloc
+    expect(radiiAt(3, 2).backLeft).toBe(0.3); // façade arrière, jonction avec (2, 2)
+    expect(radiiAt(2, 2).backRight).toBe(0.3); // et symétriquement
+  });
+
+  it('garde vifs les coins au cœur d’un bloc et les angles rentrants', () => {
+    // Centre du bloc 2 × 2 : arrondi, il creusait un puits à travers les planchers.
+    expect(radiiAt(2, 2).frontRight).toBe(0);
+    expect(radiiAt(3, 3).backLeft).toBe(0);
+    // Angle rentrant entre (3, 3) et l'aile (4, 2), des deux côtés.
+    expect(radiiAt(3, 3).backRight).toBe(0);
+    expect(radiiAt(4, 2).frontLeft).toBe(0);
+    expect(radiiAt(3, 2).frontRight).toBe(0);
   });
 });

@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import * as THREE from 'three';
-import { FLOOR_T, hollowSheetGeo, hollowShellGeo, WALL_T, type OpeningSpec } from './geometryCache';
-import { rect } from '../utils/polygon';
+import { FLOOR_T, hollowSheetGeo, hollowShellGeo, innerContourXZ, WALL_T, type OpeningSpec } from './geometryCache';
+import { getRoundedRectContourPoints, type CellFace } from '../utils/cellUtils';
+import { pointInPolygon, rect, type Point } from '../utils/polygon';
+import { EXTERIOR_SUPPORT } from './growMaterial';
 import type { CornerRadii, HollowShape, HollowSideKind } from '../utils/cellUtils';
 
 const SQUARE: CornerRadii = { backLeft: 0, backRight: 0, frontLeft: 0, frontRight: 0, max: 0, uniform: true };
@@ -34,6 +36,17 @@ function hits(geo: THREE.BufferGeometry, origin: [number, number, number], dir: 
 }
 
 describe('hollowShellGeo', () => {
+  /** Distance d'un point à des segments. */
+  const distanceTo = ([px, pz]: Point, edges: Array<[Point, Point]>) =>
+    Math.min(
+      ...edges.map(([[x0, z0], [x1, z1]]) => {
+        const length2 = (x1 - x0) ** 2 + (z1 - z0) ** 2;
+        const t =
+          length2 === 0 ? 0 : Math.max(0, Math.min(1, ((px - x0) * (x1 - x0) + (pz - z0) * (z1 - z0)) / length2));
+        return Math.hypot(px - x0 - t * (x1 - x0), pz - z0 - t * (z1 - z0));
+      }),
+    );
+
   it('produit une géométrie indexée avec seulement position + normal, partagée par clé', () => {
     const geo = hollowShellGeo(SQUARE, shape(), []);
     // Sommets soudés (getGeo) : chaque sommet sert en moyenne à plusieurs triangles.
@@ -122,5 +135,102 @@ describe('hollowShellGeo', () => {
     const sheet = hollowSheetGeo(SQUARE, shape(), 0.01, rect(0.1, 0.1, 0.4, 0.4));
     expect(hits(sheet, [0.25, 1, 0.25], [0, -1, 0])).toEqual([]);
     expect(hits(sheet, [-0.25, 1, -0.25], [0, -1, 0])).toEqual([0.99, 1]);
+  });
+
+  describe('jonction arrondie (« interior corner roundness »)', () => {
+    const radiiOf = (corners: Partial<CornerRadii>): CornerRadii => {
+      const r = { ...SQUARE, ...corners };
+      const values = [r.backLeft, r.backRight, r.frontLeft, r.frontRight];
+      return { ...r, max: Math.max(...values), uniform: new Set(values).size === 1 };
+    };
+
+    it('garde un mur le long de la gorge, sans trou vers la pièce', () => {
+      // Côté droit ouvert sur le voisin, coin avant droit arrondi : la façade fait une gorge.
+      const geo = hollowShellGeo(radiiOf({ frontRight: 0.3 }), shape({ right: 'open' }), []);
+      // Rayon venu de la rue, dans la gorge : il traverse un mur d'au moins WALL_T avant la pièce.
+      const found = hits(geo, [0.48, 0, 2], [0, 0, -1]);
+      expect(found.length).toBeGreaterThanOrEqual(2);
+      expect(found[1] - found[0]).toBeGreaterThan(WALL_T * 0.9);
+      // Plus bas que la gorge, le côté reste ouvert sur le voisin.
+      expect(hits(geo, [0, 0, -0.2], [1, 0, 0])).toEqual([]);
+    });
+
+    it('mure un côté ouvert quand les gorges de ses deux coins se rejoignent', () => {
+      const geo = hollowShellGeo(radiiOf({ frontRight: 0.5, backRight: 0.5 }), shape({ right: 'open' }), []);
+      const found = hits(geo, [0, 0, 0], [1, 0, 0]);
+      expect(found).toHaveLength(2);
+      expect(found[1] - found[0]).toBeGreaterThan(WALL_T * 0.9);
+    });
+
+    it('reste à WALL_T du dehors, sauf le long du passage vers le voisin', () => {
+      const faces: CellFace[] = ['front', 'back', 'left', 'right'];
+      for (const r of [0.05, 0.1, 0.3, 0.42, 0.5]) {
+        for (const open of faces) {
+          const radii = radiiOf({ backLeft: r, backRight: r, frontLeft: r, frontRight: r });
+          // Contour extérieur, dans le repère de la scène (z = −y de la shape, comme shapedBoxGeo).
+          const outer = getRoundedRectContourPoints(0.5, 0.5, radii).map(([x, y]): Point => [x, -y]);
+          const onOpenSide = ([x, z]: Point) =>
+            open === 'right' ? x > 0.499 : open === 'left' ? x < -0.499 : open === 'front' ? z > 0.499 : z < -0.499;
+          // Le dehors : le contour extérieur, sauf le côté mitoyen (bord de la cellule côté ouvert).
+          const outside = outer
+            .map((p, i): [Point, Point] => [p, outer[(i + 1) % outer.length]])
+            .filter(([a, b]) => !(onOpenSide(a) && onOpenSide(b)));
+          for (const point of innerContourXZ(shape({ [open]: 'open' }), radii)) {
+            if (onOpenSide(point)) {
+              // Sur le passage : la coque existe juste en deçà (elle rejoint celle du voisin).
+              const [x, z] = point;
+              const inward: Point = [
+                x - Math.sign(x) * 0.002 * +(Math.abs(x) > 0.499),
+                z - Math.sign(z) * 0.002 * +(Math.abs(z) > 0.499),
+              ];
+              expect(pointInPolygon(inward, outer)).toBe(true);
+            } else {
+              expect(pointInPolygon(point, outer)).toBe(true);
+              expect(distanceTo(point, outside)).toBeGreaterThan(WALL_T * 0.9);
+            }
+          }
+        }
+      }
+    });
+  });
+
+  it('ses faces extérieures et celles de la cavité se distinguent par leur orientation (shader)', () => {
+    // Même critère que growMaterial.ts / surfaceDetail.ts : dot(n, p) horizontal
+    // ≥ EXTERIOR_SUPPORT ⇔ face du dehors (mortier, jamais la lampe de la pièce).
+    const cases: Array<[CornerRadii, HollowShape, OpeningSpec[]]> = [
+      [SQUARE, shape(), [{ face: 'front', kind: 'window', scale: 1 }]],
+      [TOWER, shape(), [{ face: 'left', kind: 'slit', scale: 1 }]],
+      [{ ...TOWER, backLeft: 0.5, backRight: 0.5, frontLeft: 0.5, frontRight: 0.5, max: 0.5 }, shape(), []],
+      // Gorges de jonction arrondies, côté droit ouvert sur le voisin (passage ouvert, puis muré).
+      [{ ...SQUARE, frontRight: 0.3, backRight: 0.3, max: 0.3, uniform: false }, shape({ right: 'open' }), []],
+      [{ ...SQUARE, frontRight: 0.5, backRight: 0.5, max: 0.5, uniform: false }, shape({ right: 'open' }), []],
+    ];
+    for (const [radii, hollow, openings] of cases) {
+      const geo = hollowShellGeo(radii, hollow, openings);
+      const outer = getRoundedRectContourPoints(0.5, 0.5, radii).map(([x, y]): Point => [x, -y]);
+      const edges = outer.map((p, i): [Point, Point] => [p, outer[(i + 1) % outer.length]]);
+      const position = geo.getAttribute('position');
+      const index = geo.index!;
+      const [a, b, c] = [new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3()];
+      let exterior = 0;
+      let cavity = 0;
+      for (let i = 0; i < index.count; i += 3) {
+        a.fromBufferAttribute(position, index.getX(i));
+        b.fromBufferAttribute(position, index.getX(i + 1));
+        c.fromBufferAttribute(position, index.getX(i + 2));
+        const normal = new THREE.Triangle(a, b, c).getNormal(new THREE.Vector3());
+        const centre = a.clone().add(b).add(c).divideScalar(3);
+        const horizontal = Math.hypot(normal.x, normal.z);
+        // Faces verticales de la hauteur de la pièce seulement (dalles : critère de hauteur).
+        if (horizontal < 0.7 || Math.abs(centre.y) > 0.5 - FLOOR_T) continue;
+        const support = (normal.x * centre.x + normal.z * centre.z) / horizontal;
+        const onOuter = distanceTo([centre.x, centre.z], edges) < 3e-3;
+        expect(support >= EXTERIOR_SUPPORT).toBe(onOuter);
+        if (onOuter) exterior += 1;
+        else cavity += 1;
+      }
+      expect(exterior).toBeGreaterThan(0);
+      expect(cavity).toBeGreaterThan(0);
+    }
   });
 });

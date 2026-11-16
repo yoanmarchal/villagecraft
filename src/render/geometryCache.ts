@@ -196,43 +196,71 @@ export const OPENING_SIZES: Record<OpeningKind, { w: number; h: number; y: numbe
 
 type CornerName = 'backLeft' | 'backRight' | 'frontLeft' | 'frontRight';
 
+const INNER_CORNERS: ReadonlyArray<{
+  name: CornerName;
+  sx: 1 | -1;
+  sz: 1 | -1;
+  xSide: CellFace;
+  zSide: CellFace;
+  incomingX: boolean;
+}> = [
+  { name: 'backRight', sx: 1, sz: -1, xSide: 'right', zSide: 'back', incomingX: false },
+  { name: 'frontRight', sx: 1, sz: 1, xSide: 'right', zSide: 'front', incomingX: true },
+  { name: 'frontLeft', sx: -1, sz: 1, xSide: 'left', zSide: 'front', incomingX: false },
+  { name: 'backLeft', sx: -1, sz: -1, xSide: 'left', zSide: 'back', incomingX: true },
+];
+
+/** Passage minimal vers le voisin, le long d'un côté ouvert pris entre deux gorges : en deçà, ce côté est muré. */
+const MIN_PASSAGE = 0.06;
+
 /**
  * Section XZ (scène) du volume intérieur : rectangle borné à `0.5 − WALL_T`
  * côté mur, prolongé au-delà de la cellule côté `open`, avec coins arrondis
  * (rayon du mur − épaisseur) entre deux murs, ou entaillés d'un pilier
  * d'angle (coin rentrant). Parcours BR → FR → FL → BL.
+ *
+ * Coin de jonction (un côté ouvert, l'autre fermé, coin extérieur arrondi —
+ * « interior corner roundness ») : la façade y fait une gorge jusqu'au
+ * voisin. La cavité la contourne en gardant un mur de `WALL_T` (arc
+ * intérieur, puis quart de cercle autour du fond de la gorge) et ne rejoint
+ * le voisin qu'en deçà ; carrée jusqu'au bord, elle crevait le mur. Si les
+ * gorges des deux coins d'un côté ouvert ne laissent plus de passage
+ * (`MIN_PASSAGE`), ce côté est muré comme un mur extérieur.
  */
 function innerSectionXZ(shape: HollowShape, radii: CornerRadii, openBound = 0.5 + CSG_EPS): Array<[number, number]> {
-  const { sides, pillars } = shape;
-  const bound = (face: CellFace) => (sides[face] === 'open' ? openBound : 0.5 - WALL_T);
+  const inner = 0.5 - WALL_T;
+  const isRound = (name: CornerName) => radii[name] > 0.001;
+
+  // Côtés ouverts réellement praticables, entre les gorges de leurs deux coins.
+  const sides = { ...shape.sides };
+  for (const face of ['front', 'back', 'left', 'right'] as const) {
+    if (shape.sides[face] !== 'open') continue;
+    let passage = 1;
+    for (const { name, xSide, zSide } of INNER_CORNERS) {
+      if (xSide !== face && zSide !== face) continue;
+      const other = xSide === face ? zSide : xSide;
+      if (shape.sides[other] === 'open') passage -= shape.pillars[name] ? WALL_T : 0;
+      else passage -= isRound(name) ? radii[name] + WALL_T : WALL_T;
+    }
+    if (passage < MIN_PASSAGE) sides[face] = 'partition';
+  }
+
+  const bound = (face: CellFace) => (sides[face] === 'open' ? openBound : inner);
   const xMax = bound('right');
   const xMin = -bound('left');
   const zMax = bound('front');
   const zMin = -bound('back');
-  const inner = 0.5 - WALL_T;
-
-  const corners: Array<{
-    name: CornerName;
-    sx: 1 | -1;
-    sz: 1 | -1;
-    xSide: CellFace;
-    zSide: CellFace;
-    incomingX: boolean;
-  }> = [
-    { name: 'backRight', sx: 1, sz: -1, xSide: 'right', zSide: 'back', incomingX: false },
-    { name: 'frontRight', sx: 1, sz: 1, xSide: 'right', zSide: 'front', incomingX: true },
-    { name: 'frontLeft', sx: -1, sz: 1, xSide: 'left', zSide: 'front', incomingX: false },
-    { name: 'backLeft', sx: -1, sz: -1, xSide: 'left', zSide: 'back', incomingX: true },
-  ];
+  const ARC_SEGS = 8;
 
   const points: Array<[number, number]> = [];
-  for (const { name, sx, sz, xSide, zSide, incomingX } of corners) {
+  for (const { name, sx, sz, xSide, zSide, incomingX } of INNER_CORNERS) {
     const cx = sx > 0 ? xMax : xMin;
     const cz = sz > 0 ? zMax : zMin;
-    const bothClosed = sides[xSide] !== 'open' && sides[zSide] !== 'open';
-    const r = bothClosed ? Math.max(0, radii[name] - WALL_T) : 0;
+    const xOpen = sides[xSide] === 'open';
+    const zOpen = sides[zSide] === 'open';
+    const r = !xOpen && !zOpen ? Math.max(0, radii[name] - WALL_T) : 0;
 
-    if (pillars[name]) {
+    if (xOpen && zOpen && shape.pillars[name]) {
       const px = sx * inner;
       const pz = sz * inner;
       points.push(
@@ -248,6 +276,37 @@ function innerSectionXZ(shape: HollowShape, radii: CornerRadii, openBound = 0.5 
               [cx, pz],
             ] as Array<[number, number]>)),
       );
+    } else if (xOpen !== zOpen && isRound(name)) {
+      // Jonction. Repère (u, v) du coin : u vers le côté ouvert, v vers le
+      // côté fermé ; points listés du côté fermé vers le côté ouvert.
+      const R = radii[name];
+      const cuspV = 0.5 - R; // fond de la gorge, sur le bord de la cellule
+      const local: Array<[number, number]> = [];
+      let start: number;
+      if (R - WALL_T > 0.001) {
+        // Arc intérieur, parallèle à celui de la façade.
+        const o = 0.5 - R;
+        const ri = R - WALL_T;
+        for (let i = 0; i <= ARC_SEGS; i += 1) {
+          const a = Math.PI / 2 - (Math.PI / 2) * (i / ARC_SEGS);
+          local.push([o + ri * Math.cos(a), o + ri * Math.sin(a)]);
+        }
+        start = Math.PI;
+      } else {
+        // Gorge moins profonde que le mur : le nu du mur rejoint directement le cercle.
+        start = Math.PI - Math.asin((inner - cuspV) / WALL_T);
+        local.push([0.5 + WALL_T * Math.cos(start), 0.5 - R + WALL_T * Math.sin(start)]);
+      }
+      // Quart de cercle de rayon WALL_T autour du fond de la gorge, jusqu'au bord de la cellule.
+      const CUSP_SEGS = 4;
+      for (let i = 1; i <= CUSP_SEGS; i += 1) {
+        const a = start + ((1.5 * Math.PI - start) * i) / CUSP_SEGS;
+        local.push([0.5 + WALL_T * Math.cos(a), cuspV + WALL_T * Math.sin(a)]);
+      }
+      // Puis le long du passage, jusqu'au prolongement côté ouvert (au-delà de la cellule).
+      local.push([openBound, cuspV - WALL_T]);
+      const mapped = local.map(([u, v]): [number, number] => (xOpen ? [sx * u, sz * v] : [sx * v, sz * u]));
+      points.push(...(xOpen === incomingX ? mapped.reverse() : mapped));
     } else if (r > 0.001) {
       // Arc du point tangent au côté X (direction (sx, 0)) au point tangent au côté Z (direction (0, sz)).
       const ox = cx - sx * r;
@@ -255,7 +314,6 @@ function innerSectionXZ(shape: HollowShape, radii: CornerRadii, openBound = 0.5 
       const aX = sx > 0 ? 0 : Math.PI;
       const aZ = aX + (sx * sz > 0 ? Math.PI / 2 : -Math.PI / 2);
       const [a0, a1] = incomingX ? [aX, aZ] : [aZ, aX];
-      const ARC_SEGS = 8;
       for (let i = 0; i <= ARC_SEGS; i += 1) {
         const a = a0 + ((a1 - a0) * i) / ARC_SEGS;
         points.push([ox + Math.cos(a) * r, oz + Math.sin(a) * r]);

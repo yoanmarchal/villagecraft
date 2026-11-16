@@ -69,7 +69,7 @@ describe('growMaterial shader injection', () => {
     expect(fragment).toContain('#ifdef VC_MASONRY');
     expect(detailed.material.defines ?? {}).not.toHaveProperty('VC_MASONRY');
     expect(masonry.material.defines).toHaveProperty('VC_MASONRY');
-    expect(masonry.material.defines).toHaveProperty('VC_CAVITY_HALF_WIDTH');
+    expect(masonry.material.defines).toHaveProperty('VC_EXTERIOR_SUPPORT');
     // Plus aucun motif de couverture dessiné : tuiles et ardoises sont de la géométrie.
     expect(fragment).not.toContain('VC_ROOFING');
     expect(masonry.material.customProgramCacheKey()).not.toBe(detailed.material.customProgramCacheKey());

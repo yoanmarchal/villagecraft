@@ -115,10 +115,11 @@ export const DETAIL_ALBEDO_APPLY = `
       // de vrais blocs posés devant lui (masonryParts.ts). Les faces de la
       // cavité d'une coque creuse (pièces, tableaux) restent enduites.
       float masonryWall = 1.0 - smoothstep(0.25, 0.45, abs(detailNormal.y));
-      vec3 masonryAxis = abs(detailNormal);
-      vec3 masonryLocal = abs(vInteriorLocal);
-      float masonryDepth = masonryAxis.x > masonryAxis.z ? masonryLocal.x : masonryLocal.z;
-      masonryWall *= mix(1.0, step(VC_CAVITY_HALF_WIDTH, masonryDepth), step(0.5, vInteriorMode));
+      // Extérieure : normale qui s'éloigne de l'axe de la cellule, plan à au
+      // moins VC_EXTERIOR_SUPPORT de lui (même critère que l'éclairage des
+      // pièces, growMaterial.ts) — le fond d'une gorge arrondie compris.
+      float masonrySupport = dot(detailNormal.xz, vInteriorLocal.xz) / max(length(detailNormal.xz), 1e-4);
+      masonryWall *= mix(1.0, step(VC_EXTERIOR_SUPPORT, masonrySupport), step(0.5, vInteriorMode));
       // Plus sombre qu'une pierre claire, plus clair qu'une pierre foncée.
       float masonryLuminance = dot(diffuseColor.rgb, vec3(0.2126, 0.7152, 0.0722));
       vec3 masonryMortar = mix(vec3(0.74, 0.7, 0.61), diffuseColor.rgb * 0.58, smoothstep(0.2, 0.5, masonryLuminance));

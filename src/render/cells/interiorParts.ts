@@ -11,9 +11,17 @@
  * la cellule côté `open`, pour se raccorder au voisin sans chevauchement.
  */
 
-import type { CellFace, CornerRadii, HollowShape } from '../../utils/cellUtils';
+import type { CellFace } from '../../utils/cellUtils';
 import { varyColorBrightness } from '../../colorPalettes';
-import { boxGeo, cylinderGeo, FLOOR_T, hollowSheetGeo, torusArcGeo, WALL_T, type OpeningSpec } from '../geometryCache';
+import {
+  boxGeo,
+  cylinderGeo,
+  FLOOR_T,
+  hollowSheetGeo,
+  innerContourXZ,
+  torusArcGeo,
+  type OpeningSpec,
+} from '../geometryCache';
 import { asInterior, part, xform, type Part } from '../parts';
 import { offsetPolygon, outsideSpans, outsideSpansOfBeam, type Point, type Polygon } from '../../utils/polygon';
 import { furnitureParts, HOOD_REACH } from './furnitureParts';
@@ -124,40 +132,38 @@ function chandelierParts(ceilingBottomY: number): { structure: Part[]; flames: P
 }
 
 /**
- * Demi-étendue intérieure le long de X (côté `sx`) à la profondeur `z` :
- * bord de la cellule côté ouvert, sinon face intérieure du mur, réduite dans
- * un coin arrondi (rayon intérieur = rayon du mur − WALL_T).
+ * Demi-étendue intérieure depuis l'axe de la cellule : distance de `origin`
+ * au contour intérieur (`innerContourXZ` : nu des murs, bord de la cellule
+ * côté ouvert, coins arrondis, gorges des jonctions) dans la direction
+ * `dir` (±X ou ±Z). Poutre, solives et joints s'y arrêtent.
  */
-function innerExtentX(hollow: HollowShape, radii: CornerRadii, sx: 1 | -1, z: number): number {
-  const xSide = sx > 0 ? 'right' : 'left';
-  if (hollow.sides[xSide] === 'open') return 0.5;
-  const inner = 0.5 - WALL_T;
-  const zSide = z > 0 ? 'front' : 'back';
-  if (hollow.sides[zSide] === 'open') return inner;
-  const corner = `${z > 0 ? 'front' : 'back'}${sx > 0 ? 'Right' : 'Left'}` as const;
-  const ri = Math.max(0, radii[corner] - WALL_T);
-  const dz = Math.abs(z) - (inner - ri);
-  if (ri <= 0 || dz <= 0) return inner;
-  return inner - ri + Math.sqrt(Math.max(0, ri * ri - dz * dz));
-}
-
-/** Même chose le long de Z, côté `sz`, à l'abscisse `x`. */
-function innerExtentZ(hollow: HollowShape, radii: CornerRadii, sz: 1 | -1, x: number): number {
-  const zSide = sz > 0 ? 'front' : 'back';
-  if (hollow.sides[zSide] === 'open') return 0.5;
-  const inner = 0.5 - WALL_T;
-  const xSide = x > 0 ? 'right' : 'left';
-  if (hollow.sides[xSide] === 'open') return inner;
-  const corner = `${sz > 0 ? 'front' : 'back'}${x > 0 ? 'Right' : 'Left'}` as const;
-  const ri = Math.max(0, radii[corner] - WALL_T);
-  const dx = Math.abs(x) - (inner - ri);
-  if (ri <= 0 || dx <= 0) return inner;
-  return inner - ri + Math.sqrt(Math.max(0, ri * ri - dx * dx));
+function innerReach(contour: Polygon, [ox, oz]: Point, [dx, dz]: Point): number {
+  let best = Infinity;
+  for (let i = 0; i < contour.length; i += 1) {
+    const [x0, z0] = contour[i];
+    const [x1, z1] = contour[(i + 1) % contour.length];
+    // Croisement du bord avec la droite portée par `dir` (horizontale ou verticale).
+    if (dx !== 0) {
+      if ((z0 - oz) * (z1 - oz) > 0 || z0 === z1) continue;
+      const x = x0 + ((oz - z0) / (z1 - z0)) * (x1 - x0);
+      const t = (x - ox) * dx;
+      if (t > 0) best = Math.min(best, t);
+    } else {
+      if ((x0 - ox) * (x1 - ox) > 0 || x0 === x1) continue;
+      const z = z0 + ((ox - x0) / (x1 - x0)) * (z1 - z0);
+      const t = (z - oz) * dz;
+      if (t > 0) best = Math.min(best, t);
+    }
+  }
+  return Number.isFinite(best) ? best : 0;
 }
 
 export function interiorParts(ctx: CellContext, openings: OpeningSpec[] = []): Part[] {
   const { hollow, radii, cell, settings } = ctx;
   if (!hollow) return [];
+  const contour = innerContourXZ(hollow, radii);
+  const innerExtentX = (sx: 1 | -1, z: number) => innerReach(contour, [0, z], [sx, 0]);
+  const innerExtentZ = (sz: 1 | -1, x: number) => innerReach(contour, [x, 0], [0, sz]);
 
   const floorY = -0.5 + FLOOR_T;
   const ceilingY = 0.5 - FLOOR_T;
@@ -192,8 +198,8 @@ export function interiorParts(ctx: CellContext, openings: OpeningSpec[] = []): P
   // Joints des lames (selon X), à fleur du parquet.
   const seamY = floorY + FLOORBOARD_T + 0.0005;
   for (const z of SEAM_Z) {
-    const x0 = -innerExtentX(hollow, radii, -1, z);
-    const x1 = innerExtentX(hollow, radii, 1, z);
+    const x0 = -innerExtentX(-1, z);
+    const x1 = innerExtentX(1, z);
     if (x1 - x0 < 0.02) continue;
     parts.push(...clippedRun([x0, z], [x1, z], seamY, [0.008, 0.002], floorCuts, seamColor, 0.9));
   }
@@ -201,8 +207,8 @@ export function interiorParts(ctx: CellContext, openings: OpeningSpec[] = []): P
   // Dallage : joints dans l'autre sens aussi (dalles de 25 cm).
   if (paved) {
     for (const x of SEAM_Z) {
-      const z0 = -innerExtentZ(hollow, radii, -1, x);
-      const z1 = innerExtentZ(hollow, radii, 1, x);
+      const z0 = -innerExtentZ(-1, x);
+      const z1 = innerExtentZ(1, x);
       if (z1 - z0 < 0.02) continue;
       parts.push(...clippedRun([x, z0], [x, z1], seamY, [0.008, 0.002], floorCuts, seamColor, 0.9));
     }
@@ -219,12 +225,12 @@ export function interiorParts(ctx: CellContext, openings: OpeningSpec[] = []): P
   // (qui monte jusqu'au plafond), 5 mm dedans pour ne pas laisser de jour.
   const hoodStop = (face: CellFace) => (ctx.fireplaceFace === face ? HOOD_REACH - 0.005 : 0);
   if (framed && alongZ) {
-    const z0 = -innerExtentZ(hollow, radii, -1, 0) + hoodStop('back');
-    const z1 = innerExtentZ(hollow, radii, 1, 0) - hoodStop('front');
+    const z0 = -innerExtentZ(-1, 0) + hoodStop('back');
+    const z1 = innerExtentZ(1, 0) - hoodStop('front');
     parts.push(...clippedRun([0, z0], [0, z1], beamY, [BEAM_W, BEAM_H], ceilingCuts, BEAM_WOOD, 0.9));
   } else if (framed) {
-    const x0 = -innerExtentX(hollow, radii, -1, 0) + hoodStop('left');
-    const x1 = innerExtentX(hollow, radii, 1, 0) - hoodStop('right');
+    const x0 = -innerExtentX(-1, 0) + hoodStop('left');
+    const x1 = innerExtentX(1, 0) - hoodStop('right');
     parts.push(...clippedRun([x0, 0], [x1, 0], beamY, [BEAM_W, BEAM_H], ceilingCuts, BEAM_WOOD, 0.9));
   }
 
@@ -232,13 +238,13 @@ export function interiorParts(ctx: CellContext, openings: OpeningSpec[] = []): P
   const joistY = ceilingY - CEILING_T - JOIST_H / 2;
   for (const offset of framed ? SEAM_Z : []) {
     if (alongZ) {
-      const x0 = -innerExtentX(hollow, radii, -1, offset);
-      const x1 = innerExtentX(hollow, radii, 1, offset);
+      const x0 = -innerExtentX(-1, offset);
+      const x1 = innerExtentX(1, offset);
       if (x1 - x0 < 0.05) continue;
       parts.push(...clippedRun([x0, offset], [x1, offset], joistY, [JOIST_W, JOIST_H], ceilingCuts, JOIST_WOOD, 0.9));
     } else {
-      const z0 = -innerExtentZ(hollow, radii, -1, offset);
-      const z1 = innerExtentZ(hollow, radii, 1, offset);
+      const z0 = -innerExtentZ(-1, offset);
+      const z1 = innerExtentZ(1, offset);
       if (z1 - z0 < 0.05) continue;
       parts.push(...clippedRun([offset, z0], [offset, z1], joistY, [JOIST_W, JOIST_H], ceilingCuts, JOIST_WOOD, 0.9));
     }

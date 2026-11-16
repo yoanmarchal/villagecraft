@@ -7,7 +7,15 @@ import { ROOF_DROP_HEIGHT } from './growMaterial';
 import { INTERIOR_LAMP_Y } from './cells/interiorParts';
 import { PARAPET_H, WALKWAY_H } from './cells/walkwayParts';
 import { BlockType } from '../types';
-import { getRidgeAxis, isHollowType, makeCellLookup } from '../utils/cellUtils';
+import {
+  getCell,
+  getCornerRadii,
+  getRidgeAxis,
+  getRoundedRectContourPoints,
+  isHollowType,
+  makeCellLookup,
+} from '../utils/cellUtils';
+import { offsetPolygon, pointInPolygon, type Point } from '../utils/polygon';
 import type { RenderSettings } from './renderSettings';
 
 const SETTINGS: RenderSettings = {
@@ -690,5 +698,53 @@ describe('interior light', () => {
     const { levels, tips } = flamesOf(grid);
     for (const level of levels) expect(Math.abs(level / 100 - INTERIOR_LAMP_Y)).toBeLessThan(0.02);
     expect(tips.size).toBe(1 + 1 + 4);
+  });
+});
+
+describe('rounded junctions (interior corner roundness)', () => {
+  it('keeps every room part inside its cell’s rounded contour: nothing pokes into the groove', () => {
+    // Un bloc 2 × 2 sur deux niveaux avec une aile : jonctions sur façade droite,
+    // coins au cœur du bloc, angle rentrant.
+    for (const radius of [0.3, 0.5]) {
+      const settings = { ...SETTINGS, connectedWallInteriorRadius: radius };
+      const grid = new VillageGrid(7, 10, 7);
+      for (const [x, z] of [
+        [2, 2],
+        [3, 2],
+        [2, 3],
+        [3, 3],
+        [4, 3],
+      ])
+        for (let y = 0; y < 3; y += 1) grid.addBlock(x, y, z);
+      const lookup = makeCellLookup(grid.getOccupiedCells());
+      const contours = new Map<string, Point[]>();
+      let checked = 0;
+      for (const { geometry } of build(grid, settings)) {
+        const position = geometry.getAttribute('position');
+        const cell = geometry.getAttribute('aCell');
+        for (let i = 0; i < position.count; i += 1) {
+          if (cell.getW(i) % 4 !== 2) continue;
+          const px = cell.getX(i) * 0.5;
+          const pz = cell.getZ(i) * 0.5;
+          const x = Math.round(px + 7 / 2 - 0.5);
+          const z = Math.round(pz + 7 / 2 - 0.5);
+          const y = Math.round(cell.getY(i) * 0.01 - 0.5);
+          const key = `${x},${y},${z}`;
+          let contour = contours.get(key);
+          if (!contour) {
+            const radii = getCornerRadii(lookup, getCell(lookup, x, y, z)!, settings);
+            // Contour extérieur de la cellule (z = −y de la shape), à 5 mm près.
+            contour = offsetPolygon(
+              getRoundedRectContourPoints(0.5, 0.5, radii).map(([cx, cy]): Point => [cx, -cy]),
+              0.005,
+            );
+            contours.set(key, contour);
+          }
+          expect(pointInPolygon([position.getX(i) - px, position.getZ(i) - pz], contour)).toBe(true);
+          checked += 1;
+        }
+      }
+      expect(checked).toBeGreaterThan(1000);
+    }
   });
 });

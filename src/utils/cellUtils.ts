@@ -56,35 +56,44 @@ export function getCornerRadii(lookup: CellLookup, cell: GridCell, shape: Corner
     // brutalement d'anguleux à rond en cours de tour. Les côtés jamais
     // accolés à la base restent pleinement arrondis sur toute la hauteur.
     const base = getColumnBase(lookup, cell);
-    const hasL = hasOccupiedCell(lookup, base.x - 1, base.y, base.z);
-    const hasR = hasOccupiedCell(lookup, base.x + 1, base.y, base.z);
-    const hasF = hasOccupiedCell(lookup, base.x, base.y, base.z + 1);
-    const hasB = hasOccupiedCell(lookup, base.x, base.y, base.z - 1);
-
-    return buildCornerRadii(hasL, hasR, hasF, hasB, isolatedWallRadius, connectedWallInteriorRadius);
+    return buildCornerRadii(lookup, base, isolatedWallRadius, connectedWallInteriorRadius);
   }
 
-  const hasL = hasOccupiedCell(lookup, cell.x - 1, cell.y, cell.z);
-  const hasR = hasOccupiedCell(lookup, cell.x + 1, cell.y, cell.z);
-  const hasF = hasOccupiedCell(lookup, cell.x, cell.y, cell.z + 1);
-  const hasB = hasOccupiedCell(lookup, cell.x, cell.y, cell.z - 1);
-
   // Les murs qui ont 1 ou plusieurs murs adjacents doivent être "presque un angle droit" sur leurs parties exposées
-  return buildCornerRadii(hasL, hasR, hasF, hasB, connectedWallExposedRadius, connectedWallInteriorRadius);
+  return buildCornerRadii(lookup, cell, connectedWallExposedRadius, connectedWallInteriorRadius);
 }
 
+/**
+ * Rayon de chaque coin, d'après les cases autour du point de coin (les deux
+ * voisines de côté et la diagonale) :
+ *  - aucune voisine de côté : angle saillant du bâtiment → `exposedRadius` ;
+ *  - une seule, diagonale vide : jonction de deux cases sur une façade droite
+ *    → `interiorRadius` (réglage « interior corner roundness » : une gorge
+ *    entre les deux, que la cavité des blocs creux contourne, voir
+ *    `innerSectionXZ`) ;
+ *  - sinon (coin au cœur d'un bloc, ou angle rentrant du bâtiment) : vif.
+ *    Arrondi, il creusait un puits à travers les planchers au milieu d'un
+ *    bloc, ou une entaille dans l'angle rentrant. La règle est symétrique :
+ *    deux cases voisines arrondissent ou non leur coin commun ensemble.
+ */
 function buildCornerRadii(
-  hasL: boolean,
-  hasR: boolean,
-  hasF: boolean,
-  hasB: boolean,
+  lookup: CellLookup,
+  cell: GridCell,
   exposedRadius: number,
   interiorRadius: number,
 ): CornerRadii {
-  const backLeft = !hasL && !hasB ? exposedRadius : interiorRadius;
-  const backRight = !hasR && !hasB ? exposedRadius : interiorRadius;
-  const frontLeft = !hasL && !hasF ? exposedRadius : interiorRadius;
-  const frontRight = !hasR && !hasF ? exposedRadius : interiorRadius;
+  const { x, y, z } = cell;
+  const has = (dx: number, dz: number) => hasOccupiedCell(lookup, x + dx, y, z + dz);
+  const corner = (dx: number, dz: number) => {
+    const sideX = has(dx, 0);
+    const sideZ = has(0, dz);
+    if (!sideX && !sideZ) return exposedRadius;
+    return sideX !== sideZ && !has(dx, dz) ? interiorRadius : 0;
+  };
+  const backLeft = corner(-1, -1);
+  const backRight = corner(1, -1);
+  const frontLeft = corner(-1, 1);
+  const frontRight = corner(1, 1);
 
   const max = Math.max(backLeft, backRight, frontLeft, frontRight);
   const uniform = backLeft === backRight && backRight === frontLeft && frontLeft === frontRight;
