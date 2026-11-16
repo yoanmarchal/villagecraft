@@ -41,11 +41,13 @@ const TALL_CHANCE = 0.36;
 /**
  * Chaque pierre est un peu moins haute que son assise, de 0 à cette valeur,
  * en haut comme en bas : des joints d'épaisseur inégale, et des lits qui ne
- * se lisent plus comme un trait continu.
+ * se lisent plus comme un trait continu. Resserré (0,014 → 0,007) avec le
+ * joint : l'utilisateur veut des pierres aussi jointives que possible.
  */
-const BED_SLACK = 0.014;
-/** Largeur du joint de mortier entre deux pierres. */
-const JOINT = 0.009;
+const BED_SLACK = 0.007;
+/** Largeur du joint de mortier entre deux pierres (et entre deux pierres d'angle, decorations.ts). */
+export const MASONRY_JOINT = 0.006;
+const JOINT = MASONRY_JOINT;
 /** Saillie des pierres sur le nu du mur : chacune la sienne, entre ces deux bornes. */
 const DEPTH_MIN = 0.014;
 const DEPTH_MAX = 0.024;

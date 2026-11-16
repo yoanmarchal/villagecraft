@@ -4,6 +4,7 @@
 
 import type { Part } from '../parts';
 import { shellParts } from './shellParts';
+import { quoinHoles } from './decorations';
 import { masonryFacesOf, masonryParts } from './masonryParts';
 import type { CellContext } from './context';
 
@@ -21,7 +22,8 @@ export function standardCellParts(ctx: CellContext): Part[] {
   parts.push(
     ...masonryParts(
       ctx,
-      masonryFacesOf(ctx.lookup, cell).map((face) => ({ face })),
+      // Taillé autour des chaînages d'angle (decorations.ts).
+      masonryFacesOf(ctx.lookup, cell).map((face) => ({ face, holes: quoinHoles(ctx, face) })),
       baseColor,
       settings.windowStoneRoughness,
     ),
