@@ -7,7 +7,15 @@ import { ROOF_DROP_HEIGHT } from './growMaterial';
 import { INTERIOR_LAMP_Y } from './cells/interiorParts';
 import { PARAPET_H, WALKWAY_H } from './cells/walkwayParts';
 import { BlockType } from '../types';
-import { getRidgeAxis, isHollowType, makeCellLookup } from '../utils/cellUtils';
+import {
+  getCell,
+  getCornerRadii,
+  getRidgeAxis,
+  getRoundedRectContourPoints,
+  isHollowType,
+  makeCellLookup,
+} from '../utils/cellUtils';
+import { offsetPolygon, pointInPolygon, type Point } from '../utils/polygon';
 import type { RenderSettings } from './renderSettings';
 
 const SETTINGS: RenderSettings = {
@@ -603,7 +611,10 @@ describe('interior light', () => {
     for (const { local, mode } of vertices(grid)) {
       if (mode === 2) {
         expect(Math.max(Math.abs(local.x), Math.abs(local.z))).toBeLessThan(inner);
-        expect(Math.abs(local.y)).toBeLessThan(0.5 - FLOOR_T + 0.001);
+        expect(local.y).toBeGreaterThan(-(0.5 - FLOOR_T) - 0.001);
+        // Au-dessus du plafond, seul l'escalier monte, par sa trémie, jusqu'au
+        // plancher de l'étage (noyau de la vis, montants de l'échelle).
+        expect(local.y).toBeLessThan(0.5 + FLOOR_T + 0.01);
       }
       // Tout ce qui dépasse de la coque (pierres, cadres…) n'est ni "room" ni "shell".
       if (Math.max(Math.abs(local.x), Math.abs(local.z)) > 0.5 + 0.001) expect(mode).toBe(0);
@@ -639,30 +650,101 @@ describe('interior light', () => {
     }
   });
 
-  it('hangs a chandelier in every storey, flames at the lamp height', () => {
-    const grid = new VillageGrid(5, 10, 5);
-    for (let i = 0; i < 3; i += 1) grid.addBlockInColumn(2, 2);
-    const hollowCells = grid.getOccupiedCells().filter((cell) => isHollowType(cell.type)).length;
-
+  /** Pointes des flammes (sommets des cônes) près du centre des cellules, et niveaux de toutes les flammes. */
+  function flamesOf(grid: VillageGrid) {
     const flames = vertices(grid).filter(
       ({ glow, local }) => glow && Math.abs(local.x) < 0.2 && Math.abs(local.z) < 0.2,
     );
-    const flameLevels = new Set(flames.map(({ local }) => Math.round(local.y * 100)));
-    expect(hollowCells).toBeGreaterThan(0);
-    for (const level of flameLevels) {
-      expect(Math.abs(level / 100 - INTERIOR_LAMP_Y)).toBeLessThan(0.02);
-    }
-    // 4 flammes par chandelier, une pointe (sommet du cône) chacune.
     const tips = flames.filter(({ local }) => local.y > INTERIOR_LAMP_Y + 0.011);
-    expect(
-      new Set(
+    return {
+      levels: new Set(flames.map(({ local }) => Math.round(local.y * 100))),
+      tips: new Set(
         tips.map(({ world }) =>
           world
             .toArray()
             .map((v) => v.toFixed(3))
             .join(','),
         ),
-      ).size,
-    ).toBe(4 * hollowCells);
+      ),
+    };
+  }
+
+  it('hangs a chandelier in every storey, flames at the lamp height', () => {
+    // Maison de deux cases sur trois niveaux : une pièce par étage.
+    const grid = new VillageGrid(5, 10, 5);
+    for (let i = 0; i < 3; i += 1) {
+      grid.addBlockInColumn(2, 2);
+      grid.addBlockInColumn(2, 3);
+    }
+    const storeys = new Set(
+      grid
+        .getOccupiedCells()
+        .filter((cell) => isHollowType(cell.type))
+        .map((cell) => cell.y),
+    ).size;
+    expect(storeys).toBe(3);
+
+    const { levels, tips } = flamesOf(grid);
+    for (const level of levels) expect(Math.abs(level / 100 - INTERIOR_LAMP_Y)).toBeLessThan(0.02);
+    // 4 flammes par chandelier, une pointe (sommet du cône) chacune.
+    expect(tips.size).toBe(4 * storeys);
+  });
+
+  it('hangs a lantern on the newel of a tower stair, at the lamp height', () => {
+    // Tour de trois niveaux : vis aux deux premiers (un falot, une flamme),
+    // chandelier au dernier, sous l'échelle.
+    const grid = new VillageGrid(5, 10, 5);
+    for (let i = 0; i < 3; i += 1) grid.addBlockInColumn(2, 2);
+    const { levels, tips } = flamesOf(grid);
+    for (const level of levels) expect(Math.abs(level / 100 - INTERIOR_LAMP_Y)).toBeLessThan(0.02);
+    expect(tips.size).toBe(1 + 1 + 4);
+  });
+});
+
+describe('rounded junctions (interior corner roundness)', () => {
+  it('keeps every room part inside its cell’s rounded contour: nothing pokes into the groove', () => {
+    // Un bloc 2 × 2 sur deux niveaux avec une aile : jonctions sur façade droite,
+    // coins au cœur du bloc, angle rentrant.
+    for (const radius of [0.3, 0.5]) {
+      const settings = { ...SETTINGS, connectedWallInteriorRadius: radius };
+      const grid = new VillageGrid(7, 10, 7);
+      for (const [x, z] of [
+        [2, 2],
+        [3, 2],
+        [2, 3],
+        [3, 3],
+        [4, 3],
+      ])
+        for (let y = 0; y < 3; y += 1) grid.addBlock(x, y, z);
+      const lookup = makeCellLookup(grid.getOccupiedCells());
+      const contours = new Map<string, Point[]>();
+      let checked = 0;
+      for (const { geometry } of build(grid, settings)) {
+        const position = geometry.getAttribute('position');
+        const cell = geometry.getAttribute('aCell');
+        for (let i = 0; i < position.count; i += 1) {
+          if (cell.getW(i) % 4 !== 2) continue;
+          const px = cell.getX(i) * 0.5;
+          const pz = cell.getZ(i) * 0.5;
+          const x = Math.round(px + 7 / 2 - 0.5);
+          const z = Math.round(pz + 7 / 2 - 0.5);
+          const y = Math.round(cell.getY(i) * 0.01 - 0.5);
+          const key = `${x},${y},${z}`;
+          let contour = contours.get(key);
+          if (!contour) {
+            const radii = getCornerRadii(lookup, getCell(lookup, x, y, z)!, settings);
+            // Contour extérieur de la cellule (z = −y de la shape), à 5 mm près.
+            contour = offsetPolygon(
+              getRoundedRectContourPoints(0.5, 0.5, radii).map(([cx, cy]): Point => [cx, -cy]),
+              0.005,
+            );
+            contours.set(key, contour);
+          }
+          expect(pointInPolygon([position.getX(i) - px, position.getZ(i) - pz], contour)).toBe(true);
+          checked += 1;
+        }
+      }
+      expect(checked).toBeGreaterThan(1000);
+    }
   });
 });

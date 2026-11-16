@@ -41,11 +41,13 @@ const TALL_CHANCE = 0.36;
 /**
  * Chaque pierre est un peu moins haute que son assise, de 0 à cette valeur,
  * en haut comme en bas : des joints d'épaisseur inégale, et des lits qui ne
- * se lisent plus comme un trait continu.
+ * se lisent plus comme un trait continu. Resserré (0,014 → 0,007) avec le
+ * joint : l'utilisateur veut des pierres aussi jointives que possible.
  */
-const BED_SLACK = 0.014;
-/** Largeur du joint de mortier entre deux pierres. */
-const JOINT = 0.009;
+const BED_SLACK = 0.007;
+/** Largeur du joint de mortier entre deux pierres (et entre deux pierres d'angle, decorations.ts). */
+export const MASONRY_JOINT = 0.006;
+const JOINT = MASONRY_JOINT;
 /** Saillie des pierres sur le nu du mur : chacune la sienne, entre ces deux bornes. */
 const DEPTH_MIN = 0.014;
 const DEPTH_MAX = 0.024;
@@ -58,7 +60,7 @@ const ARC_CHUNK = 0.3;
 /** Pas de découpe au-dessus d'une arche. */
 const FLOOR_SLICE = 0.02;
 
-/** Rectangle (repère de la face : t le long du mur, y vertical) laissé libre de pierres : ouverture, plinthe… */
+/** Rectangle (repère de la face : t le long du mur, y vertical) laissé libre de pierres : ouverture, seuil… */
 export interface MasonryHole {
   t0: number;
   t1: number;
@@ -197,6 +199,14 @@ function isFacedAt(lookup: CellLookup, x: number, y: number, z: number, face: Ce
   return !front?.isOccupied || front.type === BlockType.Roof;
 }
 
+/** Faces voisines d'une face, côté t négatif puis positif (mêmes coins que `getFaceCorners`). */
+const ADJACENT_FACES: Record<CellFace, [CellFace, CellFace]> = {
+  front: ['left', 'right'],
+  back: ['left', 'right'],
+  left: ['back', 'front'],
+  right: ['back', 'front'],
+};
+
 /** Faces d'une cellule de mur qui reçoivent un parement de pierre (voir `isFacedAt`). */
 export function masonryFacesOf(lookup: CellLookup, cell: GridCell): CellFace[] {
   return (['front', 'back', 'left', 'right'] as const).filter((face) =>
@@ -244,13 +254,20 @@ export function masonryParts(
 
     // Étendue de la face en abscisse déroulée : jusqu'au bord de la cellule,
     // ou jusqu'à la diagonale du coin arrondi (l'autre moitié de l'arc
-    // revient à la face voisine).
+    // revient à la face voisine) — tout l'arc si la face voisine n'a pas de
+    // parement, parce qu'une case est bâtie devant : c'est la gorge d'une
+    // jonction arrondie (« interior corner roundness »), qui restait nue au fond.
     const [radiusNeg, radiusPos] = getFaceCorners(face, radii, 'numeric');
     const rounded = (r: number) => r > 0.001;
+    const [sideNeg, sidePos] = ADJACENT_FACES[face];
+    const wholeArc = (side: CellFace) =>
+      !faces.some((other) => other.face === side) && !isFacedAt(lookup, cell.x, cell.y, cell.z, side);
+    const arcNeg = rounded(radiusNeg) ? (radiusNeg * Math.PI) / (wholeArc(sideNeg) ? 2 : 4) : 0;
+    const arcPos = rounded(radiusPos) ? (radiusPos * Math.PI) / (wholeArc(sidePos) ? 2 : 4) : 0;
     const flatNeg = -(half - (rounded(radiusNeg) ? radiusNeg : 0));
     const flatPos = half - (rounded(radiusPos) ? radiusPos : 0);
-    const tMin = flatNeg - (rounded(radiusNeg) ? (radiusNeg * Math.PI) / 4 : 0) - overhang[0];
-    const tMax = flatPos + (rounded(radiusPos) ? (radiusPos * Math.PI) / 4 : 0) + overhang[1];
+    const tMin = flatNeg - arcNeg - overhang[0];
+    const tMax = flatPos + arcPos + overhang[1];
     // Au bord de la cellule, la pierre n'a de joint que si le mur s'arrête là.
     const edgeNeg = extent !== undefined || overhang[0] > 0 || rounded(radiusNeg) || !continues(lookup, cell, face, -1);
     const edgePos = extent !== undefined || overhang[1] > 0 || rounded(radiusPos) || !continues(lookup, cell, face, 1);

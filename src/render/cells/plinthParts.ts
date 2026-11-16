@@ -4,13 +4,15 @@
  * descend, ses murs se prolongent jusqu'à lui en maçonnerie pleine. Même
  * contour que la cellule (tours comprises), même parement de pierre que le
  * mur au-dessus — l'appareil est calculé dans le repère de la grille, les
- * assises se poursuivent sans rupture.
+ * assises se poursuivent sans rupture —, chaînages d'angle compris : leurs
+ * colonnes descendent jusqu'au terrain (decorations.ts).
  */
 
 import { shapedBoxGeo } from '../geometryCache';
 import { part, xform, type Part } from '../parts';
 import type { CellFace } from '../../utils/cellUtils';
 import { masonryFacesOf, masonryParts } from './masonryParts';
+import { plinthQuoinStones, quoinHoles, quoinParts } from './decorations';
 import type { CellContext } from './context';
 
 /** Enfouissement sous le terrain (pas de jour au pied du mur). */
@@ -60,6 +62,7 @@ export function plinthParts(ctx: CellContext): Part[] {
     .map((face) => ({ face, depth: depthAlong(...FACE_EDGE[face]) }))
     .filter(({ depth }) => depth > MIN_DEPTH);
   if (faces.length === 0) return [];
+  const quoins = plinthQuoinStones(ctx);
 
   // Noyau : jusqu'au plus bas des faces visibles, par pas de 5 cm (géométries partagées).
   const deepest = Math.max(...faces.map(({ depth }) => depth));
@@ -73,9 +76,14 @@ export function plinthParts(ctx: CellContext): Part[] {
     ),
     ...masonryParts(
       ctx,
-      faces.map(({ face, depth }) => ({ face, yRange: [-0.5 - depth - EMBED, -0.5] as [number, number] })),
+      faces.map(({ face, depth }) => ({
+        face,
+        yRange: [-0.5 - depth - EMBED, -0.5] as [number, number],
+        holes: quoinHoles(ctx, face, quoins),
+      })),
       settings.wallBaseColor,
       settings.windowStoneRoughness,
     ),
+    ...quoinParts(ctx, settings.wallBaseColor, quoins),
   ];
 }

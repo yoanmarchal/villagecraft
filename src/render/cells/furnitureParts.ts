@@ -11,6 +11,7 @@
  *
  * Contraintes : rien contre le mur d'une porte ; sous une fenêtre ou une
  * meurtrière, seulement des meubles plus bas que l'appui (`LOW_MAX_H`) ;
+ * rien sur l'emprise d'un escalier ni au bord d'une trémie (`stairObstacles`) ;
  * un meuble par coin (un lit, qui traverse la pièce, en prend deux) ; pas de
  * meuble mural dans un coin arrondi de tour (il traverserait la courbe).
  * Tout reste dans la cavité de la coque (testé dans buildVillage.test.ts).
@@ -19,6 +20,7 @@
  * boîtes et des cylindres à 8 segments : ~24 sommets par boîte soudée.
  */
 
+import * as THREE from 'three';
 import type { CellFace } from '../../utils/cellUtils';
 import { FACE_ROTATION_Y, getColumnTop, isGableRoofCell } from '../../utils/cellUtils';
 import { varyColorBrightness } from '../../colorPalettes';
@@ -26,8 +28,10 @@ import { boxGeo, cylinderGeo, FLOOR_T, OPENING_SIZES, WALL_T, type OpeningSpec }
 import { mul, part, xform, type Part } from '../parts';
 import type { GridCell } from '../../types';
 import type { RoomLamp } from '../../utils/roomLamps';
+import { offsetPolygon, polygonsOverlap, rect, type Polygon } from '../../utils/polygon';
 import type { CellContext } from './context';
 import { lampZones, openingKindsOf } from './openings';
+import { faceZone, stairObstacles } from './stairPlan';
 
 const FURNITURE_WOOD = '#7a5232';
 const LIGHT_WOOD = '#9c7449';
@@ -83,6 +87,30 @@ function hashOf(x: number, y: number, z: number, salt: number): number {
 
 const box = (w: number, h: number, d: number, color: string, mat: Part['mat'], pos: [number, number, number]) =>
   part(boxGeo(w, h, d), color, mat, xform(pos));
+
+/** Emprise au sol (rectangle englobant, repère de la cellule) de parts posés par `matrix`. */
+function footprintOf(parts: Part[], matrix: ReturnType<typeof xform>): Polygon {
+  let x0 = Infinity;
+  let x1 = -Infinity;
+  let z0 = Infinity;
+  let z1 = -Infinity;
+  const v = new THREE.Vector3();
+  for (const p of parts) {
+    const toCell = mul(matrix, p.matrix);
+    const position = p.geo.getAttribute('position');
+    for (let i = 0; i < position.count; i += 1) {
+      v.fromBufferAttribute(position, i).applyMatrix4(toCell);
+      x0 = Math.min(x0, v.x);
+      x1 = Math.max(x1, v.x);
+      z0 = Math.min(z0, v.z);
+      z1 = Math.max(z1, v.z);
+    }
+  }
+  return rect(x0, z0, x1, z1);
+}
+
+/** Jeu laissé entre un meuble et un escalier ou le garde-corps d'une trémie. */
+const STAIR_GAP = 0.015;
 
 // ── Meubles ───────────────────────────────────────────────────────────────
 
@@ -388,6 +416,9 @@ function cornerOf(face: CellFace, side: number, towardsWall: boolean): Corner {
   return `${z > 0 ? 'front' : 'back'}${x > 0 ? 'Right' : 'Left'}` as Corner;
 }
 
+/** Demi-largeur de la cheminée (manteau). */
+const FIREPLACE_HALF_W = 0.18;
+
 /** Part de pièces (zone d'un chandelier) qui reçoivent une cheminée. */
 const FIREPLACE_CHANCE = { ground: 90, upper: 50 };
 
@@ -440,6 +471,8 @@ export function planFireplaces(contexts: CellContext[], lamps: Map<GridCell, Roo
       const { hollow, radii, cell, lookup } = ctx;
       if (!isGableRoofCell(lookup, getColumnTop(lookup, cell))) continue;
       const kinds = kindsOf.get(ctx)!;
+      // Escaliers planifiés avant : la cheminée (jusqu'à la hotte, au plafond) s'en écarte.
+      const obstacles = stairObstacles(ctx);
       const faces: CellFace[] = ['front', 'back', 'left', 'right'];
       if (hashOf(cell.x, cell.y, cell.z, 41) % 2) faces.reverse();
       for (const face of faces) {
@@ -447,6 +480,8 @@ export function planFireplaces(contexts: CellContext[], lamps: Map<GridCell, Roo
         if ([1, -1].some((side) => radii[cornerOf(face, side, true)] > WALL_T + 0.02)) continue;
         const kind = kinds.get(face);
         if (kind === 'door' || kind === 'slit' || (kind === 'window' && windows < 2)) continue;
+        const hearth = faceZone(face, -FIREPLACE_HALF_W - STAIR_GAP, FIREPLACE_HALF_W + STAIR_GAP, INNER - 0.22, INNER);
+        if (obstacles.some((obstacle) => polygonsOverlap(hearth, obstacle))) continue;
         // Mur aveugle d'abord (rang 0), fenêtre ensuite ; puis la cellule la plus proche du chandelier.
         const rank = (kind ? 1000 : 0) + order;
         if (!best || rank < best.rank) best = { ctx, face, rank };
@@ -467,11 +502,18 @@ export function furnitureParts(ctx: CellContext, openings: OpeningSpec[]): Part[
   const place = (pieceParts: Part[], matrix: ReturnType<typeof xform>) => {
     for (const p of pieceParts) parts.push({ ...p, matrix: mul(matrix, p.matrix) });
   };
+  // Escalier de la cellule, trémie de celui qui arrive : rien ne s'y pose.
+  const obstacles = stairObstacles(ctx).map((obstacle) => offsetPolygon(obstacle, STAIR_GAP));
+  const blocked = (pieceParts: Part[], matrix: ReturnType<typeof xform>) =>
+    obstacles.length > 0 && obstacles.some((obstacle) => polygonsOverlap(footprintOf(pieceParts, matrix), obstacle));
 
-  // Centre : sous le chandelier de la pièce.
+  // Centre : sous le chandelier de la pièce — tourné d'un quart si l'escalier
+  // gêne, ou rien (noyau d'une vis, trémie au milieu de la pièce).
   if (ctx.chandelier) {
-    const centre = xform([0, FLOOR_Y, 0], [0, h % 2 === 0 ? 0 : Math.PI / 2, 0]);
-    place(ground ? diningSet() : rug(RUGS[h % RUGS.length]), centre);
+    const piece = ground ? diningSet() : rug(RUGS[h % RUGS.length]);
+    const turns = h % 2 === 0 ? [0, Math.PI / 2] : [Math.PI / 2, 0];
+    const centre = turns.map((turn) => xform([0, FLOOR_Y, 0], [0, turn, 0])).find((m) => !blocked(piece, m));
+    if (centre) place(piece, centre);
   }
 
   // Murs : une tour garde son pourtour dégagé (coins arrondis, meurtrières).
@@ -530,6 +572,10 @@ export function furnitureParts(ctx: CellContext, openings: OpeningSpec[]): Part[
       }
       if (!piece || (opening && piece.height > LOW_MAX_H)) continue;
 
+      const faceRot = xform([0, 0, 0], [0, FACE_ROTATION_Y[face], 0]);
+      const matrix = mul(faceRot, xform([side * SLOT_OFFSET, FLOOR_Y, INNER - piece.depth / 2 - WALL_GAP]));
+      if (blocked(piece.parts, matrix)) continue;
+
       // Un lit traverse la pièce : il prend aussi le coin opposé de ce côté.
       const far = cornerOf(face, side, false);
       if (piece.depth > 0.3) {
@@ -539,8 +585,7 @@ export function furnitureParts(ctx: CellContext, openings: OpeningSpec[]): Part[
       }
       used.add(near);
 
-      const faceRot = xform([0, 0, 0], [0, FACE_ROTATION_Y[face], 0]);
-      place(piece.parts, mul(faceRot, xform([side * SLOT_OFFSET, FLOOR_Y, INNER - piece.depth / 2 - WALL_GAP])));
+      place(piece.parts, matrix);
     }
   }
 

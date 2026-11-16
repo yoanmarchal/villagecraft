@@ -18,6 +18,7 @@ import { mergeVertices, toCreasedNormals } from 'three/examples/jsm/utils/Buffer
 import { Brush, Evaluator, SUBTRACTION } from 'three-bvh-csg';
 import type { CellFace, CornerRadii, HollowShape } from '../utils/cellUtils';
 import { FACE_ROTATION_Y, getRoundedRectContourPoints } from '../utils/cellUtils';
+import type { Polygon } from '../utils/polygon';
 
 /**
  * Borne du cache (LRU). Un village complet n'utilise que quelques centaines
@@ -195,43 +196,71 @@ export const OPENING_SIZES: Record<OpeningKind, { w: number; h: number; y: numbe
 
 type CornerName = 'backLeft' | 'backRight' | 'frontLeft' | 'frontRight';
 
+const INNER_CORNERS: ReadonlyArray<{
+  name: CornerName;
+  sx: 1 | -1;
+  sz: 1 | -1;
+  xSide: CellFace;
+  zSide: CellFace;
+  incomingX: boolean;
+}> = [
+  { name: 'backRight', sx: 1, sz: -1, xSide: 'right', zSide: 'back', incomingX: false },
+  { name: 'frontRight', sx: 1, sz: 1, xSide: 'right', zSide: 'front', incomingX: true },
+  { name: 'frontLeft', sx: -1, sz: 1, xSide: 'left', zSide: 'front', incomingX: false },
+  { name: 'backLeft', sx: -1, sz: -1, xSide: 'left', zSide: 'back', incomingX: true },
+];
+
+/** Passage minimal vers le voisin, le long d'un côté ouvert pris entre deux gorges : en deçà, ce côté est muré. */
+const MIN_PASSAGE = 0.06;
+
 /**
  * Section XZ (scène) du volume intérieur : rectangle borné à `0.5 − WALL_T`
  * côté mur, prolongé au-delà de la cellule côté `open`, avec coins arrondis
  * (rayon du mur − épaisseur) entre deux murs, ou entaillés d'un pilier
  * d'angle (coin rentrant). Parcours BR → FR → FL → BL.
+ *
+ * Coin de jonction (un côté ouvert, l'autre fermé, coin extérieur arrondi —
+ * « interior corner roundness ») : la façade y fait une gorge jusqu'au
+ * voisin. La cavité la contourne en gardant un mur de `WALL_T` (arc
+ * intérieur, puis quart de cercle autour du fond de la gorge) et ne rejoint
+ * le voisin qu'en deçà ; carrée jusqu'au bord, elle crevait le mur. Si les
+ * gorges des deux coins d'un côté ouvert ne laissent plus de passage
+ * (`MIN_PASSAGE`), ce côté est muré comme un mur extérieur.
  */
 function innerSectionXZ(shape: HollowShape, radii: CornerRadii, openBound = 0.5 + CSG_EPS): Array<[number, number]> {
-  const { sides, pillars } = shape;
-  const bound = (face: CellFace) => (sides[face] === 'open' ? openBound : 0.5 - WALL_T);
+  const inner = 0.5 - WALL_T;
+  const isRound = (name: CornerName) => radii[name] > 0.001;
+
+  // Côtés ouverts réellement praticables, entre les gorges de leurs deux coins.
+  const sides = { ...shape.sides };
+  for (const face of ['front', 'back', 'left', 'right'] as const) {
+    if (shape.sides[face] !== 'open') continue;
+    let passage = 1;
+    for (const { name, xSide, zSide } of INNER_CORNERS) {
+      if (xSide !== face && zSide !== face) continue;
+      const other = xSide === face ? zSide : xSide;
+      if (shape.sides[other] === 'open') passage -= shape.pillars[name] ? WALL_T : 0;
+      else passage -= isRound(name) ? radii[name] + WALL_T : WALL_T;
+    }
+    if (passage < MIN_PASSAGE) sides[face] = 'partition';
+  }
+
+  const bound = (face: CellFace) => (sides[face] === 'open' ? openBound : inner);
   const xMax = bound('right');
   const xMin = -bound('left');
   const zMax = bound('front');
   const zMin = -bound('back');
-  const inner = 0.5 - WALL_T;
-
-  const corners: Array<{
-    name: CornerName;
-    sx: 1 | -1;
-    sz: 1 | -1;
-    xSide: CellFace;
-    zSide: CellFace;
-    incomingX: boolean;
-  }> = [
-    { name: 'backRight', sx: 1, sz: -1, xSide: 'right', zSide: 'back', incomingX: false },
-    { name: 'frontRight', sx: 1, sz: 1, xSide: 'right', zSide: 'front', incomingX: true },
-    { name: 'frontLeft', sx: -1, sz: 1, xSide: 'left', zSide: 'front', incomingX: false },
-    { name: 'backLeft', sx: -1, sz: -1, xSide: 'left', zSide: 'back', incomingX: true },
-  ];
+  const ARC_SEGS = 8;
 
   const points: Array<[number, number]> = [];
-  for (const { name, sx, sz, xSide, zSide, incomingX } of corners) {
+  for (const { name, sx, sz, xSide, zSide, incomingX } of INNER_CORNERS) {
     const cx = sx > 0 ? xMax : xMin;
     const cz = sz > 0 ? zMax : zMin;
-    const bothClosed = sides[xSide] !== 'open' && sides[zSide] !== 'open';
-    const r = bothClosed ? Math.max(0, radii[name] - WALL_T) : 0;
+    const xOpen = sides[xSide] === 'open';
+    const zOpen = sides[zSide] === 'open';
+    const r = !xOpen && !zOpen ? Math.max(0, radii[name] - WALL_T) : 0;
 
-    if (pillars[name]) {
+    if (xOpen && zOpen && shape.pillars[name]) {
       const px = sx * inner;
       const pz = sz * inner;
       points.push(
@@ -247,6 +276,37 @@ function innerSectionXZ(shape: HollowShape, radii: CornerRadii, openBound = 0.5 
               [cx, pz],
             ] as Array<[number, number]>)),
       );
+    } else if (xOpen !== zOpen && isRound(name)) {
+      // Jonction. Repère (u, v) du coin : u vers le côté ouvert, v vers le
+      // côté fermé ; points listés du côté fermé vers le côté ouvert.
+      const R = radii[name];
+      const cuspV = 0.5 - R; // fond de la gorge, sur le bord de la cellule
+      const local: Array<[number, number]> = [];
+      let start: number;
+      if (R - WALL_T > 0.001) {
+        // Arc intérieur, parallèle à celui de la façade.
+        const o = 0.5 - R;
+        const ri = R - WALL_T;
+        for (let i = 0; i <= ARC_SEGS; i += 1) {
+          const a = Math.PI / 2 - (Math.PI / 2) * (i / ARC_SEGS);
+          local.push([o + ri * Math.cos(a), o + ri * Math.sin(a)]);
+        }
+        start = Math.PI;
+      } else {
+        // Gorge moins profonde que le mur : le nu du mur rejoint directement le cercle.
+        start = Math.PI - Math.asin((inner - cuspV) / WALL_T);
+        local.push([0.5 + WALL_T * Math.cos(start), 0.5 - R + WALL_T * Math.sin(start)]);
+      }
+      // Quart de cercle de rayon WALL_T autour du fond de la gorge, jusqu'au bord de la cellule.
+      const CUSP_SEGS = 4;
+      for (let i = 1; i <= CUSP_SEGS; i += 1) {
+        const a = start + ((1.5 * Math.PI - start) * i) / CUSP_SEGS;
+        local.push([0.5 + WALL_T * Math.cos(a), cuspV + WALL_T * Math.sin(a)]);
+      }
+      // Puis le long du passage, jusqu'au prolongement côté ouvert (au-delà de la cellule).
+      local.push([openBound, cuspV - WALL_T]);
+      const mapped = local.map(([u, v]): [number, number] => (xOpen ? [sx * u, sz * v] : [sx * v, sz * u]));
+      points.push(...(xOpen === incomingX ? mapped.reverse() : mapped));
     } else if (r > 0.001) {
       // Arc du point tangent au côté X (direction (sx, 0)) au point tangent au côté Z (direction (0, sz)).
       const ox = cx - sx * r;
@@ -254,7 +314,6 @@ function innerSectionXZ(shape: HollowShape, radii: CornerRadii, openBound = 0.5 
       const aX = sx > 0 ? 0 : Math.PI;
       const aZ = aX + (sx * sz > 0 ? Math.PI / 2 : -Math.PI / 2);
       const [a0, a1] = incomingX ? [aX, aZ] : [aZ, aX];
-      const ARC_SEGS = 8;
       for (let i = 0; i <= ARC_SEGS; i += 1) {
         const a = a0 + ((a1 - a0) * i) / ARC_SEGS;
         points.push([ox + Math.cos(a) * r, oz + Math.sin(a) * r]);
@@ -266,12 +325,23 @@ function innerSectionXZ(shape: HollowShape, radii: CornerRadii, openBound = 0.5 
   return points;
 }
 
-/** Prisme vertical de section `sectionXZ` (coordonnées scène), de y0 à y1. */
-function verticalPrism(sectionXZ: Array<[number, number]>, y0: number, y1: number): THREE.BufferGeometry {
+/** Prisme vertical de section `sectionXZ` (coordonnées scène), de y0 à y1, percé des polygones `holesXZ`. */
+function verticalPrism(
+  sectionXZ: Array<[number, number]>,
+  y0: number,
+  y1: number,
+  holesXZ: Array<Array<[number, number]>> = [],
+): THREE.BufferGeometry {
   const shape = new THREE.Shape();
   // Plan de la shape XY → scène XZ avec z = −y (même convention que shapedBoxGeo).
   sectionXZ.forEach(([x, z], i) => (i === 0 ? shape.moveTo(x, -z) : shape.lineTo(x, -z)));
   shape.closePath();
+  for (const holeXZ of holesXZ) {
+    const path = new THREE.Path();
+    holeXZ.forEach(([x, z], i) => (i === 0 ? path.moveTo(x, -z) : path.lineTo(x, -z)));
+    path.closePath();
+    shape.holes.push(path);
+  }
   const geo = new THREE.ExtrudeGeometry(shape, { depth: y1 - y0, bevelEnabled: false });
   geo.applyMatrix4(new THREE.Matrix4().makeRotationX(-Math.PI / 2));
   geo.applyMatrix4(new THREE.Matrix4().makeTranslation(0, y0, 0));
@@ -324,26 +394,60 @@ function withoutBvhLeafSizeWarning(run: () => void): void {
 
 const openingKey = (o: OpeningSpec) => `${o.face[0]}${o.kind[0]}${r3(o.scale)}`;
 
+/** Clé d'un polygone (trémie) : ses sommets au millimètre. */
+const polygonKey = (polygon: Polygon | undefined) =>
+  polygon ? polygon.map(([x, z]) => `${r3(x)}:${r3(z)}`).join(';') : '';
+
+/**
+ * Contour intérieur d'une coque creuse dans le plan XZ (repère de la
+ * cellule) : nu des murs, bord de la cellule côté `open`, coins arrondis et
+ * piliers d'angle compris — ce que suivent parquet et plafond.
+ */
+export function innerContourXZ(shape: HollowShape, radii: CornerRadii): Polygon {
+  return innerSectionXZ(shape, radii, 0.5);
+}
+
+/**
+ * Trémies percées dans les dalles d'un bloc creux (escaliers, trappe du
+ * grenier), en polygones XZ du repère de la cellule : `floor` dans le
+ * plancher (l'escalier de l'étage du dessous débouche ici), `ceiling` dans le
+ * plafond (l'escalier de la cellule monte par là). Elles restent à quelques
+ * millimètres du nu des murs, pour ne jamais partager un plan avec eux en CSG.
+ */
+export interface SlabHoles {
+  floor?: Polygon;
+  ceiling?: Polygon;
+}
+
 /**
  * Coque maçonnée d'un bloc creux : le corps plein (`shapedBoxGeo`, même
  * contour qu'avant, pour que pierres et quoins restent alignés) moins le
  * volume intérieur (plancher et plafond `FLOOR_T`, murs `WALL_T`, ouvert
  * vers les voisins creux) moins les
- * ouvertures traversantes. CSG calculé une seule fois par combinaison.
+ * ouvertures traversantes et les trémies. CSG calculé une seule fois par combinaison.
  */
-export function hollowShellGeo(radii: CornerRadii, shape: HollowShape, openings: OpeningSpec[]): THREE.BufferGeometry {
+export function hollowShellGeo(
+  radii: CornerRadii,
+  shape: HollowShape,
+  openings: OpeningSpec[],
+  holes: SlabHoles = {},
+): THREE.BufferGeometry {
   const { sides, pillars } = shape;
   const sidesKey = (['front', 'back', 'left', 'right'] as const).map((f) => sides[f][0]).join('');
   const pillarsKey = (['backLeft', 'backRight', 'frontLeft', 'frontRight'] as const)
     .map((c) => (pillars[c] ? 1 : 0))
     .join('');
   const openingsKey = openings.map(openingKey).sort().join(',');
-  const key = `hollow|${radiiKey(radii)}|${sidesKey}|${pillarsKey}|${openingsKey}`;
+  const holesKey = `${polygonKey(holes.floor)}/${polygonKey(holes.ceiling)}`;
+  const key = `hollow|${radiiKey(radii)}|${sidesKey}|${pillarsKey}|${openingsKey}|${holesKey}`;
 
   return getGeo(key, () => {
     const cutters = [
       verticalPrism(innerSectionXZ(shape, radii), -0.5 + FLOOR_T, 0.5 - FLOOR_T),
       ...openings.map(openingCutter),
+      // Trémies : de la cavité (déjà vide) jusqu'au-delà de la face de la dalle.
+      ...(holes.floor ? [verticalPrism(holes.floor, -0.5 - CSG_EPS, -0.5 + FLOOR_T + CSG_EPS)] : []),
+      ...(holes.ceiling ? [verticalPrism(holes.ceiling, 0.5 - FLOOR_T - CSG_EPS, 0.5 + CSG_EPS)] : []),
     ];
     let result = toBrush(shapedBoxGeo(1, 1, 1, radii));
     withoutBvhLeafSizeWarning(() => {
@@ -367,19 +471,51 @@ export function hollowShellGeo(radii: CornerRadii, shape: HollowShape, openings:
  * Nappe horizontale épousant l'intérieur d'une coque creuse (contour arrondi
  * des tours, piliers d'angle compris), arrêtée pile au bord de la cellule
  * côté `open` pour se raccorder sans chevauchement à celle du voisin.
- * Épaisseur `thickness`, de y = 0 à y = thickness. Sert au parquet et au
- * plafond des intérieurs.
+ * Épaisseur `thickness`, de y = 0 à y = thickness, percée de la trémie
+ * `hole` s'il y en a une. Sert au parquet et au plafond des intérieurs.
  */
-export function hollowSheetGeo(radii: CornerRadii, shape: HollowShape, thickness: number): THREE.BufferGeometry {
+export function hollowSheetGeo(
+  radii: CornerRadii,
+  shape: HollowShape,
+  thickness: number,
+  hole?: Polygon,
+): THREE.BufferGeometry {
   const { sides, pillars } = shape;
   const sidesKey = (['front', 'back', 'left', 'right'] as const).map((f) => sides[f][0]).join('');
   const pillarsKey = (['backLeft', 'backRight', 'frontLeft', 'frontRight'] as const)
     .map((c) => (pillars[c] ? 1 : 0))
     .join('');
-  return getGeo(`sheet|${radiiKey(radii)}|${sidesKey}|${pillarsKey}|${r3(thickness)}`, () => {
-    const geo = verticalPrism(innerSectionXZ(shape, radii, 0.5), 0, thickness);
+  const key = `sheet|${radiiKey(radii)}|${sidesKey}|${pillarsKey}|${r3(thickness)}|${polygonKey(hole)}`;
+  return getGeo(key, () => {
+    const geo = verticalPrism(innerSectionXZ(shape, radii, 0.5), 0, thickness, hole ? [hole] : []);
     geo.computeVertexNormals();
     return geo;
+  });
+}
+
+/**
+ * Prisme vertical de section `section` (polygone XZ, dans un sens ou dans
+ * l'autre), de y = 0 à y = `height` : marches dansantes d'un quart tournant.
+ */
+export function prismGeo(section: Polygon, height: number): THREE.BufferGeometry {
+  return getGeo(`prism|${polygonKey(section)}|${r3(height)}`, () => verticalPrism(section, 0, height));
+}
+
+/**
+ * Marche de vis (escalier en colimaçon) : prisme trapézoïdal entre les rayons
+ * `r0` (noyau) et `r1` (bord extérieur), ouvert de `angle` autour de +Z
+ * (de −angle/2 à +angle/2, direction (sin a, cos a)), épais de `height`
+ * et centré en hauteur — une rotation Y de φ l'oriente vers (sin φ, cos φ).
+ */
+export function wedgeGeo(r0: number, r1: number, angle: number, height: number): THREE.BufferGeometry {
+  return getGeo(`wedge|${r3(r0)}|${r3(r1)}|${r3(angle)}|${r3(height)}`, () => {
+    const half = angle / 2;
+    const point = (r: number, a: number): [number, number] => [r * Math.sin(a), r * Math.cos(a)];
+    return verticalPrism(
+      [point(r0, -half), point(r1, -half), point(r1, half), point(r0, half)],
+      -height / 2,
+      height / 2,
+    );
   });
 }
 

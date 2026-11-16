@@ -21,6 +21,7 @@ import {
 } from '../geometryCache';
 import { asInterior, mul, part, xform, type Part } from '../parts';
 import { shellParts } from './shellParts';
+import { quoinHoles } from './decorations';
 import { openingKindsOf } from './openings';
 import { masonryFacesOf, masonryParts, type MasonryHole } from './masonryParts';
 import type { CellContext } from './context';
@@ -108,7 +109,11 @@ export function wallWindowCellParts(ctx: CellContext): Part[] {
       ctx,
       masonryFacesOf(ctx.lookup, cell).map((face) => {
         const opening = openings.find((o) => o.face === face);
-        return { face, holes: opening ? openingHoles(opening.kind, opening.scale) : [] };
+        // Taillé aussi autour des chaînages d'angle (decorations.ts).
+        return {
+          face,
+          holes: [...(opening ? openingHoles(opening.kind, opening.scale) : []), ...quoinHoles(ctx, face)],
+        };
       }),
       baseColor,
       windowStoneRoughness,

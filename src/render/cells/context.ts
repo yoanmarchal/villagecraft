@@ -8,6 +8,7 @@
 import type { GridCell } from '../../types';
 import type { CellFace, CellLookup, CornerRadii, HollowShape } from '../../utils/cellUtils';
 import type { RenderSettings } from '../renderSettings';
+import type { StairPlan } from './stairPlan';
 
 export interface CellContext {
   cell: GridCell;
@@ -51,4 +52,12 @@ export interface CellContext {
    * Vide ailleurs : plus de conduit sans cheminée dessous.
    */
   flues: Array<{ x: number; z: number }>;
+  /**
+   * Escalier qui part de la cellule (planStairs) : en L ou en vis vers
+   * l'étage du dessus, échelle vers le grenier au dernier étage. Sa trémie
+   * perce le plafond de la cellule. Null le plus souvent.
+   */
+  stair: StairPlan | null;
+  /** Escalier de la cellule du dessous qui arrive ici : sa trémie perce le plancher, bordée d'un garde-corps. */
+  stairBelow: StairPlan | null;
 }

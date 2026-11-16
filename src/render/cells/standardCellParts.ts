@@ -2,45 +2,28 @@
  * Mur sans ouverture / fondation (coque creuse) — ex-StandardCell, porté en builder de parts.
  */
 
-import { BlockType } from '../../types';
-import { FACE_ROTATION_Y } from '../../utils/cellUtils';
-import { shades } from '../../colorPalettes';
-import { roundedBoxGeo } from '../geometryCache';
-import { mul, part, xform, type Part } from '../parts';
+import type { Part } from '../parts';
 import { shellParts } from './shellParts';
+import { quoinHoles } from './decorations';
 import { masonryFacesOf, masonryParts } from './masonryParts';
 import type { CellContext } from './context';
 
 export function standardCellParts(ctx: CellContext): Part[] {
-  const { cell, exposedFaces, settings } = ctx;
-
-  const isFoundation = cell.type === BlockType.Foundation;
+  const { cell, settings } = ctx;
   const baseColor = settings.wallBaseColor;
-  const { trimColor } = shades(baseColor, { trimColor: -0.08 });
 
   const parts: Part[] = shellParts(ctx, baseColor);
 
-  // ── Plinthes (base trim) sur les faces exposées ────────────────────────────
-  if (!isFoundation) {
-    const trimGeo = roundedBoxGeo(1.02, 0.08, 0.02, 0.01, 2);
-    for (const face of exposedFaces) {
-      parts.push(
-        part(
-          trimGeo,
-          trimColor,
-          { roughness: 0.9 },
-          mul(xform([0, 0, 0], [0, FACE_ROTATION_Y[face], 0]), xform([0, -0.46, 0.518])),
-        ),
-      );
-    }
-  }
-
-  // Parement de pierre (masonryParts.ts) ; la plinthe garde sa bande libre.
-  const plinth = isFoundation ? [] : [{ t0: -1, t1: 1, y0: -0.5, y1: -0.42 }];
+  // Parement de pierre (masonryParts.ts), continu d'un étage à l'autre. Plus
+  // de « plinthe » au pied des faces : un bloc `Wall` n'est jamais au
+  // rez-de-chaussée (toujours `WallWithWindow` ou `Foundation`), elle
+  // filait donc à chaque niveau d'étage, et droite, elle sortait des coins
+  // arrondis des tours.
   parts.push(
     ...masonryParts(
       ctx,
-      masonryFacesOf(ctx.lookup, cell).map((face) => ({ face, holes: exposedFaces.includes(face) ? plinth : [] })),
+      // Taillé autour des chaînages d'angle (decorations.ts).
+      masonryFacesOf(ctx.lookup, cell).map((face) => ({ face, holes: quoinHoles(ctx, face) })),
       baseColor,
       settings.windowStoneRoughness,
     ),

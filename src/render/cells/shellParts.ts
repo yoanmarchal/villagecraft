@@ -17,7 +17,11 @@ export function shellParts(ctx: CellContext, baseColor: string, openings: Openin
   const { wallRoughness: roughness } = ctx.settings;
   // Coque creuse (bloc − volume intérieur − ouvertures). Le corps plein ne
   // sert plus que de repli si un builder de mur reçoit un contexte sans forme.
-  const body = ctx.hollow ? hollowShellGeo(ctx.radii, ctx.hollow, openings) : shapedBoxGeo(1.0, 1.0, 1.0, ctx.radii);
+  // Trémies des escaliers (stairPlan.ts) : plancher (arrivée), plafond (départ).
+  const holes = { floor: ctx.stairBelow?.opening.points, ceiling: ctx.stair?.opening.points };
+  const body = ctx.hollow
+    ? hollowShellGeo(ctx.radii, ctx.hollow, openings, holes)
+    : shapedBoxGeo(1.0, 1.0, 1.0, ctx.radii);
   return [
     // Coque : seules ses faces de cavité reçoivent la lumière de la pièce.
     { ...part(body, baseColor, { roughness, doubleSide: ctx.hollow !== null, masonry: true }), interior: 'shell' },

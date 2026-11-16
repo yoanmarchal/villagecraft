@@ -40,6 +40,7 @@ import { pavingParts } from './cells/pavingParts';
 import { propsParts } from './cells/propsParts';
 import { FLUE_OFFSET, planFireplaces } from './cells/furnitureParts';
 import { planDoors } from './cells/openings';
+import { planStairs } from './cells/stairPlan';
 import { plinthParts } from './cells/plinthParts';
 import { createGround } from './ground';
 import { isFlatRelief, reliefFor, type Relief } from './relief';
@@ -251,10 +252,18 @@ function collectVillageParts(
       doorFace: null,
       fireplaceFace: null,
       flues: [],
+      stair: null,
+      stairBelow: null,
     };
   });
   const doors = planDoors(contexts, roomLamps);
   for (const ctx of contexts) ctx.doorFace = doors.get(ctx.cell) ?? null;
+  // Escaliers avant les cheminées : ils passent en premier, la cheminée s'écarte.
+  const stairs = planStairs(contexts);
+  for (const ctx of contexts) {
+    ctx.stair = stairs.up.get(ctx.cell) ?? null;
+    ctx.stairBelow = stairs.below.get(ctx.cell) ?? null;
+  }
   const fireplaces = planFireplaces(contexts, roomLamps);
   // Conduit de chaque cheminée : il sort du toit de sa colonne, à l'aplomb
   // de la hotte (planFireplaces exige un toit à deux pans au sommet).
