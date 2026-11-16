@@ -34,14 +34,16 @@ const NEIGHBOURS = [
 
 const isHollow = (cell: GridCell | null): cell is GridCell => !!cell?.isOccupied && isHollowType(cell.type);
 
-export function assignRoomLamps(cells: GridCell[], lookup: CellLookup): Map<GridCell, RoomLamp> {
-  const lamps = new Map<GridCell, RoomLamp>();
+/**
+ * Pièces : cellules creuses d'un même étage reliées par leurs côtés `open`
+ * (4-connexité). Ordre des cellules de `cells` ; chaque pièce liste ses
+ * cellules dans l'ordre de la diffusion.
+ */
+export function findRooms(cells: GridCell[], lookup: CellLookup): GridCell[][] {
+  const rooms: GridCell[][] = [];
   const visited = new Set<GridCell>();
-
   for (const start of cells) {
     if (visited.has(start) || !isHollow(start)) continue;
-
-    // Pièce : remplissage par diffusion à l'étage de `start`.
     const room: GridCell[] = [];
     const queue = [start];
     visited.add(start);
@@ -56,7 +58,15 @@ export function assignRoomLamps(cells: GridCell[], lookup: CellLookup): Map<Grid
         }
       }
     }
+    rooms.push(room);
+  }
+  return rooms;
+}
 
+export function assignRoomLamps(cells: GridCell[], lookup: CellLookup): Map<GridCell, RoomLamp> {
+  const lamps = new Map<GridCell, RoomLamp>();
+
+  for (const room of findRooms(cells, lookup)) {
     const cx = room.reduce((sum, c) => sum + c.x, 0) / room.length;
     const cz = room.reduce((sum, c) => sum + c.z, 0) / room.length;
     const byCentrality = [...room].sort(

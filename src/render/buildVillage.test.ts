@@ -603,7 +603,10 @@ describe('interior light', () => {
     for (const { local, mode } of vertices(grid)) {
       if (mode === 2) {
         expect(Math.max(Math.abs(local.x), Math.abs(local.z))).toBeLessThan(inner);
-        expect(Math.abs(local.y)).toBeLessThan(0.5 - FLOOR_T + 0.001);
+        expect(local.y).toBeGreaterThan(-(0.5 - FLOOR_T) - 0.001);
+        // Au-dessus du plafond, seul l'escalier monte, par sa trémie, jusqu'au
+        // plancher de l'étage (noyau de la vis, montants de l'échelle).
+        expect(local.y).toBeLessThan(0.5 + FLOOR_T + 0.01);
       }
       // Tout ce qui dépasse de la coque (pierres, cadres…) n'est ni "room" ni "shell".
       if (Math.max(Math.abs(local.x), Math.abs(local.z)) > 0.5 + 0.001) expect(mode).toBe(0);
@@ -639,30 +642,53 @@ describe('interior light', () => {
     }
   });
 
-  it('hangs a chandelier in every storey, flames at the lamp height', () => {
-    const grid = new VillageGrid(5, 10, 5);
-    for (let i = 0; i < 3; i += 1) grid.addBlockInColumn(2, 2);
-    const hollowCells = grid.getOccupiedCells().filter((cell) => isHollowType(cell.type)).length;
-
+  /** Pointes des flammes (sommets des cônes) près du centre des cellules, et niveaux de toutes les flammes. */
+  function flamesOf(grid: VillageGrid) {
     const flames = vertices(grid).filter(
       ({ glow, local }) => glow && Math.abs(local.x) < 0.2 && Math.abs(local.z) < 0.2,
     );
-    const flameLevels = new Set(flames.map(({ local }) => Math.round(local.y * 100)));
-    expect(hollowCells).toBeGreaterThan(0);
-    for (const level of flameLevels) {
-      expect(Math.abs(level / 100 - INTERIOR_LAMP_Y)).toBeLessThan(0.02);
-    }
-    // 4 flammes par chandelier, une pointe (sommet du cône) chacune.
     const tips = flames.filter(({ local }) => local.y > INTERIOR_LAMP_Y + 0.011);
-    expect(
-      new Set(
+    return {
+      levels: new Set(flames.map(({ local }) => Math.round(local.y * 100))),
+      tips: new Set(
         tips.map(({ world }) =>
           world
             .toArray()
             .map((v) => v.toFixed(3))
             .join(','),
         ),
-      ).size,
-    ).toBe(4 * hollowCells);
+      ),
+    };
+  }
+
+  it('hangs a chandelier in every storey, flames at the lamp height', () => {
+    // Maison de deux cases sur trois niveaux : une pièce par étage.
+    const grid = new VillageGrid(5, 10, 5);
+    for (let i = 0; i < 3; i += 1) {
+      grid.addBlockInColumn(2, 2);
+      grid.addBlockInColumn(2, 3);
+    }
+    const storeys = new Set(
+      grid
+        .getOccupiedCells()
+        .filter((cell) => isHollowType(cell.type))
+        .map((cell) => cell.y),
+    ).size;
+    expect(storeys).toBe(3);
+
+    const { levels, tips } = flamesOf(grid);
+    for (const level of levels) expect(Math.abs(level / 100 - INTERIOR_LAMP_Y)).toBeLessThan(0.02);
+    // 4 flammes par chandelier, une pointe (sommet du cône) chacune.
+    expect(tips.size).toBe(4 * storeys);
+  });
+
+  it('hangs a lantern on the newel of a tower stair, at the lamp height', () => {
+    // Tour de trois niveaux : vis aux deux premiers (un falot, une flamme),
+    // chandelier au dernier, sous l'échelle.
+    const grid = new VillageGrid(5, 10, 5);
+    for (let i = 0; i < 3; i += 1) grid.addBlockInColumn(2, 2);
+    const { levels, tips } = flamesOf(grid);
+    for (const level of levels) expect(Math.abs(level / 100 - INTERIOR_LAMP_Y)).toBeLessThan(0.02);
+    expect(tips.size).toBe(1 + 1 + 4);
   });
 });

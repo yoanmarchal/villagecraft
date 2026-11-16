@@ -18,6 +18,7 @@ import { mergeVertices, toCreasedNormals } from 'three/examples/jsm/utils/Buffer
 import { Brush, Evaluator, SUBTRACTION } from 'three-bvh-csg';
 import type { CellFace, CornerRadii, HollowShape } from '../utils/cellUtils';
 import { FACE_ROTATION_Y, getRoundedRectContourPoints } from '../utils/cellUtils';
+import type { Polygon } from '../utils/polygon';
 
 /**
  * Borne du cache (LRU). Un village complet n'utilise que quelques centaines
@@ -266,12 +267,23 @@ function innerSectionXZ(shape: HollowShape, radii: CornerRadii, openBound = 0.5 
   return points;
 }
 
-/** Prisme vertical de section `sectionXZ` (coordonnées scène), de y0 à y1. */
-function verticalPrism(sectionXZ: Array<[number, number]>, y0: number, y1: number): THREE.BufferGeometry {
+/** Prisme vertical de section `sectionXZ` (coordonnées scène), de y0 à y1, percé des polygones `holesXZ`. */
+function verticalPrism(
+  sectionXZ: Array<[number, number]>,
+  y0: number,
+  y1: number,
+  holesXZ: Array<Array<[number, number]>> = [],
+): THREE.BufferGeometry {
   const shape = new THREE.Shape();
   // Plan de la shape XY → scène XZ avec z = −y (même convention que shapedBoxGeo).
   sectionXZ.forEach(([x, z], i) => (i === 0 ? shape.moveTo(x, -z) : shape.lineTo(x, -z)));
   shape.closePath();
+  for (const holeXZ of holesXZ) {
+    const path = new THREE.Path();
+    holeXZ.forEach(([x, z], i) => (i === 0 ? path.moveTo(x, -z) : path.lineTo(x, -z)));
+    path.closePath();
+    shape.holes.push(path);
+  }
   const geo = new THREE.ExtrudeGeometry(shape, { depth: y1 - y0, bevelEnabled: false });
   geo.applyMatrix4(new THREE.Matrix4().makeRotationX(-Math.PI / 2));
   geo.applyMatrix4(new THREE.Matrix4().makeTranslation(0, y0, 0));
@@ -324,26 +336,60 @@ function withoutBvhLeafSizeWarning(run: () => void): void {
 
 const openingKey = (o: OpeningSpec) => `${o.face[0]}${o.kind[0]}${r3(o.scale)}`;
 
+/** Clé d'un polygone (trémie) : ses sommets au millimètre. */
+const polygonKey = (polygon: Polygon | undefined) =>
+  polygon ? polygon.map(([x, z]) => `${r3(x)}:${r3(z)}`).join(';') : '';
+
+/**
+ * Contour intérieur d'une coque creuse dans le plan XZ (repère de la
+ * cellule) : nu des murs, bord de la cellule côté `open`, coins arrondis et
+ * piliers d'angle compris — ce que suivent parquet et plafond.
+ */
+export function innerContourXZ(shape: HollowShape, radii: CornerRadii): Polygon {
+  return innerSectionXZ(shape, radii, 0.5);
+}
+
+/**
+ * Trémies percées dans les dalles d'un bloc creux (escaliers, trappe du
+ * grenier), en polygones XZ du repère de la cellule : `floor` dans le
+ * plancher (l'escalier de l'étage du dessous débouche ici), `ceiling` dans le
+ * plafond (l'escalier de la cellule monte par là). Elles restent à quelques
+ * millimètres du nu des murs, pour ne jamais partager un plan avec eux en CSG.
+ */
+export interface SlabHoles {
+  floor?: Polygon;
+  ceiling?: Polygon;
+}
+
 /**
  * Coque maçonnée d'un bloc creux : le corps plein (`shapedBoxGeo`, même
  * contour qu'avant, pour que pierres et quoins restent alignés) moins le
  * volume intérieur (plancher et plafond `FLOOR_T`, murs `WALL_T`, ouvert
  * vers les voisins creux) moins les
- * ouvertures traversantes. CSG calculé une seule fois par combinaison.
+ * ouvertures traversantes et les trémies. CSG calculé une seule fois par combinaison.
  */
-export function hollowShellGeo(radii: CornerRadii, shape: HollowShape, openings: OpeningSpec[]): THREE.BufferGeometry {
+export function hollowShellGeo(
+  radii: CornerRadii,
+  shape: HollowShape,
+  openings: OpeningSpec[],
+  holes: SlabHoles = {},
+): THREE.BufferGeometry {
   const { sides, pillars } = shape;
   const sidesKey = (['front', 'back', 'left', 'right'] as const).map((f) => sides[f][0]).join('');
   const pillarsKey = (['backLeft', 'backRight', 'frontLeft', 'frontRight'] as const)
     .map((c) => (pillars[c] ? 1 : 0))
     .join('');
   const openingsKey = openings.map(openingKey).sort().join(',');
-  const key = `hollow|${radiiKey(radii)}|${sidesKey}|${pillarsKey}|${openingsKey}`;
+  const holesKey = `${polygonKey(holes.floor)}/${polygonKey(holes.ceiling)}`;
+  const key = `hollow|${radiiKey(radii)}|${sidesKey}|${pillarsKey}|${openingsKey}|${holesKey}`;
 
   return getGeo(key, () => {
     const cutters = [
       verticalPrism(innerSectionXZ(shape, radii), -0.5 + FLOOR_T, 0.5 - FLOOR_T),
       ...openings.map(openingCutter),
+      // Trémies : de la cavité (déjà vide) jusqu'au-delà de la face de la dalle.
+      ...(holes.floor ? [verticalPrism(holes.floor, -0.5 - CSG_EPS, -0.5 + FLOOR_T + CSG_EPS)] : []),
+      ...(holes.ceiling ? [verticalPrism(holes.ceiling, 0.5 - FLOOR_T - CSG_EPS, 0.5 + CSG_EPS)] : []),
     ];
     let result = toBrush(shapedBoxGeo(1, 1, 1, radii));
     withoutBvhLeafSizeWarning(() => {
@@ -367,19 +413,51 @@ export function hollowShellGeo(radii: CornerRadii, shape: HollowShape, openings:
  * Nappe horizontale épousant l'intérieur d'une coque creuse (contour arrondi
  * des tours, piliers d'angle compris), arrêtée pile au bord de la cellule
  * côté `open` pour se raccorder sans chevauchement à celle du voisin.
- * Épaisseur `thickness`, de y = 0 à y = thickness. Sert au parquet et au
- * plafond des intérieurs.
+ * Épaisseur `thickness`, de y = 0 à y = thickness, percée de la trémie
+ * `hole` s'il y en a une. Sert au parquet et au plafond des intérieurs.
  */
-export function hollowSheetGeo(radii: CornerRadii, shape: HollowShape, thickness: number): THREE.BufferGeometry {
+export function hollowSheetGeo(
+  radii: CornerRadii,
+  shape: HollowShape,
+  thickness: number,
+  hole?: Polygon,
+): THREE.BufferGeometry {
   const { sides, pillars } = shape;
   const sidesKey = (['front', 'back', 'left', 'right'] as const).map((f) => sides[f][0]).join('');
   const pillarsKey = (['backLeft', 'backRight', 'frontLeft', 'frontRight'] as const)
     .map((c) => (pillars[c] ? 1 : 0))
     .join('');
-  return getGeo(`sheet|${radiiKey(radii)}|${sidesKey}|${pillarsKey}|${r3(thickness)}`, () => {
-    const geo = verticalPrism(innerSectionXZ(shape, radii, 0.5), 0, thickness);
+  const key = `sheet|${radiiKey(radii)}|${sidesKey}|${pillarsKey}|${r3(thickness)}|${polygonKey(hole)}`;
+  return getGeo(key, () => {
+    const geo = verticalPrism(innerSectionXZ(shape, radii, 0.5), 0, thickness, hole ? [hole] : []);
     geo.computeVertexNormals();
     return geo;
+  });
+}
+
+/**
+ * Prisme vertical de section `section` (polygone XZ, dans un sens ou dans
+ * l'autre), de y = 0 à y = `height` : marches dansantes d'un quart tournant.
+ */
+export function prismGeo(section: Polygon, height: number): THREE.BufferGeometry {
+  return getGeo(`prism|${polygonKey(section)}|${r3(height)}`, () => verticalPrism(section, 0, height));
+}
+
+/**
+ * Marche de vis (escalier en colimaçon) : prisme trapézoïdal entre les rayons
+ * `r0` (noyau) et `r1` (bord extérieur), ouvert de `angle` autour de +Z
+ * (de −angle/2 à +angle/2, direction (sin a, cos a)), épais de `height`
+ * et centré en hauteur — une rotation Y de φ l'oriente vers (sin φ, cos φ).
+ */
+export function wedgeGeo(r0: number, r1: number, angle: number, height: number): THREE.BufferGeometry {
+  return getGeo(`wedge|${r3(r0)}|${r3(r1)}|${r3(angle)}|${r3(height)}`, () => {
+    const half = angle / 2;
+    const point = (r: number, a: number): [number, number] => [r * Math.sin(a), r * Math.cos(a)];
+    return verticalPrism(
+      [point(r0, -half), point(r1, -half), point(r1, half), point(r0, half)],
+      -height / 2,
+      height / 2,
+    );
   });
 }
 

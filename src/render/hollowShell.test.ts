@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import * as THREE from 'three';
-import { FLOOR_T, hollowShellGeo, WALL_T, type OpeningSpec } from './geometryCache';
+import { FLOOR_T, hollowSheetGeo, hollowShellGeo, WALL_T, type OpeningSpec } from './geometryCache';
+import { rect } from '../utils/polygon';
 import type { CornerRadii, HollowShape, HollowSideKind } from '../utils/cellUtils';
 
 const SQUARE: CornerRadii = { backLeft: 0, backRight: 0, frontLeft: 0, frontRight: 0, max: 0, uniform: true };
@@ -100,5 +101,26 @@ describe('hollowShellGeo', () => {
     );
     // Un volume de découpe arrondi faisait monter cette coque à ~14 000 sommets.
     expect(geo.getAttribute('position').count).toBeLessThan(2500);
+  });
+
+  it('perce les trémies d’escalier dans le plafond et le plancher, et elles seules', () => {
+    const hole = rect(0.1, 0.1, 0.4, 0.4);
+    const ceiling = hollowShellGeo(SQUARE, shape(), [], { ceiling: hole });
+    // Par la trémie, un rayon vertical ne traverse plus que le plancher ; à côté, les deux dalles.
+    expect(hits(ceiling, [0.25, 2, 0.25], [0, -1, 0])).toEqual([2.5 - FLOOR_T, 2.5]);
+    expect(hits(ceiling, [-0.25, 2, -0.25], [0, -1, 0])).toEqual([1.5, 1.5 + FLOOR_T, 2.5 - FLOOR_T, 2.5]);
+    const floor = hollowShellGeo(SQUARE, shape(), [], { floor: hole });
+    expect(hits(floor, [0.25, 2, 0.25], [0, -1, 0])).toEqual([1.5, 1.5 + FLOOR_T]);
+    // Les murs restent entiers, et la coque dans le budget.
+    expect(hits(floor, [0, 0, 2], [0, 0, -1])).toEqual([1.5, 1.5 + WALL_T, 2.5 - WALL_T, 2.5]);
+    expect(ceiling.getAttribute('position').count).toBeLessThan(2500);
+    expect(hollowShellGeo(SQUARE, shape(), [], { ceiling: hole })).toBe(ceiling);
+    expect(ceiling).not.toBe(hollowShellGeo(SQUARE, shape(), []));
+  });
+
+  it('perce aussi le parquet et le plafond enduit', () => {
+    const sheet = hollowSheetGeo(SQUARE, shape(), 0.01, rect(0.1, 0.1, 0.4, 0.4));
+    expect(hits(sheet, [0.25, 1, 0.25], [0, -1, 0])).toEqual([]);
+    expect(hits(sheet, [-0.25, 1, -0.25], [0, -1, 0])).toEqual([0.99, 1]);
   });
 });
