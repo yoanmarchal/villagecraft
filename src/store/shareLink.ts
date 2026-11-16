@@ -1,21 +1,37 @@
 /**
  * Partage d'un village par URL : `#v=<base64url>`.
  *
- * Format binaire (v1) : [version, gridSize, x0, y0, z0, x1, y1, z1, …] — un
- * octet par valeur, blocs dans leur ordre de pose. Une grille 5×10×5 pleine
+ * Format binaire (v2) : [version, gridSize, graine du terrain (4 octets, poids
+ * fort d'abord), nombre de cases modelées, (x, z, crans + 128) par case,
+ * x0, y0, z0, x1, y1, z1, …] — un octet par valeur, blocs dans leur ordre de
+ * pose. Les liens v1 (sans terrain : [version, gridSize, blocs…]) restent lus. Une grille 5×10×5 pleine
  * tient en ~1 000 caractères, une 12×10×12 pleine en ~5 800 (un village
  * réel, loin d'être plein, en fait bien moins).
  */
 
 import { GRID_HEIGHT, GRID_SIZE_MAX, GRID_SIZE_MIN } from '../config/gridConfig';
+import { DEFAULT_TERRAIN, parseTerrain, type SculptEntry } from '../terrainShape';
 import { useControlStore } from './controlStore';
 import { dropFloatingBlocks, loadVillage, saveVillage, type SavedBlock, type SavedVillage } from './villageStorage';
 
 const HASH_KEY = 'v';
-const FORMAT_VERSION = 1;
+const FORMAT_VERSION = 2;
+/** Décalage des crans de modelage (signés) pour tenir dans un octet. */
+const STEPS_BIAS = 128;
 
-export function encodeVillage({ gridSize, blocks }: SavedVillage): string {
-  const bytes = [FORMAT_VERSION, gridSize, ...blocks.flat()];
+export function encodeVillage({ gridSize, blocks, terrain = DEFAULT_TERRAIN }: SavedVillage): string {
+  const { seed, sculpt } = terrain;
+  const bytes = [
+    FORMAT_VERSION,
+    gridSize,
+    seed >>> 24,
+    (seed >>> 16) & 255,
+    (seed >>> 8) & 255,
+    seed & 255,
+    sculpt.length,
+    ...sculpt.flatMap(([x, z, steps]) => [x, z, steps + STEPS_BIAS]),
+    ...blocks.flat(),
+  ];
   const binary = String.fromCharCode(...bytes);
   return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 }
@@ -29,9 +45,26 @@ export function decodeVillage(code: string): SavedVillage | null {
   }
 
   const bytes = Array.from(binary, (char) => char.charCodeAt(0));
-  const [version, gridSize, ...values] = bytes;
-  if (version !== FORMAT_VERSION || values.length % 3 !== 0) return null;
+  const [version, gridSize, ...rest] = bytes;
+  if (version !== 1 && version !== FORMAT_VERSION) return null;
   if (!(gridSize >= GRID_SIZE_MIN && gridSize <= GRID_SIZE_MAX)) return null;
+
+  let values = rest;
+  let terrain = DEFAULT_TERRAIN;
+  if (version === FORMAT_VERSION) {
+    const count = rest[4];
+    if (!(rest.length >= 5 + count * 3)) return null;
+    const sculpt: SculptEntry[] = [];
+    for (let i = 0; i < count; i += 1) {
+      const [x, z, steps] = rest.slice(5 + i * 3, 8 + i * 3);
+      if (x >= gridSize || z >= gridSize) return null;
+      sculpt.push([x, z, steps - STEPS_BIAS]);
+    }
+    const seed = ((rest[0] << 24) | (rest[1] << 16) | (rest[2] << 8) | rest[3]) >>> 0;
+    terrain = parseTerrain({ seed, sculpt }, gridSize);
+    values = rest.slice(5 + count * 3);
+  }
+  if (values.length % 3 !== 0) return null;
 
   const blocks: SavedBlock[] = [];
   for (let i = 0; i < values.length; i += 3) {
@@ -39,7 +72,7 @@ export function decodeVillage(code: string): SavedVillage | null {
     if (x >= gridSize || z >= gridSize || y >= GRID_HEIGHT) return null;
     blocks.push([x, y, z]);
   }
-  return { gridSize, blocks };
+  return { gridSize, blocks, terrain };
 }
 
 export function buildShareUrl(village: SavedVillage): string {

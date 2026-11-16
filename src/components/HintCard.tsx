@@ -5,6 +5,7 @@ const MOUSE_HINTS: Array<[string, string]> = [
   ['Click', 'build a block'],
   ['Right click', 'demolish the top block'],
   ['B / D', 'build / demolish tool'],
+  ['R / L', 'raise / lower the ground (right click: the opposite)'],
   ['Narrow lane', 'an arch spans it between tall houses'],
   ['Drag · scroll', 'orbit · zoom'],
   ['Ctrl+Z / Ctrl+Y', 'undo / redo'],
@@ -13,6 +14,7 @@ const MOUSE_HINTS: Array<[string, string]> = [
 
 const TOUCH_HINTS: Array<[string, string]> = [
   ['Tap', 'build — or demolish with the pick tool'],
+  ['Hill · hollow tools', 'tap to raise or lower the ground'],
   ['Drag', 'orbit the camera'],
   ['Pinch', 'zoom'],
 ];

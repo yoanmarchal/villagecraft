@@ -15,6 +15,7 @@ import { useThree } from '@react-three/fiber';
 import * as THREE from 'three';
 import { mergeGeometries, mergeVertices } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { scatterTrees, type TreeInstance, type TreeKind } from '../render/landscape';
+import type { Relief } from '../render/relief';
 import { injectWorldDetail } from '../render/surfaceDetail';
 
 interface TreesProps {
@@ -22,6 +23,8 @@ interface TreesProps {
   flatRadius: number;
   /** Rayon du semis : au-delà, le brouillard cache tout. */
   reach: number;
+  /** Relief du terrain aux abords du village (relief.ts). */
+  relief: Relief;
 }
 
 const TRUNK_COLOR = new THREE.Color('#5b4636');
@@ -196,8 +199,8 @@ function TreeGroup({ kind, trees, geometry, material }: TreeGroupProps) {
   );
 }
 
-export function Trees({ gridSize, flatRadius, reach }: TreesProps) {
-  const trees = useMemo(() => scatterTrees(gridSize, flatRadius, reach), [gridSize, flatRadius, reach]);
+export function Trees({ gridSize, flatRadius, reach, relief }: TreesProps) {
+  const trees = useMemo(() => scatterTrees(gridSize, flatRadius, reach, relief), [gridSize, flatRadius, reach, relief]);
 
   const [assets] = useState(() => {
     const material = new THREE.MeshStandardMaterial({

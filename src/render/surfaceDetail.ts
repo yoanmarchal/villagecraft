@@ -9,6 +9,8 @@
  * (growMaterial.ts) et par le terrain (Terrain.tsx).
  */
 
+import { RELIEF_GLSL } from './relief';
+
 /** Bruit de valeur 3D + fbm 3 octaves (≈ 0 – 0.875, moyenne ≈ 0.44). */
 export const NOISE_GLSL = `
   float vcHash(vec3 p) {
@@ -75,6 +77,7 @@ export const DETAIL_FRAGMENT_DECLARATIONS = `
   float vcDetailRoof;
 
   ${NOISE_GLSL}
+  ${RELIEF_GLSL}
 
 `;
 
@@ -125,7 +128,9 @@ export const DETAIL_ALBEDO_APPLY = `
 
     if (vInteriorMode < 1.5) {
       // Pied des murs : éclaboussures et humidité, à bord irrégulier, verdies par endroits.
-      float detailGround = 1.0 - smoothstep(0.0, 0.45, vDetailPos.y + (vcDetailBlotch - 0.44) * 0.4);
+      // Hauteur au-dessus du terrain (en pente, voir relief.ts), pas une cote fixe.
+      float detailHeight = vDetailPos.y - vcGroundHeight(vDetailPos.xz);
+      float detailGround = 1.0 - smoothstep(0.0, 0.45, detailHeight + (vcDetailBlotch - 0.44) * 0.4);
       diffuseColor.rgb *= 1.0 - 0.24 * detailGround;
       float detailMoss = detailGround * smoothstep(0.5, 0.8, detailStain);
       diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * vec3(0.78, 0.96, 0.66), detailMoss * 0.6);

@@ -34,6 +34,11 @@ const IRON_MATERIAL = { metalness: 0.6, roughness: 0.5 };
 const CURTAINS = ['#d8cdb4', '#8a3434', '#3d5a80', '#56704a', '#b8893f'];
 const CLOTH_MATERIAL = { roughness: 1 };
 
+/** Perron (terrain en pente) : hauteur et giron d'une marche (~18 × 27 cm), nombre maximal de marches. */
+const STEP_RISE = 0.065;
+const STEP_RUN = 0.095;
+const STEP_MAX = 10;
+
 /** Opacité des vitres : assez faible pour voir l'intérieur depuis la rue, de jour comme de nuit. */
 export const WINDOW_GLASS_OPACITY = 0.3;
 
@@ -233,7 +238,43 @@ export function wallWindowCellParts(ctx: CellContext): Part[] {
         { roughness: 0.94 },
         mul(faceRot, xform([0, -0.49, 0.501])),
       ),
+      ...doorStepParts(rotation, scale),
     ];
+  };
+
+  // ── Perron ─────────────────────────────────────────────────────────────
+  // Terrain en pente : le seuil est au niveau du bâtiment, le sol devant la
+  // porte parfois plus bas. Des marches de pierre descendent alors de la
+  // porte jusqu'à lui — autant qu'il en faut, chacune fondée dans le terrain.
+  const doorStepParts = (rotation: number, scale: number): Part[] => {
+    const { groundAt } = ctx;
+    if (!groundAt || cell.y !== 0) return [];
+    const cos = Math.cos(rotation);
+    const sin = Math.sin(rotation);
+    /** Terrain au point (u le long de la façade, w vers l'extérieur) du repère de la face. */
+    const groundFace = (u: number, w: number) => groundAt(u * cos + w * sin, -u * sin + w * cos);
+    const width = OPENING_SIZES.door.w * scale + 0.16;
+    const steps: Part[] = [];
+    for (let k = 0; k < STEP_MAX; k += 1) {
+      const top = -0.5 - k * STEP_RISE;
+      const near = 0.5 + k * STEP_RUN;
+      // Marche utile tant que le sol est nettement plus bas que son giron.
+      if (top - groundFace(0, near + STEP_RUN / 2) < 0.012) break;
+      let lowest = Infinity;
+      for (const u of [-width / 2, 0, width / 2]) {
+        for (const w of [near, near + STEP_RUN]) lowest = Math.min(lowest, groundFace(u, w));
+      }
+      const height = Math.ceil((top - lowest + 0.03) * 50) / 50;
+      steps.push(
+        part(
+          boxGeo(+width.toFixed(3), height, STEP_RUN),
+          varyColorBrightness(baseColor, -0.2 + ((k + cell.x + cell.z) % 3) * 0.03),
+          { roughness: 0.94 },
+          mul(xform([0, 0, 0], [0, rotation, 0]), xform([0, top - height / 2, near + STEP_RUN / 2])),
+        ),
+      );
+    }
+    return steps;
   };
 
   // ── Meurtrière (tours) ─────────────────────────────────────────────────

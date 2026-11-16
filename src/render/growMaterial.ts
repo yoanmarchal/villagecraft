@@ -23,6 +23,7 @@
  */
 
 import * as THREE from 'three';
+import { createReliefUniforms, type ReliefUniforms } from './reliefUniforms';
 import { FLOOR_T, WALL_T } from './geometryCache';
 import { INTERIOR_LAMP_Y } from './cells/interiorParts';
 import {
@@ -40,7 +41,7 @@ export const ROOF_DROP_HEIGHT = 0.6;
 /** Échelle de départ des murs — 0 (point) rendait le pop trop violent. */
 const WALL_MIN_SCALE = 0.65;
 
-// aCell : Int16 (non normalisé, lu en flottants) = (pivot × 2, w) avec
+// aCell : Int16 (non normalisé, lu en flottants) = (pivot : x, z × 2 et y × 100 ; w) avec
 // w = code × 4 + mode d'éclairage intérieur 0-2 ; code = chute × 100 (mode 0)
 // ou décalage vers le chandelier de la pièce (voir mergeParts).
 const GROW_DECLARATIONS = `
@@ -64,7 +65,7 @@ const GROW_APPLY = `
       transformed.y += (1.0 - growT) * growFallHeight;
     } else {
       float growScale = mix(${WALL_MIN_SCALE.toFixed(3)}, 1.0, growT);
-      transformed = mix(aCell.xyz * 0.5, transformed, growScale);
+      transformed = mix(aCell.xyz * vec3(0.5, 0.01, 0.5), transformed, growScale);
     }
   }
 `;
@@ -103,7 +104,7 @@ const INTERIOR_VERTEX_APPLY = `
   {
     // Mode : 0 aucun, 1 coque (cavité seulement), 2 aménagement (voir InteriorKind).
     vInteriorMode = mod(aCell.w, 4.0);
-    vInteriorLocal = transformed - aCell.xyz * 0.5;
+    vInteriorLocal = transformed - aCell.xyz * vec3(0.5, 0.01, 0.5);
     // Chandelier de la pièce : décalage (en cases) codé dans aCell.w (voir mergeParts).
     float lampCode = floor(aCell.w * 0.25);
     vInteriorLamp = vec3(floor(lampCode / 32.0) - 16.0, ${LAMP_Y}, mod(lampCode, 32.0) - 16.0);
@@ -157,7 +158,8 @@ function injectInterior(shader: THREE.WebGLProgramParametersWithUniforms, interi
  * Après `injectInterior` (lit `vInteriorMode`) et `injectGrow` (la position
  * monde est celle du sommet une fois animé).
  */
-function injectDetail(shader: THREE.WebGLProgramParametersWithUniforms): void {
+function injectDetail(shader: THREE.WebGLProgramParametersWithUniforms, relief: ReliefUniforms): void {
+  Object.assign(shader.uniforms, relief);
   shader.vertexShader = shader.vertexShader
     .replace(
       '#include <common>',
@@ -222,11 +224,16 @@ export interface GrowMaterialOptions {
   detail?: boolean;
   /** Fond de mur teinté en mortier (voir `MaterialSpec.masonry`) ; suppose `detail`. */
   masonry?: boolean;
+  /**
+   * Relief du terrain (reliefUniforms.ts) : uniforms partagés, à
+   * régler en place. Sert à salir le pied des murs au ras du sol réel.
+   */
+  relief?: ReliefUniforms;
 }
 
 export function createGrowMaterialSet(
   params: THREE.MeshStandardMaterialParameters,
-  { detail = false, masonry = false }: GrowMaterialOptions = {},
+  { detail = false, masonry = false, relief = createReliefUniforms() }: GrowMaterialOptions = {},
 ): GrowMaterialSet {
   const initialTime = performance.now() / 1000;
   // Objet uniform créé ici et non à la compilation : une mise à jour avant
@@ -244,7 +251,7 @@ export function createGrowMaterialSet(
   material.onBeforeCompile = (shader) => {
     injectGrow(shader, initialTime);
     injectInterior(shader, interiorLight);
-    if (detail) injectDetail(shader);
+    if (detail) injectDetail(shader, relief);
     material.userData.shader = shader;
   };
 

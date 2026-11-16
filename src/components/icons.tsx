@@ -31,6 +31,22 @@ export const BuildIcon = () => (
   </Icon>
 );
 
+/** Relever le terrain : une butte et une flèche vers le haut. */
+export const RaiseIcon = () => (
+  <Icon>
+    <path d="M3 20c3.5 0 4.5-6 9-6s5.5 6 9 6" />
+    <path d="M12 10V3M9 6l3-3 3 3" />
+  </Icon>
+);
+
+/** Creuser le terrain : une cuvette et une flèche vers le bas. */
+export const LowerIcon = () => (
+  <Icon>
+    <path d="M3 13c3.5 0 4.5 7 9 7s5.5-7 9-7" />
+    <path d="M12 3v8M9 8l3 3 3-3" />
+  </Icon>
+);
+
 export const DemolishIcon = () => (
   <Icon>
     <path d="M14.5 4.5 19.5 9.5" />

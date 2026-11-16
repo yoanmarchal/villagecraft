@@ -12,5 +12,6 @@ export const registerSkyFogControls = (pane: Pane) =>
       ['fogFar', { min: 0, max: 200, step: 1 }],
       ['groundColor', { label: 'grass' }],
       ['groundRoughness', { min: 0, max: 1, step: 0.01 }],
+      ['terrainRelief', { label: 'relief', min: 0, max: 2, step: 0.05 }],
     ],
   });

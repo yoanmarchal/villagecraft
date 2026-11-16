@@ -1,8 +1,11 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 
-/** Effet d'un clic gauche / tap sur la scène (le clic droit démolit toujours). */
-export type ToolMode = 'build' | 'demolish';
+/**
+ * Effet d'un clic gauche / tap sur la scène. Le clic droit démolit avec les
+ * outils de construction, et fait l'inverse avec ceux du terrain (relever ↔ creuser).
+ */
+export type ToolMode = 'build' | 'demolish' | 'raise' | 'lower';
 
 const TOAST_MS = 2200;
 let toastTimer: ReturnType<typeof setTimeout> | undefined;

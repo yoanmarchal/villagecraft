@@ -14,6 +14,12 @@ export interface CellContext {
   lookup: CellLookup;
   /** Réglages de style (couleurs, rugosités, formes) — ne jamais lire le store dans un builder. */
   settings: RenderSettings;
+  /**
+   * Terrain en pente : hauteur du sol autour de la cellule, dans son repère
+   * (x, z depuis son centre ; résultat en y local, −0,5 = son pied). Null sur
+   * terrain plat — les builders n'ont alors rien à adapter.
+   */
+  groundAt: ((lx: number, lz: number) => number) | null;
   exposedFaces: CellFace[];
   radii: CornerRadii;
   /**

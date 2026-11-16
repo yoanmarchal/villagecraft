@@ -10,19 +10,19 @@ const solidSet = (...cells: Vec3[]) => {
 describe('raycastVoxels', () => {
   it('hits the top face of a block from above', () => {
     const hit = raycastVoxels([2.5, 20, 2.5], [0, -1, 0], SIZE, solidSet([2, 0, 2], [2, 1, 2]));
-    expect(hit).toEqual({ x: 2, y: 1, z: 2, normal: [0, 1, 0] });
+    expect(hit).toMatchObject({ x: 2, y: 1, z: 2, normal: [0, 1, 0], t: 18 });
   });
 
   it('stops at the first block in front, not at the ground behind it', () => {
     // Tour de 3 étages en x = 1 ; le rayon descend en biais vers x = 4.
     const isSolid = solidSet([1, 0, 2], [1, 1, 2], [1, 2, 2], [4, 0, 2]);
     const hit = raycastVoxels([-3, 2.5, 2.5], [1, -0.1, 0], SIZE, isSolid);
-    expect(hit).toEqual({ x: 1, y: 2, z: 2, normal: [-1, 0, 0] });
+    expect(hit).toMatchObject({ x: 1, y: 2, z: 2, normal: [-1, 0, 0] });
   });
 
   it('enters the grid from outside on the right face', () => {
     const hit = raycastVoxels([10, 0.5, 3.5], [-1, 0, 0], SIZE, solidSet([4, 0, 3]));
-    expect(hit).toEqual({ x: 4, y: 0, z: 3, normal: [1, 0, 0] });
+    expect(hit).toMatchObject({ x: 4, y: 0, z: 3, normal: [1, 0, 0] });
   });
 
   it('returns null when the ray misses every block or the grid', () => {
@@ -35,6 +35,36 @@ describe('raycastVoxels', () => {
     expect(hit?.x).toBe(3);
     expect(hit?.y).toBe(6);
     expect(hit?.z).toBe(3);
+  });
+});
+
+describe('raycastVoxels sur un terrain en pente (niveau par colonne)', () => {
+  // Colonne (2, 2) relevée de 1,5 ; les autres au niveau 0.
+  const baseOf = (x: number, z: number) => (x === 2 && z === 2 ? 1.5 : 0);
+
+  it('vise le bloc là où il est réellement, relevé au niveau de sa colonne', () => {
+    const isSolid = solidSet([2, 0, 2]);
+    // À y = 2 : au-dessus du bloc sur terrain plat, dans son flanc une fois relevé.
+    expect(raycastVoxels([-3, 2, 2.5], [1, 0, 0], SIZE, isSolid)).toBeNull();
+    expect(raycastVoxels([-3, 2, 2.5], [1, 0, 0], SIZE, isSolid, baseOf)).toMatchObject({
+      x: 2,
+      y: 0,
+      normal: [-1, 0, 0],
+      t: 5,
+    });
+    // Son dessus est à 2,5.
+    expect(raycastVoxels([2.5, 20, 2.5], [0, -1, 0], SIZE, isSolid, baseOf)).toMatchObject({ y: 0, t: 17.5 });
+  });
+
+  it('compte le soubassement, sous le pied du bloc, comme son flanc', () => {
+    const hit = raycastVoxels([-3, 0.5, 2.5], [1, 0, 0], SIZE, solidSet([2, 0, 2]), baseOf);
+    expect(hit).toMatchObject({ x: 2, y: 0, z: 2, normal: [-1, 0, 0] });
+  });
+
+  it('ne confond pas les niveaux de deux colonnes voisines', () => {
+    // (1, 2) au niveau 0 : son bloc occupe y ∈ [0, 1] ; le rayon à y = 1,2 passe au-dessus et touche (2, 2).
+    const hit = raycastVoxels([-3, 1.2, 2.5], [1, 0, 0], SIZE, solidSet([1, 0, 2], [2, 0, 2]), baseOf);
+    expect(hit).toMatchObject({ x: 2, y: 0 });
   });
 });
 

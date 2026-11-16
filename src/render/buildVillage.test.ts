@@ -528,7 +528,7 @@ describe('compact vertex format', () => {
       expect(cell.array).toBeInstanceOf(Int16Array);
       expect(normal.normalized).toBe(true);
       for (let i = 0; i < cell.count; i += 97) {
-        const pivot = [cell.getX(i) * 0.5, cell.getY(i) * 0.5, cell.getZ(i) * 0.5].join(',');
+        const pivot = [cell.getX(i) * 0.5, cell.getY(i) * 0.01, cell.getZ(i) * 0.5].join(',');
         const type = centers.get(pivot);
         expect(type).toBeDefined();
         const w = cell.getW(i);
@@ -585,7 +585,7 @@ describe('interior light', () => {
       const position = geometry.getAttribute('position');
       const cell = geometry.getAttribute('aCell');
       for (let i = 0; i < position.count; i += 1) {
-        const pivot = new THREE.Vector3(cell.getX(i), cell.getY(i), cell.getZ(i)).multiplyScalar(0.5);
+        const pivot = new THREE.Vector3(cell.getX(i) * 0.5, cell.getY(i) * 0.01, cell.getZ(i) * 0.5);
         const world = new THREE.Vector3(position.getX(i), position.getY(i), position.getZ(i));
         const w = cell.getW(i);
         out.push({ world, local: world.clone().sub(pivot), mode: w % 4, code: Math.floor(w / 4), glow: !!mat.glow });

@@ -21,11 +21,18 @@ import { boxGeo, cylinderGeo, roundedBoxGeo, sphereGeo, torusArcGeo } from '../g
 import { mul, part, xform, type Part } from '../parts';
 import type { RenderSettings } from '../renderSettings';
 import { isGrassCell, pavedCells } from './pavingParts';
+import { slopeAt, type HeightFn } from './drape';
 
 /** Distance (Chebyshev, en cases) au pavage en deçà de laquelle l'herbe peut recevoir un objet. */
 const PROP_REACH = 2;
 /** Part des cases d'herbe éligibles qui reçoivent un objet. */
 const PROP_DENSITY = 0.34;
+/**
+ * Terrain en pente : les objets restent d'aplomb, posés à la hauteur du sol
+ * sous leur centre et enfoncés de ce que la pente fait perdre à ce rayon —
+ * leur côté aval ne flotte pas.
+ */
+const PROP_FOOT = 0.14;
 
 const WOOD = '#7a5a3c';
 const WOOD_DARK = '#5a4230';
@@ -373,6 +380,8 @@ export function propsParts(
   lookup: CellLookup,
   ground: { width: number; depth: number },
   settings: RenderSettings,
+  /** Terrain en pente : hauteur du sol autour de chaque case (absent : sol plat à y = 0). */
+  groundOf?: (x: number, z: number) => HeightFn,
 ): Array<{ x: number; z: number; parts: Part[] }> {
   const { width, depth } = ground;
   const paved = pavedCells(lookup, ground);
@@ -396,6 +405,13 @@ export function propsParts(
   const wells = wellCells(grass, eligible, paved, width, depth);
   const result: Array<{ x: number; z: number; parts: Part[] }> = [];
   const place = (x: number, z: number, parts: Part[], matrix: THREE.Matrix4) => {
+    const heightAt = groundOf?.(x, z);
+    if (heightAt) {
+      const px = matrix.elements[12];
+      const pz = matrix.elements[14];
+      const [sx, sz] = slopeAt(heightAt, px, pz);
+      matrix.premultiply(xform([0, heightAt(px, pz) - Math.hypot(sx, sz) * PROP_FOOT, 0]));
+    }
     for (const p of parts) p.matrix.premultiply(matrix);
     result.push({ x, z, parts });
   };

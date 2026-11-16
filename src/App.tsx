@@ -28,6 +28,7 @@ function gridFromVillage(village: SavedVillage, size: number): VillageGrid {
   const next = new VillageGrid(size, GRID_HEIGHT, size);
   const offset = centeringOffset(village.gridSize, size);
   next.importBlocks(village.blocks, offset, offset);
+  if (village.terrain) next.setTerrain(village.terrain, offset, offset);
   return next;
 }
 
@@ -59,7 +60,7 @@ export function App() {
   // la nouvelle grille, sans jamais afficher une frame où `gridSize` et la
   // grille divergent.
   if (grid.width !== gridSize) {
-    const source = resizeSource ?? { gridSize: grid.width, blocks: grid.exportBlocks() };
+    const source = resizeSource ?? { gridSize: grid.width, blocks: grid.exportBlocks(), terrain: grid.terrain };
     setResizeSource(source);
     setGrid(gridFromVillage(source, gridSize));
   }
@@ -82,7 +83,7 @@ export function App() {
 
   // Sauvegarde après chaque mutation de la grille.
   useEffect(() => {
-    saveVillage({ gridSize: grid.width, blocks: grid.exportBlocks() });
+    saveVillage({ gridSize: grid.width, blocks: grid.exportBlocks(), terrain: grid.terrain });
   }, [grid, renderTick]);
 
   // Bridge the imperative grid instance + refresh callback to the Tweakpane Actions module.
@@ -91,7 +92,7 @@ export function App() {
     useGridControllerStore.getState().setOnMutate(refreshScene);
   }, [grid, refreshScene]);
 
-  // Raccourcis globaux : B / D (outils), Ctrl+O (panneau), Ctrl+Z (annuler),
+  // Raccourcis globaux : B / D / R / L (outils), Ctrl+O (panneau), Ctrl+Z (annuler),
   // Ctrl+Y / Ctrl+Shift+Z (rétablir). Jamais pendant la saisie dans un champ.
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -101,6 +102,8 @@ export function App() {
       if (!event.ctrlKey && !event.metaKey && !event.altKey) {
         if (key === 'b') useUiStore.getState().setToolMode('build');
         else if (key === 'd') useUiStore.getState().setToolMode('demolish');
+        else if (key === 'r') useUiStore.getState().setToolMode('raise');
+        else if (key === 'l') useUiStore.getState().setToolMode('lower');
         return;
       }
 
@@ -134,6 +137,10 @@ export function App() {
     useGridControllerStore.getState().commit();
   };
 
+  const handleSculpt = (x: number, z: number, delta: number) => {
+    useGridControllerStore.getState().sculpt(x, z, delta);
+  };
+
   // ⚡ Références stables : le merge statique (VillageMeshes) ne doit être
   // reconstruit que lorsque la grille change réellement (renderTick), pas à
   // chaque re-render de App (ex: survol souris → previewCell).
@@ -141,6 +148,9 @@ export function App() {
   // "la grille (objet mutable) a changé" qui doit invalider ce memo.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const cells = useMemo(() => grid.getOccupiedCells(), [grid, renderTick]);
+  // Forme du terrain : valeur immuable de la grille, le même objet tant qu'elle ne change pas.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const terrain = useMemo(() => grid.terrain, [grid, renderTick]);
   const toWorldPosition = useCallback((x: number, y: number, z: number) => grid.toWorldPosition(x, y, z), [grid]);
 
   return (
@@ -153,6 +163,8 @@ export function App() {
           selectedHeight={0}
           onAddBlock={handleAddBlock}
           onRemoveColumn={handleRemoveColumn}
+          onSculpt={handleSculpt}
+          terrain={terrain}
           onPreviewMove={(x, z) => {
             const inside = x >= 0 && z >= 0 && x < gridSize && z < gridSize;
             setPreviewCell(inside ? { x, z } : null);
