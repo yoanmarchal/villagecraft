@@ -2,7 +2,7 @@ import { useEffect, useMemo } from 'react';
 import { RoundedBox } from '@react-three/drei';
 import { BufferAttribute, BufferGeometry } from 'three';
 import type { ToolMode } from '../store/uiStore';
-import { TERRAIN_FINE_STEP } from './Terrain';
+import { TERRAIN_FINE_STEP } from '../render/terrainMesh';
 
 interface PlacementPreviewProps {
   previewCell: { x: number; z: number } | null;

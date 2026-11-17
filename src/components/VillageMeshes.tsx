@@ -244,23 +244,40 @@ export function VillageMeshes({ cells, toWorldPosition, gridWidth, gridDepth, re
     if (blockTransitionEnabled && time < animateUntil) invalidate();
   });
 
-  return (
-    <>
-      {groups.map(({ key, mat, geometry }) => {
-        const set = materials.get(matKey(mat));
-        if (!set) return null;
-        return (
-          <mesh
-            key={key}
-            name={`village-${key}`}
-            geometry={geometry}
-            material={set.material}
-            customDepthMaterial={set.depthMaterial}
-            castShadow
-            receiveShadow
-          />
-        );
-      })}
-    </>
-  );
+  // Meshes des chunks gérés directement en three.js, pas en éléments React :
+  // une génération remplace une centaine de chunks d'un coup, et leur
+  // réconciliation par React figeait ~100 ms la frame de livraison. Ici, un
+  // chunk gardé reçoit sa nouvelle géométrie en place ; seuls les chunks
+  // apparus ou disparus sont ajoutés ou retirés du groupe.
+  const groupRef = useRef<THREE.Group>(null);
+  const meshesRef = useRef(new Map<string, THREE.Mesh>());
+  useLayoutEffect(() => {
+    const parent = groupRef.current;
+    if (!parent) return;
+    const meshes = meshesRef.current;
+    const kept = new Set<string>();
+    for (const { key, mat, geometry } of groups) {
+      const set = materials.get(matKey(mat));
+      if (!set) continue;
+      kept.add(key);
+      let mesh = meshes.get(key);
+      if (!mesh) {
+        mesh = new THREE.Mesh(geometry, set.material);
+        mesh.name = `village-${key}`;
+        mesh.castShadow = true;
+        mesh.receiveShadow = true;
+        meshes.set(key, mesh);
+        parent.add(mesh);
+      }
+      mesh.geometry = geometry;
+      mesh.material = set.material;
+      mesh.customDepthMaterial = set.depthMaterial;
+    }
+    const gone = [...meshes].filter(([key]) => !kept.has(key));
+    if (gone.length > 0) parent.remove(...gone.map(([, mesh]) => mesh));
+    for (const [key] of gone) meshes.delete(key);
+    invalidate();
+  }, [groups, materials, invalidate]);
+
+  return <group ref={groupRef} name="village" />;
 }
