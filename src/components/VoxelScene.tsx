@@ -1,6 +1,7 @@
 import { OrbitControls } from '@react-three/drei';
+import { sceneBridge } from '../api/sceneBridge';
 import { Canvas, useFrame, useThree, type ThreeEvent } from '@react-three/fiber';
-import { BufferAttribute, BufferGeometry, Color, type DirectionalLight } from 'three';
+import { BufferAttribute, BufferGeometry, Color, type DirectionalLight, type Vector3 } from 'three';
 import { useShallow } from 'zustand/react/shallow';
 import type { GridCell } from '../types';
 import { VillageMeshes } from './VillageMeshes';
@@ -209,6 +210,39 @@ function ScreenshotBridge() {
   return null;
 }
 
+/**
+ * Caméra pilotable par l'API (window.villagecraft) : position et point visé,
+ * lus et posés à travers OrbitControls (makeDefault), qui garde la main.
+ */
+function CameraBridge() {
+  const camera = useThree((state) => state.camera);
+  const controls = useThree((state) => state.controls) as unknown as {
+    target: Vector3;
+    update: () => void;
+  } | null;
+  const invalidate = useThree((state) => state.invalidate);
+
+  useEffect(() => {
+    sceneBridge.getCamera = () => ({
+      position: camera.position.toArray(),
+      target: controls ? controls.target.toArray() : [0, 0, 0],
+    });
+    sceneBridge.setCamera = ({ position, target }) => {
+      if (position) camera.position.set(...position);
+      if (target && controls) controls.target.set(...target);
+      if (controls) controls.update();
+      else camera.lookAt(...(target ?? [0, 0, 0]));
+      invalidate();
+    };
+    return () => {
+      sceneBridge.getCamera = null;
+      sceneBridge.setCamera = null;
+    };
+  }, [camera, controls, invalidate]);
+
+  return null;
+}
+
 const selectLighting = (state: ControlState) => ({
   ambientIntensity: state.ambientIntensity,
   ambientColor: state.ambientColor,
@@ -322,10 +356,14 @@ export function VoxelScene({
     () => reliefFor(Math.max(gridWidth, gridDepth), terrainRelief, terrain),
     [gridWidth, gridDepth, terrainRelief, terrain],
   );
+  // Relief du village affiché : le village se construit dans un worker, le sol
+  // et les arbres attendent sa livraison pour changer avec lui (sinon, à la
+  // génération, le nouveau terrain s'affichait sous l'ancien village).
+  const [shownRelief, setShownRelief] = useState(relief);
   const ground = useMemo(() => createGround(cells, toWorldPosition, relief), [cells, toWorldPosition, relief]);
   const cameraFloor = useMemo(
-    () => (x: number, z: number) => groundHeight(x, z, flatRadius, relief),
-    [flatRadius, relief],
+    () => (x: number, z: number) => groundHeight(x, z, flatRadius, shownRelief),
+    [flatRadius, shownRelief],
   );
 
   // N8AO (~85 kB gzip) n'est chargé qu'une fois l'effet activé. Pas de
@@ -441,9 +479,10 @@ export function VoxelScene({
       // Rendu à la demande : une frame seulement quand quelque chose change
       // (props R3F, OrbitControls, animation d'apparition — voir VillageMeshes).
       // Sauf avec le moniteur de perf : r3f-perf échantillonne via les
-      // callbacks globaux de la boucle (addEffect/addAfterEffect), qui ne
-      // tournent que si une frame est rendue — et mesurer des FPS n'a de sens
-      // qu'en boucle continue.
+      // callbacks globaux de la boucle, qui ne tournent que si une frame est
+      // rendue — à la demande, il ne s'affiche presque jamais. Il rend donc en
+      // continu (~200 frames/s pour une scène immobile) : à couper avant de
+      // profiler (son libellé le dit, voir debugControls.ts).
       frameloop={showPerfMonitor ? 'always' : 'demand'}
       dpr={[1, 2]}
       camera={{ position: cameraPosition, fov: 45, near: 0.1, far: 1000 }}
@@ -483,16 +522,22 @@ export function VoxelScene({
         shadow-camera-far={100}
       />
       <ScreenshotBridge />
+      <CameraBridge />
       <GestureTracker gesture={gestureRef} />
       <Terrain
         grassColor={groundColor}
         roughness={groundRoughness}
         flatRadius={flatRadius}
         reach={landscapeReach}
-        relief={relief}
+        relief={shownRelief}
       />
-      <Trees gridSize={Math.max(gridWidth, gridDepth)} flatRadius={flatRadius} reach={landscapeReach} relief={relief} />
-      <GridLines width={gridWidth} depth={gridDepth} relief={relief} />
+      <Trees
+        gridSize={Math.max(gridWidth, gridDepth)}
+        flatRadius={flatRadius}
+        reach={landscapeReach}
+        relief={shownRelief}
+      />
+      <GridLines width={gridWidth} depth={gridDepth} relief={shownRelief} />
       <CameraFloor heightAt={cameraFloor} />
       {/* Surface de clic : invisible (ni couleur ni profondeur), seulement
           raycastée — c'est son rayon qui sert ensuite à viser les blocs et le
@@ -515,6 +560,7 @@ export function VoxelScene({
         gridWidth={gridWidth}
         gridDepth={gridDepth}
         relief={relief}
+        onPresent={setShownRelief}
       />
       <PlacementPreview
         previewCell={previewCell}
@@ -526,6 +572,7 @@ export function VoxelScene({
         heightAt={ground.heightAt}
       />
       <OrbitControls
+        makeDefault
         enableDamping
         dampingFactor={dampingFactor}
         maxPolarAngle={maxPolarAngle}

@@ -6,11 +6,12 @@
  */
 
 import * as THREE from 'three';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useFrame, useThree } from '@react-three/fiber';
 import { useShallow } from 'zustand/react/shallow';
 import type { GridCell } from '../types';
-import { VillageChunkCache } from '../render/buildVillage';
+import type { MergedGroup } from '../render/buildVillage';
+import { sampleMapping, VillageBuildClient } from '../render/villageBuild';
 import {
   createGrowMaterialSet,
   disposeGrowMaterialSet,
@@ -29,6 +30,7 @@ import {
 } from '../render/reliefUniforms';
 import { useControlStore } from '../store/controlStore';
 import { hideAppLoader } from '../loader';
+import { sceneBridge } from '../api/sceneBridge';
 
 /** Teinte des fenêtres allumées (lumière de bougie / lampe). */
 const WINDOW_GLOW_COLOR = '#ffb45c';
@@ -55,6 +57,11 @@ interface VillageMeshesProps {
   gridDepth: number;
   /** Relief du terrain : les bâtiments s'y posent de niveau, rues et décor suivent la pente. */
   relief: Relief;
+  /**
+   * Relief du village affiché, à chaque livraison du worker : la scène y
+   * aligne sol et arbres, pour que terrain et village changent ensemble.
+   */
+  onPresent?: (relief: Relief) => void;
 }
 
 function createMaterialSet(mat: MaterialSpec, relief: ReliefUniforms): GrowMaterialSet {
@@ -77,7 +84,7 @@ function createMaterialSet(mat: MaterialSpec, relief: ReliefUniforms): GrowMater
   );
 }
 
-export function VillageMeshes({ cells, toWorldPosition, gridWidth, gridDepth, relief }: VillageMeshesProps) {
+export function VillageMeshes({ cells, toWorldPosition, gridWidth, gridDepth, relief, onPresent }: VillageMeshesProps) {
   // Référence stable tant qu'aucune valeur ne change (useShallow).
   const settings = useControlStore(useShallow(pickRenderSettings));
   const blockTransitionEnabled = useControlStore((state) => state.blockTransitionEnabled);
@@ -85,25 +92,57 @@ export function VillageMeshes({ cells, toWorldPosition, gridWidth, gridDepth, re
   const interiorFill = useControlStore((state) => state.interiorFill);
   const invalidate = useThree((state) => state.invalidate);
 
-  // Cache des chunks fusionnés, propre à cette instance (survit aux rendus).
-  const [chunkCache] = useState(() => new VillageChunkCache());
-  const groups = useMemo(
+  // Construction dans un Web Worker (villageBuild.ts) : l'interface ne fige
+  // plus pendant un clic ou une génération. Le village affiché reste le
+  // précédent jusqu'à la réponse ; seuls les chunks refusionnés changent.
+  // Tout ce qui dépend du village (relief des shaders, sol, animation)
+  // suit la demande livrée, pas la grille courante.
+  const [groups, setGroups] = useState<MergedGroup[]>([]);
+  const [built, setBuilt] = useState(false);
+  const [shownRelief, setShownRelief] = useState(relief);
+  // Fin de l'animation d'apparition des blocs livrés (horloge de `cell.spawnedAt`).
+  const [animateUntil, setAnimateUntil] = useState(0);
+  const [client] = useState(
     () =>
-      chunkCache.build(cells, toWorldPosition, settings, {
-        width: gridWidth,
-        depth: gridDepth,
-        relief,
+      new VillageBuildClient((next, { request, delay }) => {
+        setGroups(next);
+        setBuilt(true);
+        setShownRelief(request.relief);
+        // Apparitions recalées sur la livraison (retimeSpawns) : même décalage ici.
+        const latest = request.cells.reduce((max, cell) => Math.max(max, cell.spawnedAt ?? 0), 0);
+        if (latest + POP_DURATION > performance.now() / 1000 - delay) {
+          setAnimateUntil((until) => Math.max(until, latest + delay + POP_DURATION));
+        }
       }),
-    [chunkCache, cells, toWorldPosition, settings, gridWidth, gridDepth, relief],
   );
+  useEffect(() => () => client.dispose(), [client]);
+  // Avant l'image suivante : sol et village livré s'affichent ensemble.
+  useLayoutEffect(() => onPresent?.(shownRelief), [onPresent, shownRelief]);
+  // API (window.villagecraft) : attendre la fin d'une construction avant une capture.
+  useEffect(() => {
+    sceneBridge.isBuilding = () => !client.idle;
+    return () => {
+      sceneBridge.isBuilding = () => false;
+    };
+  }, [client]);
+  useEffect(() => {
+    client.request({
+      cells,
+      settings,
+      width: gridWidth,
+      depth: gridDepth,
+      relief,
+      mapping: sampleMapping(toWorldPosition),
+    });
+  }, [client, cells, toWorldPosition, settings, gridWidth, gridDepth, relief]);
 
   // Relief connu des shaders (pied des murs sali au ras du sol) : uniforms
   // partagés par tous les matériaux, réglés en place.
   const [reliefValue] = useState(createReliefUniforms);
   useEffect(() => {
-    updateReliefUniforms(reliefValue, relief);
+    updateReliefUniforms(reliefValue, shownRelief);
     invalidate();
-  }, [reliefValue, relief, invalidate]);
+  }, [reliefValue, shownRelief, invalidate]);
   useEffect(() => () => disposeReliefUniforms(reliefValue), [reliefValue]);
 
   // Un jeu de matériaux "grow" (voir growMaterial.ts) par groupe de
@@ -177,7 +216,10 @@ export function VillageMeshes({ cells, toWorldPosition, gridWidth, gridDepth, re
   // Le canvas rend à la demande (frameloop="demand") : tant qu'une cellule
   // est en pleine animation d'apparition, on redemande une frame à chaque
   // frame ; ensuite plus rien ne tourne jusqu'au prochain changement.
-  const latestSpawn = useMemo(() => cells.reduce((latest, cell) => Math.max(latest, cell.spawnedAt ?? 0), 0), [cells]);
+  useEffect(() => {
+    sceneBridge.latestSpawn = () => animateUntil - POP_DURATION;
+    invalidate();
+  }, [animateUntil, invalidate]);
 
   // Écran de chargement : retiré après la première image où le village est
   // monté — ses géométries construites et ses shaders compilés (ce que fait
@@ -185,9 +227,11 @@ export function VillageMeshes({ cells, toWorldPosition, gridWidth, gridDepth, re
   const meshesMounted = useRef(false);
   const loaderHidden = useRef(false);
   useEffect(() => {
+    // Première réponse du worker reçue : le village est monté.
+    if (!built) return;
     meshesMounted.current = true;
     invalidate();
-  }, [invalidate]);
+  }, [built, invalidate]);
 
   useFrame(({ invalidate }) => {
     if (meshesMounted.current && !loaderHidden.current) {
@@ -197,7 +241,7 @@ export function VillageMeshes({ cells, toWorldPosition, gridWidth, gridDepth, re
     // Même horloge que `cell.spawnedAt` (villageGrid.ts), pas celle du canvas.
     const time = performance.now() / 1000;
     for (const set of materials.values()) updateGrowTime(set, time, blockTransitionEnabled);
-    if (blockTransitionEnabled && time - latestSpawn < POP_DURATION) invalidate();
+    if (blockTransitionEnabled && time < animateUntil) invalidate();
   });
 
   return (

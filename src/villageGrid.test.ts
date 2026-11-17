@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { VillageGrid } from './villageGrid';
 import { BlockType } from './types';
+import { describeVillage } from './api/describeVillage';
 
 const HEIGHT = 10;
 
@@ -289,6 +290,22 @@ describe('VillageGrid — generateTerrain', () => {
     const emptyRows = heights.filter((row) => row.every((h) => h === 0)).length;
     const emptyCols = heights[0].filter((_, z) => heights.every((row) => row[z] === 0)).length;
     expect(emptyRows + emptyCols).toBeGreaterThan(0);
+  });
+
+  it('sur une grande grille, reste une ville de maisons : peu de tours, hauteur bornée, même graine → même village', () => {
+    for (let seed = 1; seed <= 6; seed += 1) {
+      const grid = new VillageGrid(20, HEIGHT, 20);
+      grid.generateTerrain(20, seed);
+      const village = describeVillage(grid);
+      const towers = village.buildings.reduce((sum, b) => sum + b.towers, 0);
+      // Chaque pic de hauteur devenait une tour : ~1 colonne de tour par bâtiment à 20 × 20.
+      expect(towers).toBeLessThan(village.buildings.length * 0.45);
+      // Hauteur du bruit plafonnée à 6 blocs ; les repères (LANDMARK_CHANCE) en ajoutent 2.
+      expect(Math.max(...village.heights.flat())).toBeLessThanOrEqual(8);
+      const again = new VillageGrid(20, HEIGHT, 20);
+      again.generateTerrain(20, seed);
+      expect(again.exportBlocks()).toEqual(grid.exportBlocks());
+    }
   });
 
   it('ne déborde pas de la taille demandée', () => {

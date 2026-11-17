@@ -4,5 +4,5 @@ import { registerStoreFolder } from './storeFolder';
 export const registerDebugControls = (pane: Pane) =>
   registerStoreFolder(pane, {
     title: 'Debug',
-    fields: [['showPerfMonitor', { label: 'Perf monitor' }]],
+    fields: [['showPerfMonitor', { label: 'Perf monitor (renders continuously)' }]],
   });

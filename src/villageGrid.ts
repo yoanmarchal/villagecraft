@@ -1,3 +1,4 @@
+import { LARGE_GRID } from './config/gridConfig';
 import { BlockType, type CellCoordinate, type GridCell } from './types';
 import { createValueNoise, seededRandom } from './utils/noise';
 import { DEFAULT_TERRAIN, sculptTerrain, shiftTerrain, terrainSeed, type TerrainShape } from './terrainShape';
@@ -10,6 +11,9 @@ const OCCUPANCY_THRESHOLD = 0.42;
 const MIN_OCCUPANCY = 0.4;
 /** Probabilité qu'une colonne soit rehaussée de 2 étages. */
 const LANDMARK_CHANCE = 0.06;
+/** Grandes grilles : hauteur maximale (2 + taille / 4 montait à 7), et part des colonnes isolées laissées en tours. */
+const LARGE_MAX_HEIGHT = 6;
+const LARGE_TOWER_SHARE = 0.35;
 /** Largeur maximale (en cases) d'une rue enjambée par une arche automatique. */
 export const MAX_ARCH_SPAN = 2;
 
@@ -214,7 +218,10 @@ export class VillageGrid {
     const streetsX = pickStreets(size, random);
     const streetsZ = pickStreets(size, random);
     // Hauteur max qui croît avec la grille (3 étages à 5, 5 à 12), sous le plafond de la grille.
-    const maxHeight = Math.max(1, Math.min(this.sizeY - 1, 2 + Math.floor(size / 4)));
+    const maxHeight = Math.max(
+      1,
+      Math.min(this.sizeY - 1, 2 + Math.floor(size / 4), size > LARGE_GRID ? LARGE_MAX_HEIGHT : Infinity),
+    );
 
     // Un seul recalcul pour tout le terrain (et non un par bloc via addBlock).
     const blocks: Array<[number, number, number]> = [];
@@ -244,6 +251,54 @@ export class VillageGrid {
       // Quelques colonnes plus hautes, pour des repères (clochers, tours).
       if (random() < LANDMARK_CHANCE) height += 2;
       addColumn(x, z, Math.min(height, this.sizeY - 1));
+    }
+
+    // Grandes grilles : chaque colonne isolée devenait une tour (21 pour 25
+    // bâtiments à 20 × 20). On en garde une sur trois environ ; les autres
+    // s'adossent à une colonne voisine un peu plus basse, en petite maison.
+    if (size > LARGE_GRID) {
+      const heights = new Map<string, number>();
+      for (const [x, y, z] of blocks) heights.set(`${x},${z}`, Math.max(heights.get(`${x},${z}`) ?? 0, y + 1));
+      const free = (x: number, z: number) =>
+        x >= 0 && z >= 0 && x < size && z < size && !streetsX.has(x) && !streetsZ.has(z) && !heights.has(`${x},${z}`);
+      const sides = [
+        [1, 0],
+        [-1, 0],
+        [0, 1],
+        [0, -1],
+      ] as const;
+      for (const [key, height] of [...heights].sort(([a], [b]) => (a < b ? -1 : 1))) {
+        const [x, z] = key.split(',').map(Number);
+        if (sides.some(([dx, dz]) => heights.has(`${x + dx},${z + dz}`))) continue;
+        if (random() < LARGE_TOWER_SHARE) continue;
+        const start = Math.floor(random() * sides.length);
+        for (let i = 0; i < sides.length; i += 1) {
+          const [dx, dz] = sides[(start + i) % sides.length];
+          if (!free(x + dx, z + dz)) continue;
+          const wing = Math.max(1, height - 1);
+          addColumn(x + dx, z + dz, wing);
+          heights.set(`${x + dx},${z + dz}`, wing);
+          break;
+        }
+      }
+
+      // Une colonne plus haute que toutes ses voisines a son dernier étage
+      // isolé : elle devient tour sur toute sa hauteur (isTowerColumn). Sur une
+      // grande grille, les variations de hauteur en semaient partout ; on garde
+      // la même part de ces pics, les autres sont arasés à leur plus haute voisine.
+      const capped = new Map<string, number>();
+      for (const [key, height] of [...heights].sort(([a], [b]) => (a < b ? -1 : 1))) {
+        const [x, z] = key.split(',').map(Number);
+        const tallest = Math.max(0, ...sides.map(([dx, dz]) => heights.get(`${x + dx},${z + dz}`) ?? 0));
+        if (tallest === 0 || height <= tallest) continue;
+        if (random() < LARGE_TOWER_SHARE) continue;
+        capped.set(key, tallest);
+      }
+      if (capped.size > 0) {
+        const kept = blocks.filter(([x, y, z]) => y < (capped.get(`${x},${z}`) ?? Infinity));
+        blocks.length = 0;
+        blocks.push(...kept);
+      }
     }
 
     // Jamais de parcelle vide : une colonne au centre à défaut.

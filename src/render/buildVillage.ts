@@ -26,7 +26,9 @@ import {
   isIsolatedBlock,
   isRampart,
   isTowerColumn,
+  getCell,
   makeCellLookup,
+  type CellLookup,
 } from '../utils/cellUtils';
 import { assignRoomLamps, type RoomLamp } from '../utils/roomLamps';
 import { matKey, type MaterialSpec, type Part, type PositionedPart } from './parts';
@@ -42,7 +44,7 @@ import { FLUE_OFFSET, planFireplaces } from './cells/furnitureParts';
 import { planDoors } from './cells/openings';
 import { planStairs } from './cells/stairPlan';
 import { plinthParts } from './cells/plinthParts';
-import { createGround } from './ground';
+import { createGround, type Ground } from './ground';
 import { isFlatRelief, reliefFor, type Relief } from './relief';
 import type { RenderSettings } from './renderSettings';
 
@@ -113,10 +115,16 @@ export const CHUNK_SIZE = 4;
  */
 export class VillageChunkCache {
   private chunks = new Map<string, { hash: string; group: MergedGroup }>();
+  private buildings: BuildingCache = { environment: '', buildings: new Map(), paving: new Map() };
 
   build(cells: GridCell[], toWorldPosition: ToWorld, settings: RenderSettings, ground?: GroundExtent): MergedGroup[] {
+    // Réglages, relief ou repère monde changés : tous les bâtiments sont à refaire.
+    const environment = environmentKey(toWorldPosition, settings, ground);
+    if (environment !== this.buildings.environment)
+      this.buildings = { environment, buildings: new Map(), paving: new Map() };
+
     const buckets = new Map<string, CollectedPart[]>();
-    for (const p of collectVillageParts(cells, toWorldPosition, settings, ground)) {
+    for (const p of collectVillageParts(cells, toWorldPosition, settings, ground, this.buildings)) {
       const id = `${Math.floor(p.x / CHUNK_SIZE)},${Math.floor(p.z / CHUNK_SIZE)}|${p.key}`;
       let bucket = buckets.get(id);
       if (!bucket) {
@@ -175,6 +183,129 @@ function hashParts(parts: CollectedPart[]): string {
 }
 
 /**
+ * Pièces déjà construites, par bâtiment (signature → pièces placées dans le
+ * monde). Valables tant que l'environnement (réglages, relief, repère monde)
+ * ne change pas.
+ */
+interface BuildingCache {
+  environment: string;
+  buildings: Map<string, CollectedPart[]>;
+  /** Pavés par case (position et signature de ses voisines, voir pavingParts). */
+  paving: Map<string, CollectedPart[]>;
+}
+
+/** Un bâtiment : colonnes bâties 4-connexes (arches comprises), et ses cellules. */
+interface Building {
+  columns: Array<[number, number]>;
+  cells: GridCell[];
+}
+
+/**
+ * Bâtiments du village. Tout ce qu'un builder lit d'une cellule (voisins,
+ * faîtages, courtines, appuis d'arche, pièces, escaliers, cheminées) reste
+ * dans son bâtiment, ou dans l'anneau de colonnes qui l'entoure (coins en
+ * diagonale) — d'où le cache par bâtiment de VillageChunkCache.
+ */
+function villageBuildings(cells: GridCell[]): Building[] {
+  const columns = new Map<string, GridCell[]>();
+  for (const cell of cells) {
+    const key = `${cell.x},${cell.z}`;
+    const list = columns.get(key);
+    if (list) list.push(cell);
+    else columns.set(key, [cell]);
+  }
+  const seen = new Set<string>();
+  const buildings: Building[] = [];
+  for (const start of columns.keys()) {
+    if (seen.has(start)) continue;
+    const building: Building = { columns: [], cells: [] };
+    const queue = [start];
+    seen.add(start);
+    while (queue.length > 0) {
+      const key = queue.pop()!;
+      const [x, z] = key.split(',').map(Number);
+      building.columns.push([x, z]);
+      building.cells.push(...columns.get(key)!);
+      for (const [dx, dz] of [
+        [1, 0],
+        [-1, 0],
+        [0, 1],
+        [0, -1],
+      ]) {
+        const next = `${x + dx},${z + dz}`;
+        if (columns.has(next) && !seen.has(next)) {
+          seen.add(next);
+          queue.push(next);
+        }
+      }
+    }
+    // Ordre stable : la sortie ne dépend pas de l'ordre de parcours.
+    building.cells.sort((a, b) => a.x - b.x || a.z - b.z || a.y - b.y);
+    buildings.push(building);
+  }
+  return buildings;
+}
+
+/**
+ * Empreinte de tout ce dont dépendent les pièces d'un bâtiment : ses cellules
+ * (type, cap ou arche automatique, horodatage d'apparition), le niveau de
+ * chaque colonne sur le terrain, et les cellules de l'anneau de colonnes qui
+ * l'entoure, diagonales comprises (rayons de coin, chaînages, parement).
+ */
+function buildingSignature(building: Building, lookup: CellLookup, terrain: Ground | null): string {
+  const inside = new Set(building.columns.map(([x, z]) => `${x},${z}`));
+  const parts: string[] = [];
+  for (const cell of building.cells) {
+    parts.push(
+      `${cell.x},${cell.y},${cell.z},${cell.type},${cell.isAutoRoof ? 1 : 0}${cell.isAutoArch ? 1 : 0},${cell.spawnedAt ?? 0}`,
+    );
+  }
+  if (terrain) for (const [x, z] of building.columns) parts.push(`b${x},${z}:${terrain.baseAt(x, z)}`);
+  const ring = new Set<string>();
+  for (const [x, z] of building.columns) {
+    for (let dx = -1; dx <= 1; dx += 1) {
+      for (let dz = -1; dz <= 1; dz += 1) {
+        const key = `${x + dx},${z + dz}`;
+        if (!inside.has(key)) ring.add(key);
+      }
+    }
+  }
+  for (const key of [...ring].sort()) {
+    const [x, z] = key.split(',').map(Number);
+    for (let y = 0; ; y += 1) {
+      const cell = getCell(lookup, x, y, z);
+      if (!cell) break;
+      if (cell.isOccupied) parts.push(`r${x},${y},${z},${cell.type}`);
+    }
+  }
+  return parts.join(';');
+}
+
+const reliefIds = new WeakMap<object, number>();
+let nextReliefId = 1;
+
+/** Ce qui, s'il change, invalide tous les bâtiments en cache : réglages, relief, emprise, repère monde. */
+function environmentKey(toWorldPosition: ToWorld, settings: RenderSettings, ground?: GroundExtent): string {
+  let relief: string = 'flat';
+  if (typeof ground?.relief === 'number') relief = `a${ground.relief}`;
+  else if (ground?.relief) {
+    let id = reliefIds.get(ground.relief);
+    if (id === undefined) {
+      id = nextReliefId++;
+      reliefIds.set(ground.relief, id);
+    }
+    relief = `r${id}`;
+  }
+  return [
+    JSON.stringify(settings),
+    relief,
+    ground ? `${ground.width}x${ground.depth}` : 'none',
+    toWorldPosition(0, 0, 0).join(','),
+    toWorldPosition(1, 1, 1).join(','),
+  ].join('|');
+}
+
+/**
  * Étape 1 : CellContext + builder de chaque cellule (et pavés du sol),
  * parts placés dans le monde.
  */
@@ -183,6 +314,7 @@ function collectVillageParts(
   toWorldPosition: ToWorld,
   settings: RenderSettings,
   ground?: GroundExtent,
+  cache?: BuildingCache,
 ): CollectedPart[] {
   const lookup = makeCellLookup(cells);
   const collected: CollectedPart[] = [];
@@ -210,6 +342,7 @@ function collectVillageParts(
   const translation = new THREE.Matrix4();
 
   const addParts = (
+    into: CollectedPart[],
     parts: Part[],
     x: number,
     z: number,
@@ -223,105 +356,136 @@ function collectVillageParts(
       const interiorMode = !lamp || !p.interior ? 0 : p.interior === 'shell' ? 1 : 2;
       const lampDx = lamp?.dx ?? 0;
       const lampDz = lamp?.dz ?? 0;
-      collected.push({ ...p, x, z, key: matKey(p.mat), cellCenter, spawn, fallHeight, interiorMode, lampDx, lampDz });
+      into.push({ ...p, x, z, key: matKey(p.mat), cellCenter, spawn, fallHeight, interiorMode, lampDx, lampDz });
     }
   };
 
-  // Contextes d'abord : les cheminées se décident par pièce, avant les murs
-  // (elles peuvent prendre la place d'une fenêtre).
-  const contexts = cells.map((cell): CellContext => {
-    const lamp = roomLamps.get(cell);
-    let groundAt: CellContext['groundAt'] = null;
-    if (terrain) {
+  /** Pièces d'un bâtiment : contextes, plans (portes, escaliers, cheminées, conduits), puis builders. */
+  const buildingParts = (buildingCells: GridCell[]): CollectedPart[] => {
+    const out: CollectedPart[] = [];
+    // Contextes d'abord : les cheminées se décident par pièce, avant les murs
+    // (elles peuvent prendre la place d'une fenêtre).
+    const contexts = buildingCells.map((cell): CellContext => {
+      const lamp = roomLamps.get(cell);
+      let groundAt: CellContext['groundAt'] = null;
+      if (terrain) {
+        const [wx, wy, wz] = cellWorld(cell);
+        groundAt = (lx, lz) => terrain.heightAt(wx + lx, wz + lz) - wy;
+      }
+      return {
+        cell,
+        lookup,
+        groundAt,
+        settings,
+        exposedFaces: getExposedFaces(lookup, cell),
+        radii: getCornerRadii(lookup, cell, settings),
+        // Murs/fondations : propagation tour vers le bas. Toits : check local
+        // non propagé. Asymétrie intentionnelle (voir AGENTS.md).
+        isIsolated: cell.type === BlockType.Roof ? isIsolatedBlock(lookup, cell) : isTowerColumn(lookup, cell),
+        isRampart: isRampart(lookup, getColumnTop(lookup, cell)),
+        hollow: isHollowType(cell.type) ? getHollowShape(lookup, cell) : null,
+        chandelier: lamp !== undefined && lamp.dx === 0 && lamp.dz === 0,
+        doorFace: null,
+        fireplaceFace: null,
+        flues: [],
+        stair: null,
+        stairBelow: null,
+      };
+    });
+    const doors = planDoors(contexts, roomLamps);
+    for (const ctx of contexts) ctx.doorFace = doors.get(ctx.cell) ?? null;
+    // Escaliers avant les cheminées : ils passent en premier, la cheminée s'écarte.
+    const stairs = planStairs(contexts);
+    for (const ctx of contexts) {
+      ctx.stair = stairs.up.get(ctx.cell) ?? null;
+      ctx.stairBelow = stairs.below.get(ctx.cell) ?? null;
+    }
+    const fireplaces = planFireplaces(contexts, roomLamps);
+    // Conduit de chaque cheminée : il sort du toit de sa colonne, à l'aplomb
+    // de la hotte (planFireplaces exige un toit à deux pans au sommet).
+    const contextOf = new Map(contexts.map((ctx) => [ctx.cell, ctx]));
+    for (const ctx of contexts) {
+      const face = (ctx.fireplaceFace = fireplaces.get(ctx.cell) ?? null);
+      if (!face) continue;
+      const roof = contextOf.get(getColumnTop(lookup, ctx.cell));
+      const angle = FACE_ROTATION_Y[face];
+      const flue = { x: +(FLUE_OFFSET * Math.sin(angle)).toFixed(4), z: +(FLUE_OFFSET * Math.cos(angle)).toFixed(4) };
+      // Deux cheminées superposées sur le même mur partagent leur conduit.
+      if (roof && !roof.flues.some((f) => f.x === flue.x && f.z === flue.z)) roof.flues.push(flue);
+    }
+
+    for (const ctx of contexts) {
+      const { cell } = ctx;
+      const lamp = roomLamps.get(cell);
+
+      let cellParts: Part[];
+      switch (cell.type) {
+        case BlockType.Roof:
+          cellParts = roofCellParts(ctx);
+          break;
+        case BlockType.Arch:
+          cellParts = archCellParts(ctx);
+          break;
+        case BlockType.WallWithWindow:
+          cellParts = wallWindowCellParts(ctx);
+          break;
+        default: // Wall, Foundation
+          cellParts = standardCellParts(ctx);
+          break;
+      }
+
+      // Soubassement : du pied du bâtiment jusqu'au terrain, côté aval.
+      if (cell.y === 0 && isHollowType(cell.type)) cellParts.push(...plinthParts(ctx));
+
       const [wx, wy, wz] = cellWorld(cell);
-      groundAt = (lx, lz) => terrain.heightAt(wx + lx, wz + lz) - wy;
+      translation.makeTranslation(wx, wy, wz);
+      const cellCenter = new THREE.Vector3(wx, wy, wz);
+      const spawn = cell.spawnedAt ?? 0;
+      const fallHeight = cell.type === BlockType.Roof ? ROOF_DROP_HEIGHT : 0;
+
+      addParts(out, cellParts, cell.x, cell.z, cellCenter, spawn, fallHeight, lamp);
     }
-    return {
-      cell,
-      lookup,
-      groundAt,
-      settings,
-      exposedFaces: getExposedFaces(lookup, cell),
-      radii: getCornerRadii(lookup, cell, settings),
-      // Murs/fondations : propagation tour vers le bas. Toits : check local
-      // non propagé. Asymétrie intentionnelle (voir AGENTS.md).
-      isIsolated: cell.type === BlockType.Roof ? isIsolatedBlock(lookup, cell) : isTowerColumn(lookup, cell),
-      isRampart: isRampart(lookup, getColumnTop(lookup, cell)),
-      hollow: isHollowType(cell.type) ? getHollowShape(lookup, cell) : null,
-      chandelier: lamp !== undefined && lamp.dx === 0 && lamp.dz === 0,
-      doorFace: null,
-      fireplaceFace: null,
-      flues: [],
-      stair: null,
-      stairBelow: null,
-    };
-  });
-  const doors = planDoors(contexts, roomLamps);
-  for (const ctx of contexts) ctx.doorFace = doors.get(ctx.cell) ?? null;
-  // Escaliers avant les cheminées : ils passent en premier, la cheminée s'écarte.
-  const stairs = planStairs(contexts);
-  for (const ctx of contexts) {
-    ctx.stair = stairs.up.get(ctx.cell) ?? null;
-    ctx.stairBelow = stairs.below.get(ctx.cell) ?? null;
+    return out;
+  };
+
+  // Bâtiment par bâtiment : un bâtiment inchangé (lui et l'anneau de cases qui
+  // l'entoure) reprend ses pièces du cache, sans relancer contextes ni builders.
+  const fresh = new Map<string, CollectedPart[]>();
+  for (const building of villageBuildings(cells)) {
+    const signature = cache ? buildingSignature(building, lookup, terrain) : '';
+    let parts = cache?.buildings.get(signature);
+    if (!parts) parts = buildingParts(building.cells);
+    if (cache) fresh.set(signature, parts);
+    collected.push(...parts);
   }
-  const fireplaces = planFireplaces(contexts, roomLamps);
-  // Conduit de chaque cheminée : il sort du toit de sa colonne, à l'aplomb
-  // de la hotte (planFireplaces exige un toit à deux pans au sommet).
-  const contextOf = new Map(contexts.map((ctx) => [ctx.cell, ctx]));
-  for (const ctx of contexts) {
-    const face = (ctx.fireplaceFace = fireplaces.get(ctx.cell) ?? null);
-    if (!face) continue;
-    const roof = contextOf.get(getColumnTop(lookup, ctx.cell));
-    const angle = FACE_ROTATION_Y[face];
-    const flue = { x: +(FLUE_OFFSET * Math.sin(angle)).toFixed(4), z: +(FLUE_OFFSET * Math.cos(angle)).toFixed(4) };
-    // Deux cheminées superposées sur le même mur partagent leur conduit.
-    if (roof && !roof.flues.some((f) => f.x === flue.x && f.z === flue.z)) roof.flues.push(flue);
-  }
-
-  for (const ctx of contexts) {
-    const { cell } = ctx;
-    const lamp = roomLamps.get(cell);
-
-    let cellParts: Part[];
-    switch (cell.type) {
-      case BlockType.Roof:
-        cellParts = roofCellParts(ctx);
-        break;
-      case BlockType.Arch:
-        cellParts = archCellParts(ctx);
-        break;
-      case BlockType.WallWithWindow:
-        cellParts = wallWindowCellParts(ctx);
-        break;
-      default: // Wall, Foundation
-        cellParts = standardCellParts(ctx);
-        break;
-    }
-
-    // Soubassement : du pied du bâtiment jusqu'au terrain, côté aval.
-    if (cell.y === 0 && isHollowType(cell.type)) cellParts.push(...plinthParts(ctx));
-
-    const [wx, wy, wz] = cellWorld(cell);
-    translation.makeTranslation(wx, wy, wz);
-    const cellCenter = new THREE.Vector3(wx, wy, wz);
-    const spawn = cell.spawnedAt ?? 0;
-    const fallHeight = cell.type === BlockType.Roof ? ROOF_DROP_HEIGHT : 0;
-
-    addParts(cellParts, cell.x, cell.z, cellCenter, spawn, fallHeight, lamp);
-  }
+  if (cache) cache.buildings = fresh;
 
   if (ground) {
-    for (const { x, z, parts } of pavingParts(lookup, ground, groundOf)) {
-      const [wx, , wz] = toWorldPosition(x, 0, z);
-      translation.makeTranslation(wx, 0, wz);
-      // spawn = 0 : les pavés sont déjà "posés", sans animation d'apparition.
-      addParts(parts, x, z, new THREE.Vector3(wx, 0, wz), 0, 0, undefined);
+    // Pavés d'une case : repris du cache tant que ses voisines ne changent pas.
+    const pavingKey = (x: number, z: number, signature: string) => `${x},${z}|${signature}`;
+    const freshPaving = new Map<string, CollectedPart[]>();
+    const reuse = cache
+      ? (x: number, z: number, signature: string) => cache.paving.has(pavingKey(x, z, signature))
+      : undefined;
+    for (const { x, z, signature, parts } of pavingParts(lookup, ground, groundOf, reuse)) {
+      const key = pavingKey(x, z, signature);
+      let placed = cache?.paving.get(key);
+      if (!placed) {
+        placed = [];
+        const [wx, , wz] = toWorldPosition(x, 0, z);
+        translation.makeTranslation(wx, 0, wz);
+        // spawn = 0 : les pavés sont déjà "posés", sans animation d'apparition.
+        addParts(placed, parts, x, z, new THREE.Vector3(wx, 0, wz), 0, 0, undefined);
+      }
+      freshPaving.set(key, placed);
+      collected.push(...placed);
     }
+    if (cache) cache.paving = freshPaving;
     // Décor de l'herbe libre près du village (puits, charrettes, foin…).
     for (const { x, z, parts } of propsParts(lookup, ground, settings, groundOf)) {
       const [wx, , wz] = toWorldPosition(x, 0, z);
       translation.makeTranslation(wx, 0, wz);
-      addParts(parts, x, z, new THREE.Vector3(wx, 0, wz), 0, 0, undefined);
+      addParts(collected, parts, x, z, new THREE.Vector3(wx, 0, wz), 0, 0, undefined);
     }
   }
 

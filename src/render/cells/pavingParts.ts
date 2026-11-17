@@ -116,14 +116,21 @@ export function pavingParts(
   ground: { width: number; depth: number },
   /** Terrain en pente : hauteur du sol autour de chaque case (absent : sol plat à y = 0). */
   groundOf?: (x: number, z: number) => HeightFn,
-): Array<{ x: number; z: number; parts: Part[] }> {
+  /**
+   * Réutilisation : les pavés d'une case ne dépendent que d'elle, de ses
+   * quatre voisines (`signature` : herbe, rue) et du terrain. Si `reuse`
+   * répond oui, la case est rendue sans ses pièces (`parts` vide), à reprendre
+   * du cache de l'appelant.
+   */
+  reuse?: (x: number, z: number, signature: string) => boolean,
+): Array<{ x: number; z: number; signature: string; parts: Part[] }> {
   const builtAt = (x: number, z: number) => hasOccupiedCell(lookup, x, 0, z);
   // Cases pavées d'abord : la lisière dépend des voisines.
   const paved = pavedCells(lookup, ground);
   /** La case voisine est de l'herbe : ni pavée, ni bâtie. */
   const grassAt = (x: number, z: number) => !paved.has(`${x},${z}`) && !builtAt(x, z);
   const mat = { roughness: 0.92 };
-  const result: Array<{ x: number; z: number; parts: Part[] }> = [];
+  const result: Array<{ x: number; z: number; signature: string; parts: Part[] }> = [];
 
   for (const key of paved) {
     const [x, z] = key.split(',').map(Number);
@@ -133,6 +140,13 @@ export function pavingParts(
       back: grassAt(x, z - 1),
       front: grassAt(x, z + 1),
     };
+    const signature =
+      `${+grass.left}${+grass.right}${+grass.back}${+grass.front}` +
+      `${+paved.has(`${x - 1},${z}`)}${+paved.has(`${x + 1},${z}`)}`;
+    if (reuse?.(x, z, signature)) {
+      result.push({ x, z, signature, parts: [] });
+      continue;
+    }
 
     // Lit de pose, en retrait côté herbe.
     const x0 = -0.5 + (grass.left ? BEDDING_INSET : 0);
@@ -220,7 +234,7 @@ export function pavingParts(
       }
     }
 
-    result.push({ x, z, parts });
+    result.push({ x, z, signature, parts });
   }
 
   return result;
