@@ -5,6 +5,7 @@ import { registerGridControls } from '../controls/gridControls';
 import { registerLightingControls } from '../controls/lightingControls';
 import { registerSkyFogControls } from '../controls/skyFogControls';
 import { registerCameraControls } from '../controls/cameraControls';
+import { registerWalkModeControls } from '../controls/walkModeControls';
 import { registerPostFxControls } from '../controls/postFxControls';
 import { registerShapeControls } from '../controls/shapeControls';
 import { registerMaterialsControls } from '../controls/materialsControls';
@@ -31,6 +32,7 @@ export function TweakpanePanel() {
       registerLightingControls(pane),
       registerSkyFogControls(pane),
       registerCameraControls(pane),
+      registerWalkModeControls(pane),
       registerPostFxControls(pane),
       registerShapeControls(pane),
       registerMaterialsControls(pane),

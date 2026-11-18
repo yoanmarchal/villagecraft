@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
+import { OPENING_SIZES } from '../render/geometryCache';
 import { EYE_HEIGHT, STEP_HEIGHT, WALK_SPEED, WALKER_HEIGHT, WALKER_RADIUS } from './walkConfig';
 import {
   createWalker,
+  easeEye,
   findSpawn,
   clearHeading,
   isFree,
@@ -10,7 +12,7 @@ import {
   type WalkInput,
   type WalkerState,
 } from './walker';
-import { createVillageWorld, type Aabb, type WalkWorld } from './walkWorld';
+import { createBoxWorld, type Aabb, type WalkWorld } from './walkWorld';
 
 const idle: WalkInput = { forward: 0, strafe: 0, yaw: 0, run: false, jump: false };
 
@@ -31,8 +33,8 @@ function run(w: WalkWorld, state: WalkerState, input: WalkInput, seconds: number
 }
 
 describe('walker scale', () => {
-  it('is a person in a world where a unit is ~2.8 m and a door 0.71', () => {
-    expect(WALKER_HEIGHT).toBeLessThan(0.71);
+  it('is a person, smaller than a door', () => {
+    expect(WALKER_HEIGHT).toBeLessThan(OPENING_SIZES.door.h);
     expect(EYE_HEIGHT).toBeLessThan(WALKER_HEIGHT);
     expect(WALKER_RADIUS * 2).toBeLessThan(0.3);
   });
@@ -137,73 +139,46 @@ describe('stepWalker', () => {
   });
 });
 
-describe('createVillageWorld', () => {
-  const village = (cells: { x: number; y: number; z: number }[], baseAt = () => 0) =>
-    createVillageWorld({ cells, gridWidth: 4, gridDepth: 4, baseAt, groundAt: () => 0, reach: 50 });
+/** Boîtes au format du worker (6 nombres par boîte). */
+const flat = (boxes: Aabb[]) => boxes.flatMap(({ min, max }) => [...min, ...max]);
+/** Case pleine (x, z) de la grille, comme un bloc sans intérieur. */
+const block = (x: number, z: number, y0 = -50, y1 = 1): Aabb => ({ min: [x, y0, z], max: [x + 1, y1, z + 1] });
 
-  it('makes one box per stack of cells, the ground floor reaching under the terrain', () => {
-    const w = village([
-      { x: 1, y: 0, z: 2 },
-      { x: 1, y: 1, z: 2 },
-      { x: 1, y: 3, z: 2 },
-    ]);
-    const boxes = w.solidsIn(-0.9, 0.1, -0.1, 0.9);
-    expect(boxes).toHaveLength(2);
-    const [low, high] = boxes.sort((a, b) => a.min[1] - b.min[1]);
-    expect(low.min[0]).toBe(-1);
-    expect(low.max[0]).toBe(0);
-    expect(low.min[2]).toBe(0);
-    expect(low.max[1]).toBe(2);
-    expect(low.min[1]).toBeLessThan(-10);
-    expect(high.min[1]).toBe(3);
-    expect(high.max[1]).toBe(4);
-  });
-
-  it('puts every column at its building level', () => {
-    const w = village([{ x: 0, y: 0, z: 0 }], () => 0.7);
-    expect(w.solidsIn(-2, -2, -1.5, -1.5)[0].max[1]).toBeCloseTo(1.7, 9);
+describe('createBoxWorld', () => {
+  it('finds the boxes around a point, across bucket borders, each once', () => {
+    const wide: Aabb = { min: [-3, 0, -0.5], max: [3, 1, 0.5] };
+    const w = createBoxWorld(flat([wide, block(5, 5)]), () => 0, 50);
+    expect(w.solidsIn(-0.2, -0.2, 0.2, 0.2)).toHaveLength(1);
+    expect(w.solidsIn(-2.5, -0.2, 2.5, 0.2)).toHaveLength(1);
+    expect(w.solidsIn(5.2, 5.2, 5.4, 5.4)).toHaveLength(1);
+    expect(w.solidsIn(1, 1, 2, 2)).toHaveLength(0);
   });
 
   it('lets the walker pass under an arch but not through a house', () => {
-    // Arche (y = 1) au-dessus de la case (1, 2) : elle ne touche pas le sol.
-    const w = village([
-      { x: 0, y: 0, z: 2 },
-      { x: 0, y: 1, z: 2 },
-      { x: 1, y: 1, z: 2 },
-      { x: 2, y: 0, z: 2 },
-      { x: 2, y: 1, z: 2 },
-    ]);
+    // Deux maisons (x = −2 et x = 0) reliées par une arche à l'étage au-dessus de la ruelle x = −1.
+    const w = createBoxWorld(
+      flat([block(-2, 0, -50, 2), block(0, 0, -50, 2), { min: [-1, 1, 0], max: [0, 2, 1] }]),
+      () => 0,
+      50,
+    );
     expect(isFree(w, -0.5, 0, 0.5)).toBe(true);
     expect(isFree(w, -1.5, 0, 0.5)).toBe(false);
-    // On traverse le passage sous l'arche, de z = 1.5 à z = −0.5.
     const next = run(w, createWalker([-0.5, 0, 1.5]), { ...idle, forward: 1 }, 6);
     expect(next.position[2]).toBeLessThan(-0.4);
   });
 
-  it('finds a free spawn point next to a building', () => {
-    const w = village([{ x: 2, y: 0, z: 2 }]);
+  it('finds a free spawn point next to a building, with room around it', () => {
+    const w = createBoxWorld(flat([block(0, 0)]), () => 0, 50);
     expect(isFree(w, 0.5, 0, 0.5)).toBe(false);
     const [x, y, z] = findSpawn(w, 0.5, 0.5);
-    expect(isFree(w, x, y, z)).toBe(true);
     expect(isFree(w, x, y, z, SPAWN_CLEARANCE)).toBe(true);
     expect(Math.hypot(x - 0.5, z - 0.5)).toBeLessThan(1.5);
   });
 
   it('falls back to any free spot when no place is that open', () => {
-    // Ruelle d'une case entre deux rangées de maisons (x = 0 et x = 2), sur toute la profondeur.
-    const rows = [0, 1, 2, 3].flatMap((z) => [
-      { x: 0, y: 0, z },
-      { x: 2, y: 0, z },
-      { x: 3, y: 0, z },
-    ]);
-    const w = createVillageWorld({
-      cells: rows,
-      gridWidth: 4,
-      gridDepth: 4,
-      baseAt: () => 0,
-      groundAt: () => 0,
-      reach: 1.2,
-    });
+    // Ruelle d'une case (x = −1) entre deux rangées de maisons, sur toute la profondeur.
+    const rows = [-2, -1, 0, 1].flatMap((z) => [block(-2, z), block(0, z), block(1, z)]);
+    const w = createBoxWorld(flat(rows), () => 0, 1.2);
     const [x, y, z] = findSpawn(w, -0.5, 0);
     expect(isFree(w, x, y, z)).toBe(true);
     expect(isFree(w, x, y, z, SPAWN_CLEARANCE)).toBe(false);
@@ -219,5 +194,19 @@ describe('createVillageWorld', () => {
     expect(isFree(w, -Math.sin(yaw), 0, -Math.cos(yaw))).toBe(true);
     // Préférence vers +x, dégagé : gardée.
     expect(clearHeading(w, [0, 0, 0], -Math.PI / 2)).toBeCloseTo(-Math.PI / 2, 9);
+  });
+});
+
+describe('easeEye', () => {
+  it('eases a step on the ground, follows a jump or a respawn at once', () => {
+    let eye = easeEye(null, 1, true, 1 / 60);
+    expect(eye).toBe(1);
+    eye = easeEye(eye, 1.06, true, 1 / 60);
+    expect(eye).toBeGreaterThan(1);
+    expect(eye).toBeLessThan(1.03);
+    for (let i = 0; i < 30; i += 1) eye = easeEye(eye, 1.06, true, 1 / 60);
+    expect(eye).toBeCloseTo(1.06, 3);
+    expect(easeEye(1, 1.06, false, 1 / 60)).toBe(1.06);
+    expect(easeEye(1, 3, true, 1 / 60)).toBe(3);
   });
 });

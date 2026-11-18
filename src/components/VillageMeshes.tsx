@@ -31,6 +31,9 @@ import {
 import { useControlStore } from '../store/controlStore';
 import { hideAppLoader } from '../loader';
 import { sceneBridge } from '../api/sceneBridge';
+import { DOOR_OPEN_ANGLE, doorPose } from '../render/cells/doors';
+import type { DoorHinge } from '../render/parts';
+import { walkerPresence } from '../walk/walkerPresence';
 
 /** Teinte des fenêtres allumées (lumière de bougie / lampe). */
 const WINDOW_GLOW_COLOR = '#ffb45c';
@@ -48,6 +51,16 @@ const INTERIOR_LAMP_INTENSITY = 0.9;
  * tentures et rideaux ne se distinguaient plus depuis la rue.
  */
 const INTERIOR_LAMP_COLOR = '#ffd9a8';
+/** Une porte s'ouvre quand le promeneur passe à moins de cette distance (en plan) du milieu de son seuil. */
+const DOOR_OPEN_DISTANCE = 0.75;
+/** Vitesse d'ouverture et de fermeture des vantaux (rad/s) : grand ouvert en ~0,4 s. */
+const DOOR_SPEED = 4;
+
+/** Porte d'un mesh de pièces mobiles (voir doors.ts) : identifiant, charnière en monde. */
+interface DoorMeshData {
+  doorId: string;
+  hinge: DoorHinge;
+}
 
 interface VillageMeshesProps {
   cells: GridCell[];
@@ -62,6 +75,8 @@ interface VillageMeshesProps {
    * aligne sol et arbres, pour que terrain et village changent ensemble.
    */
   onPresent?: (relief: Relief) => void;
+  /** Volumes de collision du promeneur livrés avec le village (monde, 6 nombres par boîte). */
+  onColliders?: (colliders: Float32Array) => void;
 }
 
 function createMaterialSet(mat: MaterialSpec, relief: ReliefUniforms): GrowMaterialSet {
@@ -84,7 +99,15 @@ function createMaterialSet(mat: MaterialSpec, relief: ReliefUniforms): GrowMater
   );
 }
 
-export function VillageMeshes({ cells, toWorldPosition, gridWidth, gridDepth, relief, onPresent }: VillageMeshesProps) {
+export function VillageMeshes({
+  cells,
+  toWorldPosition,
+  gridWidth,
+  gridDepth,
+  relief,
+  onPresent,
+  onColliders,
+}: VillageMeshesProps) {
   // Référence stable tant qu'aucune valeur ne change (useShallow).
   const settings = useControlStore(useShallow(pickRenderSettings));
   const blockTransitionEnabled = useControlStore((state) => state.blockTransitionEnabled);
@@ -100,12 +123,14 @@ export function VillageMeshes({ cells, toWorldPosition, gridWidth, gridDepth, re
   const [groups, setGroups] = useState<MergedGroup[]>([]);
   const [built, setBuilt] = useState(false);
   const [shownRelief, setShownRelief] = useState(relief);
+  const [colliders, setColliders] = useState<Float32Array | null>(null);
   // Fin de l'animation d'apparition des blocs livrés (horloge de `cell.spawnedAt`).
   const [animateUntil, setAnimateUntil] = useState(0);
   const [client] = useState(
     () =>
-      new VillageBuildClient((next, { request, delay }) => {
+      new VillageBuildClient((next, { request, delay, colliders: solids }) => {
         setGroups(next);
+        setColliders(solids);
         setBuilt(true);
         setShownRelief(request.relief);
         // Apparitions recalées sur la livraison (retimeSpawns) : même décalage ici.
@@ -118,6 +143,9 @@ export function VillageMeshes({ cells, toWorldPosition, gridWidth, gridDepth, re
   useEffect(() => () => client.dispose(), [client]);
   // Avant l'image suivante : sol et village livré s'affichent ensemble.
   useLayoutEffect(() => onPresent?.(shownRelief), [onPresent, shownRelief]);
+  useLayoutEffect(() => {
+    if (colliders) onColliders?.(colliders);
+  }, [onColliders, colliders]);
   // API (window.villagecraft) : attendre la fin d'une construction avant une capture.
   useEffect(() => {
     sceneBridge.isBuilding = () => !client.idle;
@@ -233,7 +261,46 @@ export function VillageMeshes({ cells, toWorldPosition, gridWidth, gridDepth, re
     invalidate();
   }, [built, invalidate]);
 
-  useFrame(({ invalidate }) => {
+  const meshesRef = useRef(new Map<string, THREE.Mesh>());
+
+  // Portes : chaque vantail tourne vers l'intérieur autour de ses gonds quand
+  // le promeneur approche, se referme derrière lui (et à la sortie de la
+  // promenade). Ses pièces mobiles sont des meshes à part (un par matériau),
+  // qui partagent l'angle de leur porte.
+  const doorAngles = useRef(new Map<string, number>());
+  const swingDoors = (delta: number): boolean => {
+    const feet = walkerPresence.feet;
+    const angles = doorAngles.current;
+    const moved = new Map<string, number>();
+    let moving = false;
+    for (const mesh of meshesRef.current.values()) {
+      const data = mesh.userData.door as DoorMeshData | null;
+      if (!data) continue;
+      const { doorId, hinge: door } = data;
+      let angle = moved.get(doorId);
+      if (angle === undefined) {
+        const near =
+          feet !== null &&
+          Math.hypot(feet[0] - door.center[0], feet[2] - door.center[2]) < DOOR_OPEN_DISTANCE &&
+          Math.abs(feet[1] - (door.center[1] - 0.4)) < 0.4;
+        const target = near ? DOOR_OPEN_ANGLE : 0;
+        const current = angles.get(doorId) ?? 0;
+        const step = Math.min(Math.abs(target - current), DOOR_SPEED * Math.min(delta, 0.1));
+        angle = current + Math.sign(target - current) * step;
+        if (angle !== target) moving = true;
+        if (angle === 0) angles.delete(doorId);
+        else angles.set(doorId, angle);
+        moved.set(doorId, angle);
+      }
+      const { rotationY, position } = doorPose(door, angle);
+      if (mesh.rotation.y === rotationY) continue;
+      mesh.rotation.y = rotationY;
+      mesh.position.set(...position);
+    }
+    return moving;
+  };
+
+  useFrame(({ invalidate }, delta) => {
     if (meshesMounted.current && !loaderHidden.current) {
       loaderHidden.current = true;
       requestAnimationFrame(hideAppLoader);
@@ -242,6 +309,7 @@ export function VillageMeshes({ cells, toWorldPosition, gridWidth, gridDepth, re
     const time = performance.now() / 1000;
     for (const set of materials.values()) updateGrowTime(set, time, blockTransitionEnabled);
     if (blockTransitionEnabled && time < animateUntil) invalidate();
+    if (swingDoors(delta)) invalidate();
   });
 
   // Meshes des chunks gérés directement en three.js, pas en éléments React :
@@ -250,13 +318,12 @@ export function VillageMeshes({ cells, toWorldPosition, gridWidth, gridDepth, re
   // chunk gardé reçoit sa nouvelle géométrie en place ; seuls les chunks
   // apparus ou disparus sont ajoutés ou retirés du groupe.
   const groupRef = useRef<THREE.Group>(null);
-  const meshesRef = useRef(new Map<string, THREE.Mesh>());
   useLayoutEffect(() => {
     const parent = groupRef.current;
     if (!parent) return;
     const meshes = meshesRef.current;
     const kept = new Set<string>();
-    for (const { key, mat, geometry } of groups) {
+    for (const { key, mat, geometry, door } of groups) {
       const set = materials.get(matKey(mat));
       if (!set) continue;
       kept.add(key);
@@ -272,6 +339,9 @@ export function VillageMeshes({ cells, toWorldPosition, gridWidth, gridDepth, re
       mesh.geometry = geometry;
       mesh.material = set.material;
       mesh.customDepthMaterial = set.depthMaterial;
+      mesh.userData.door = door
+        ? ({ doorId: key.slice(0, key.indexOf('|')), hinge: door } satisfies DoorMeshData)
+        : null;
     }
     const gone = [...meshes].filter(([key]) => !kept.has(key));
     if (gone.length > 0) parent.remove(...gone.map(([, mesh]) => mesh));

@@ -18,10 +18,11 @@ import * as THREE from 'three';
 import { varyColorBrightness } from '../../colorPalettes';
 import type { CellLookup } from '../../utils/cellUtils';
 import { boxGeo, cylinderGeo, roundedBoxGeo, sphereGeo, torusArcGeo } from '../geometryCache';
-import { mul, part, xform, type Part } from '../parts';
+import { asObstacle, mul, part, xform, type Part } from '../parts';
 import type { RenderSettings } from '../renderSettings';
 import { isGrassCell, pavedCells } from './pavingParts';
 import { slopeAt, type HeightFn } from './drape';
+import { HUMAN_SCALE } from '../../config/scale';
 
 /** Distance (Chebyshev, en cases) au pavage en deçà de laquelle l'herbe peut recevoir un objet. */
 const PROP_REACH = 2;
@@ -405,6 +406,8 @@ export function propsParts(
   const wells = wellCells(grass, eligible, paved, width, depth);
   const result: Array<{ x: number; z: number; parts: Part[] }> = [];
   const place = (x: number, z: number, parts: Part[], matrix: THREE.Matrix4) => {
+    // Dessinés pour une case de 2,8 m : posés à leur taille réelle (config/scale.ts).
+    matrix.multiply(new THREE.Matrix4().makeScale(HUMAN_SCALE, HUMAN_SCALE, HUMAN_SCALE));
     const heightAt = groundOf?.(x, z);
     if (heightAt) {
       const px = matrix.elements[12];
@@ -413,7 +416,8 @@ export function propsParts(
       matrix.premultiply(xform([0, heightAt(px, pz) - Math.hypot(sx, sz) * PROP_FOOT, 0]));
     }
     for (const p of parts) p.matrix.premultiply(matrix);
-    result.push({ x, z, parts });
+    // Puits, charrette, tas de bois… : un obstacle pour le promeneur.
+    result.push({ x, z, parts: asObstacle(parts) });
   };
 
   for (const k of wells) {

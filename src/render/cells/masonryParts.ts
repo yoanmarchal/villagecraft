@@ -24,10 +24,10 @@ import type { GridCell } from '../../types';
 import type { CellFace, CellLookup, CornerRadii } from '../../utils/cellUtils';
 import { getCell, getFaceCorners } from '../../utils/cellUtils';
 import { BlockType } from '../../types';
-import { roundedBoxGeo, stoneBlockGeo, STONE_EDGE } from '../geometryCache';
+import { ashlarStoneGeo, roundedBoxGeo, STONE_EDGE, STONE_JOINT } from '../geometryCache';
 import { mul, part, xform, type Part } from '../parts';
 
-/** Assises par étage (1 unité ≈ 2,8 m) : pierres d'une trentaine de centimètres de haut en moyenne. */
+/** Assises par étage : pierres d'une trentaine de centimètres de haut en moyenne pour une case de 2,8 m (le parement suit la case, config/scale.ts). */
 export const MASONRY_COURSES = 9;
 /**
  * Pierres hautes de deux assises : plus d'une sur trois, dans une assise sur
@@ -41,12 +41,18 @@ const TALL_CHANCE = 0.36;
 /**
  * Chaque pierre est un peu moins haute que son assise, de 0 à cette valeur,
  * en haut comme en bas : des joints d'épaisseur inégale, et des lits qui ne
- * se lisent plus comme un trait continu. Resserré (0,014 → 0,007) avec le
- * joint : l'utilisateur veut des pierres aussi jointives que possible.
+ * se lisent plus comme un trait continu. Resserré (0,014 → 0,007 → 0,0008)
+ * avec le joint : l'utilisateur veut des pierres aussi jointives que
+ * possible, et ce jeu faisait l'essentiel de l'épaisseur des lits. Assises
+ * inégales et pierres hautes empêchent toujours les lits de filer droit.
  */
-const BED_SLACK = 0.007;
-/** Largeur du joint de mortier entre deux pierres (et entre deux pierres d'angle, decorations.ts). */
-export const MASONRY_JOINT = 0.006;
+const BED_SLACK = 0.0008;
+/**
+ * Largeur du joint de mortier entre deux pierres du parement : `STONE_JOINT`,
+ * ~4 mm (0,006 → 0,0012 : l'utilisateur veut des pierres aussi jointives que
+ * possible). Les pierres d'angle gardent le leur (`QUOIN_JOINT`, decorations.ts).
+ */
+export const MASONRY_JOINT = STONE_JOINT;
 const JOINT = MASONRY_JOINT;
 /** Saillie des pierres sur le nu du mur : chacune la sienne, entre ces deux bornes. */
 const DEPTH_MIN = 0.014;
@@ -436,7 +442,8 @@ export function masonryParts(
             (piece.bottom ? STONE_EDGE.bottom : 0);
           parts.push({
             ...part(
-              stoneBlockGeo(mask),
+              // Taillée comme une pierre d'angle : arête arrondie d'un centimètre, face plate.
+              ashlarStoneGeo(mask, width, height, thickness),
               stoneColor,
               mat,
               xform(position, [0, rotation, 0], [width, height, thickness]),
@@ -498,9 +505,10 @@ export function stoneCourseParts(
       const height = rowHeight - JOINT;
       if (width < MIN_PIECE || height < MIN_PIECE) continue;
       const tone = palette[Math.floor(hash3(seed + i, row, 9) * PALETTE_SIZE) % PALETTE_SIZE];
+      const depth = d + 2 * WORK_PROUD;
       parts.push(
         part(
-          roundedBoxGeo(size(width), size(height), size(d + 2 * WORK_PROUD), 0.012, 2),
+          roundedBoxGeo(size(width), size(height), size(depth), 0.012, 2),
           tone,
           mat,
           mul(matrix, xform([(bounds[i] + bounds[i + 1]) / 2, -h / 2 + rowHeight * (row + 0.5), 0])),

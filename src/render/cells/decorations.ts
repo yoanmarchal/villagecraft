@@ -11,7 +11,10 @@ import { varyColorBrightness } from '../../colorPalettes';
 import { roundedBoxGeo } from '../geometryCache';
 import { part, xform, type Part } from '../parts';
 import type { CellContext } from './context';
-import { courseBed, MASONRY_COURSES, MASONRY_JOINT, type MasonryHole } from './masonryParts';
+import { courseBed, MASONRY_COURSES, type MasonryHole } from './masonryParts';
+
+/** Joint entre deux pierres d'angle : celui que l'utilisateur a validé (le parement, lui, est plus serré). */
+export const QUOIN_JOINT = 0.006;
 
 /**
  * True si une pierre placée en (x ± w/2) sur `face` empiéterait sur un quoin.
@@ -136,8 +139,8 @@ function quoinCorners(ctx: CellContext): QuoinCorner[] {
 function quoinStone(corner: QuoinCorner, fromRow: number, toRow: number, index: number, storey: number): QuoinStone {
   const { dx, dz, arc, radius, phi } = corner;
   const odd = ((index % 2) + 2) % 2 === 1;
-  const y0 = courseBed(fromRow) - storey - 0.5 + MASONRY_JOINT / 2;
-  const y1 = courseBed(toRow) - storey - 0.5 - MASONRY_JOINT / 2;
+  const y0 = courseBed(fromRow) - storey - 0.5 + QUOIN_JOINT / 2;
+  const y1 = courseBed(toRow) - storey - 0.5 - QUOIN_JOINT / 2;
   if (arc) return { dx, dz, y0, y1, kind: 'arc', radius, phi, width: odd ? ARC_QUOIN_NARROW : ARC_QUOIN_WIDE };
   return { dx, dz, y0, y1, kind: 'square', lenX: odd ? QUOIN_SHORT : QUOIN_LONG, lenZ: odd ? QUOIN_LONG : QUOIN_SHORT };
 }

@@ -65,6 +65,40 @@ export interface Part {
    * étiré très inégalement — voir `stoneBlockGeo`).
    */
   rigidNormals?: boolean;
+  /**
+   * Pièce mobile d'une porte (vantail, planches, pentures, anneau) : rendue
+   * à part, un groupe par porte, que la page fait pivoter (voir doors.ts).
+   */
+  door?: DoorHinge;
+  /**
+   * Meuble, cheminée, puits… : un obstacle pour le promeneur. Les parts qui
+   * partagent le même objet forment UNE boîte (leur emprise englobante), voir
+   * `asObstacle` et walk/cellColliders.ts.
+   */
+  obstacle?: Obstacle;
+}
+
+/** Identité d'un obstacle : les parts qui la partagent sont englobés ensemble. */
+export interface Obstacle {
+  readonly obstacle: true;
+}
+
+/** Fait des parts un seul obstacle pour le promeneur (leur boîte englobante). */
+export function asObstacle(parts: Part[]): Part[] {
+  const obstacle: Obstacle = { obstacle: true };
+  for (const p of parts) p.obstacle = obstacle;
+  return parts;
+}
+
+/**
+ * Charnière d'une porte, en repère de cellule (le collecteur la passe en
+ * monde) : axe vertical par `hinge`, ouverture vers l'intérieur dans le sens
+ * `sign` (rotation autour de +y) ; `center` = milieu de l'ouverture.
+ */
+export interface DoorHinge {
+  hinge: Vec3;
+  center: Vec3;
+  sign: 1 | -1;
 }
 
 /** Marque des parts comme intérieurs (voir `InteriorKind`). */

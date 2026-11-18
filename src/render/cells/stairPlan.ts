@@ -19,8 +19,10 @@
  * meubles s'écartent des emprises (`stairObstacles`). Ne dépend que de la
  * forme du village.
  *
- * Échelle : un étage fait une unité (~2,8 m) de plancher à plancher, soit
- * 16 contremarches de ~17,5 cm ; marches de ~21 cm, volées de ~56 cm de large.
+ * Échelle : un étage fait une unité de plancher à plancher (une case,
+ * `CELL_METERS`). Le nombre de contremarches en découle (~17,5 cm chacune,
+ * `TARGET_RISE`) : 16 pour une case de 2,8 m, 20 pour 3,36 m ; les volées
+ * s'allongent d'autant, leurs marches se raccourcissent pour tenir entre les murs.
  */
 
 import { BlockType, type GridCell } from '../../types';
@@ -28,23 +30,41 @@ import { FACE_ROTATION_Y, getCell, isGableRoofCell, type CellFace } from '../../
 import { findRooms } from '../../utils/roomLamps';
 import { offsetPolygon, polygonInside, polygonsOverlap, type Point, type Polygon } from '../../utils/polygon';
 import { FLOOR_T, innerContourXZ, OPENING_SIZES, WALL_T } from '../geometryCache';
+import { meters } from '../../config/scale';
 import type { CellContext } from './context';
 import { openingKindsOf } from './openings';
 
 /** Dessus du plancher (dalle FLOOR_T + lames de 8 mm, voir interiorParts). */
 export const STAIR_FLOOR_Y = -0.5 + FLOOR_T + 0.008;
-/** Contremarches d'un étage à l'autre : un étage fait exactement une unité. */
-export const STAIR_RISERS = 16;
-export const STAIR_RISE = 1 / STAIR_RISERS;
 /** Nu intérieur des murs. */
 export const STAIR_INNER = 0.5 - WALL_T;
 /** Jour entre un escalier et le nu du mur. */
 const WALL_CLEARANCE = 0.004;
+/** Hauteur de marche visée, à taille humaine. */
+const TARGET_RISE = meters(0.175);
+/** Marches dansantes du quart tournant d'un escalier en L. */
+const L_WINDERS = 3;
+/**
+ * Marches de chaque volée droite d'un escalier en L : deux volées et le quart
+ * tournant, plus la dernière contremarche jusqu'au plancher, rachètent l'étage.
+ */
+const L_FLIGHT = Math.max(4, Math.round((1 / TARGET_RISE - 1 - L_WINDERS) / 2));
+/** Contremarches d'un étage à l'autre : un étage fait exactement une unité. */
+export const STAIR_RISERS = 2 * L_FLIGHT + L_WINDERS + 1;
+export const STAIR_RISE = 1 / STAIR_RISERS;
 /**
  * Lèvre de dalle laissée entre une trémie et le nu du mur : la découpe ne
  * partage jamais le plan du mur (faces coplanaires en CSG).
  */
 const HOLE_INSET = 0.003;
+/** Garde-corps et mains courantes : hauteur au-dessus du plancher / du nez des marches (~85 cm, à taille humaine). */
+export const RAIL_H = meters(0.84);
+/**
+ * Passage laissé entre le garde-corps et le bord d'arrivée de la trémie :
+ * en haut de l'escalier, le palier entre trémie et mur peut ne faire que
+ * quelques centimètres — on contourne le bout du garde-corps par là.
+ */
+export const ARRIVAL_PASSAGE = meters(0.6);
 /** Marge autour d'une trémie vue d'en haut : son garde-corps (poteaux de 2,5 cm posés au bord). */
 export const RAILING_MARGIN = 0.035;
 
@@ -57,9 +77,17 @@ export const RAILING_MARGIN = 0.035;
  * contremarches dans le coin. La trémie couvre tout sauf les
  * `headroomTreads` premières marches, sous lesquelles il reste ~2 m.
  */
-export const L_STAIR = { width: 0.3, tread: 0.072, flightTreads: 6, winders: 3, headroomTreads: 2 } as const;
+export const L_STAIR = {
+  width: 0.3,
+  // Giron de ~20 cm à l'échelle de référence ; plus court s'il faut plus de marches pour tenir entre les murs.
+  tread: Math.min(0.072, (2 * STAIR_INNER - 0.3 - 0.03) / L_FLIGHT),
+  flightTreads: L_FLIGHT,
+  winders: L_WINDERS,
+  headroomTreads: 2,
+} as const;
 /**
- * Vis : 15 marches de 18° autour d'un noyau, soit 270° par étage ; le quart
+ * Vis : une marche par contremarche moins la dernière (15 de 18° pour une
+ * case de 2,8 m) autour d'un noyau, soit 270° par étage ; le quart
  * restant est le palier, au-dessus duquel la volée suivante repart au même
  * angle. La trémie (en part de tarte, noyau compris) commence après les
  * marches sous lesquelles on passe encore la tête (45°).
@@ -68,8 +96,8 @@ export const SPIRAL = {
   newelR: 0.04,
   outerR: 0.4,
   holeR: 0.405,
-  steps: 15,
-  stepAngle: Math.PI / 10,
+  steps: STAIR_RISERS - 1,
+  stepAngle: (3 * Math.PI) / 2 / (STAIR_RISERS - 1),
   holeFrom: Math.PI / 4,
   arc: (3 * Math.PI) / 2,
 } as const;

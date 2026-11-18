@@ -19,7 +19,7 @@
 
 import * as THREE from 'three';
 import type { GridCell } from '../types';
-import type { MaterialSpec } from './parts';
+import type { DoorHinge, MaterialSpec } from './parts';
 import type { Relief } from './relief';
 import type { RenderSettings } from './renderSettings';
 import { VillageChunkCache, type MergedGroup } from './buildVillage';
@@ -67,7 +67,9 @@ export interface WorkerRequest {
 /** Message worker → page : chaque chunk, repris (`arrays` absent) ou refusionné. */
 export interface WorkerResponse {
   id: number;
-  groups: Array<{ key: string; mat: MaterialSpec; arrays?: GroupArrays }>;
+  groups: Array<{ key: string; mat: MaterialSpec; arrays?: GroupArrays; door?: DoorHinge }>;
+  /** Volumes de collision du promeneur (monde, 6 nombres par boîte, voir walk/cellColliders.ts). */
+  colliders: Float32Array;
 }
 
 /** Échantillonne le repère monde d'une grille (fonction affine) en données transmissibles. */
@@ -130,16 +132,21 @@ export class VillageBuildHost {
       relief: this.relief ?? undefined,
     });
     const buffers: ArrayBuffer[] = [];
+    // Le cache recrée ce tableau à chaque construction : il peut partir sans copie.
+    const colliders = this.cache.colliders;
+    if (transfer) buffers.push(colliders.buffer);
     const response: WorkerResponse = {
       id: request.id,
-      groups: groups.map(({ key, mat, geometry }) => {
+      groups: groups.map(({ key, mat, geometry, door }) => {
+        const extra = door ? { door } : {};
         // Déjà envoyé : la page a cette géométrie (ses tableaux ont même pu être transférés).
-        if (this.sent.has(geometry)) return { key, mat };
+        if (this.sent.has(geometry)) return { key, mat, ...extra };
         this.sent.add(geometry);
         const { arrays, transfer: list } = groupArrays(geometry);
         if (transfer) buffers.push(...list);
-        return { key, mat, arrays };
+        return { key, mat, arrays, ...extra };
       }),
+      colliders,
     };
     return { response, transfer: buffers };
   }
@@ -162,10 +169,11 @@ export function retimeSpawns(spawns: Float32Array, sentAt: number, delay: number
   return spawns.map((t) => (t > from ? t + delay : t));
 }
 
-/** Demande livrée : celle que reflètent les groupes, et le retard de livraison (s). */
+/** Demande livrée : celle que reflètent les groupes, le retard de livraison (s), les volumes de collision. */
 export interface BuildDelivery {
   request: BuildRequest;
   delay: number;
+  colliders: Float32Array;
 }
 
 /** Côté page : envoie les demandes (une à la fois, la plus récente) et reconstruit les groupes. */
@@ -235,17 +243,17 @@ export class VillageBuildClient {
     const { request, sentAt } = this.inflight!;
     const delay = performance.now() / 1000 - sentAt;
     const next = new Map<string, THREE.BufferGeometry>();
-    const groups: MergedGroup[] = response.groups.map(({ key, mat, arrays }) => {
+    const groups: MergedGroup[] = response.groups.map(({ key, mat, arrays, door }) => {
       const geometry = arrays
         ? groupGeometry({ ...arrays, aSpawn: retimeSpawns(arrays.aSpawn, sentAt, delay) })
         : this.geometries.get(key)!;
       next.set(key, geometry);
-      return { key, mat, geometry };
+      return { key, mat, geometry, ...(door ? { door } : {}) };
     });
     this.geometries = next;
     this.busy = false;
     this.inflight = null;
-    this.onResult(groups, { request, delay });
+    this.onResult(groups, { request, delay, colliders: response.colliders });
     this.flush();
   }
 }

@@ -7,7 +7,7 @@ import { useControlStore } from '../../store/controlStore';
 import type { GridCell } from '../../types';
 import type { Part } from '../parts';
 import type { CellContext } from './context';
-import { MASONRY_JOINT } from './masonryParts';
+import { QUOIN_JOINT } from './decorations';
 
 // Intercepte, pendant une vraie construction, les chaînages et le parement de chaque cellule.
 const quoins = new Map<GridCell, Part[]>();
@@ -94,13 +94,13 @@ describe('quoins', () => {
       expect(stones.length).toBe(4);
       const bottom = stones[0].centre.y + stones[0].box.min.y;
       const top = stones[stones.length - 1].centre.y + stones[stones.length - 1].box.max.y;
-      expect(bottom).toBeLessThan(-0.5 + MASONRY_JOINT);
-      expect(top).toBeGreaterThan(0.5 - MASONRY_JOINT);
+      expect(bottom).toBeLessThan(-0.5 + QUOIN_JOINT);
+      expect(top).toBeGreaterThan(0.5 - QUOIN_JOINT);
       for (let i = 1; i < stones.length; i += 1) {
         const gap = stones[i].centre.y + stones[i].box.min.y - (stones[i - 1].centre.y + stones[i - 1].box.max.y);
         // Seulement un joint entre deux pierres d'angle.
         expect(gap).toBeGreaterThan(0);
-        expect(gap).toBeLessThan(MASONRY_JOINT + 0.001);
+        expect(gap).toBeLessThan(QUOIN_JOINT + 0.001);
         // Harpe : la longue passe d'une face à l'autre.
         const width = (s: (typeof stones)[number]) => s.box.max.x - s.box.min.x;
         expect(Math.sign(width(stones[i]) - width(stones[i - 1]))).not.toBe(0);
@@ -185,13 +185,13 @@ describe('quoins', () => {
         const bottom = stones[0].centre.y + stones[0].box.min.y;
         const top = stones[stones.length - 1].centre.y + stones[stones.length - 1].box.max.y;
         // Du terrain au pied de l'angle jusqu'au plafond du rez-de-chaussée, sans trou.
-        expect(top).toBeGreaterThan(0.5 - MASONRY_JOINT);
+        expect(top).toBeGreaterThan(0.5 - QUOIN_JOINT);
         // (au ras du pied, la colonne commence au pied, à un demi-joint près).
-        expect(bottom).toBeLessThan(Math.max(ctx.groundAt!(sx * 0.5, sz * 0.5), -0.5) + MASONRY_JOINT);
+        expect(bottom).toBeLessThan(Math.max(ctx.groundAt!(sx * 0.5, sz * 0.5), -0.5) + QUOIN_JOINT);
         for (let i = 1; i < stones.length; i += 1) {
           const gap = stones[i].centre.y + stones[i].box.min.y - (stones[i - 1].centre.y + stones[i - 1].box.max.y);
           expect(gap).toBeGreaterThan(0);
-          expect(gap).toBeLessThan(MASONRY_JOINT + 0.001);
+          expect(gap).toBeLessThan(QUOIN_JOINT + 0.001);
         }
         if (bottom < -0.5 - 0.1) plinths += 1;
       }

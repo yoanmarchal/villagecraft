@@ -51,77 +51,87 @@ const SKIN = 1e-4;
 const SUPPORT_EPS = 1e-3;
 /** Part de la vitesse visée que l'on peut encore imposer en l'air. */
 const AIR_CONTROL = 0.25;
+/**
+ * Demi-côté de l'appui : on se tient sur ce qui est sous le centre des
+ * pieds, la pointe peut dépasser d'une marche. Se poser sur le plus haut
+ * volume sous toute l'emprise faisait monter deux marches trop tôt — et
+ * buter du crâne contre le bord de la trémie.
+ */
+const FOOT = 0.02;
+/** Tête : plus étroite que les épaules (passe sous le bord d'une trémie), sur cette hauteur. */
+const HEAD_R = WALKER_RADIUS * 0.4;
+const HEAD_H = WALKER_HEIGHT * 0.16;
 
 const R = WALKER_RADIUS;
 const H = WALKER_HEIGHT;
 
-/** Le pavé du promeneur aux pieds (x, y, z) recoupe-t-il `box` ? */
-function overlaps(box: Aabb, x: number, y: number, z: number, margin = 0): boolean {
-  return (
-    box.min[0] < x + R + margin &&
-    box.max[0] > x - R - margin &&
-    box.min[2] < z + R + margin &&
-    box.max[2] > z - R - margin &&
-    box.min[1] < y + H &&
-    box.max[1] > y + SUPPORT_EPS
-  );
+const across = (box: Aabb, x: number, z: number, r: number) =>
+  box.min[0] < x + r && box.max[0] > x - r && box.min[2] < z + r && box.max[2] > z - r;
+
+/**
+ * Rayon (en plan) de la partie du promeneur aux pieds (x, y, z) que `box`
+ * arrête — le corps (R) ou seulement la tête (HEAD_R) — ou 0 s'il passe.
+ * Un volume qui ne dépasse pas `STEP_HEIGHT` au-dessus des pieds n'arrête
+ * jamais : c'est une marche, on la monte (ou la pointe la surplombe).
+ */
+function blockingRadius(box: Aabb, x: number, y: number, z: number, margin = 0): number {
+  if (box.max[1] <= y + STEP_HEIGHT || box.min[1] >= y + H) return 0;
+  if (box.min[1] < y + H - HEAD_H && across(box, x, z, R + margin)) return R + margin;
+  if (box.max[1] > y + H - HEAD_H && across(box, x, z, HEAD_R + margin)) return HEAD_R + margin;
+  return 0;
 }
 
 const nearby = (world: WalkWorld, x: number, z: number, margin: number) =>
   world.solidsIn(x - R - margin, z - R - margin, x + R + margin, z + R + margin);
 
-/** Aucun volume ne recoupe le promeneur aux pieds (x, y, z), ni ne s'en approche à moins de `margin` en plan. */
+/** Rien n'arrête le promeneur aux pieds (x, y, z), ni ne l'approche à moins de `margin` en plan. */
 export function isFree(world: WalkWorld, x: number, y: number, z: number, margin = 0): boolean {
-  return nearby(world, x, z, margin).every((box) => !overlaps(box, x, y, z, margin));
+  return nearby(world, x, z, margin).every((box) => blockingRadius(box, x, y, z, margin) === 0);
 }
 
 /**
- * Hauteur sur laquelle reposent des pieds au niveau `y` : le terrain sous le
- * centre, ou le dessus d'un volume sous l'emprise qui ne dépasse pas `y`.
+ * Hauteur sur laquelle se tiennent des pieds au niveau `y` : le terrain sous
+ * le centre, ou le plus haut volume sous le centre qui ne dépasse pas `y` de
+ * plus d'une marche.
  */
 function supportHeight(world: WalkWorld, x: number, y: number, z: number, solids: Aabb[]): number {
   let floor = world.groundAt(x, z);
   for (const box of solids) {
     const top = box.max[1];
-    if (top <= y + SUPPORT_EPS && top > floor && box.min[0] < x + R && box.max[0] > x - R) {
-      if (box.min[2] < z + R && box.max[2] > z - R) floor = top;
-    }
+    if (top <= y + STEP_HEIGHT && top > floor && across(box, x, z, FOOT)) floor = top;
   }
   return floor;
 }
 
 /**
- * Déplace `position` de `delta` sur l'axe `axis` (0 = x, 2 = z) : monte une
- * marche basse, s'arrête contre un obstacle. Retourne false si bloqué.
+ * Déplace `position` de `delta` sur l'axe `axis` (0 = x, 2 = z), s'arrête
+ * contre ce qui dépasse une marche — à la hauteur où l'on se tiendra là
+ * (marche montée : la tête doit passer). Retourne false si bloqué.
  */
 function moveAxis(world: WalkWorld, position: Vec3, axis: 0 | 2, delta: number, canStep: boolean): boolean {
   if (delta === 0) return true;
   const next: Vec3 = [position[0], position[1], position[2]];
   next[axis] += delta;
   const solids = nearby(world, next[0], next[2], 0);
-  const hits = solids.filter((box) => overlaps(box, next[0], next[1], next[2]));
-  if (hits.length === 0) {
-    position[axis] = next[axis];
-    return true;
-  }
-  // Marche : tous les obstacles sont assez bas, et la place est libre au-dessus.
-  const stepTop = Math.max(...hits.map((box) => box.max[1]));
-  if (
-    canStep &&
-    stepTop - position[1] <= STEP_HEIGHT &&
-    solids.every((box) => !overlaps(box, next[0], stepTop, next[2]))
-  ) {
-    position[axis] = next[axis];
-    position[1] = stepTop;
-    return true;
-  }
-  // Arrêt contre la face la plus proche dans le sens du mouvement.
+  const stand = canStep ? Math.max(next[1], supportHeight(world, next[0], next[1], next[2], solids)) : next[1];
   let limit = next[axis];
-  for (const box of hits) {
-    limit = delta > 0 ? Math.min(limit, box.min[axis] - R - SKIN) : Math.max(limit, box.max[axis] + R + SKIN);
+  let blocked = false;
+  for (const box of solids) {
+    const r = blockingRadius(box, next[0], stand, next[2]);
+    if (r === 0) continue;
+    blocked = true;
+    // Arrêt contre la face la plus proche dans le sens du mouvement.
+    limit = delta > 0 ? Math.min(limit, box.min[axis] - r - SKIN) : Math.max(limit, box.max[axis] + r + SKIN);
+  }
+  if (!blocked) {
+    position[axis] = next[axis];
+    return true;
   }
   // Jamais de recul : déjà au contact (ou coincé), on reste sur place.
-  position[axis] = delta > 0 ? Math.max(position[axis], limit) : Math.min(position[axis], limit);
+  position[axis] =
+    delta > 0
+      ? Math.max(position[axis], Math.min(limit, next[axis]))
+      : Math.min(position[axis], Math.max(limit, next[axis]));
   return false;
 }
 
@@ -163,7 +173,7 @@ function substep(world: WalkWorld, state: WalkerState, input: WalkInput, dt: num
   const solids = nearby(world, position[0], position[2], 0);
   if (velocity[1] > 0) {
     for (const box of solids) {
-      if (box.min[1] >= before + H - SUPPORT_EPS && overlaps(box, position[0], position[1], position[2])) {
+      if (box.min[1] >= before + H - SUPPORT_EPS && blockingRadius(box, position[0], position[1], position[2]) > 0) {
         position[1] = box.min[1] - H;
         velocity[1] = 0;
       }
@@ -240,7 +250,7 @@ export function createWalker(position: Vec3): WalkerState {
   return { position: [...position], velocity: [0, 0, 0], grounded: true };
 }
 
-/** Espace libre voulu devant soi à l'arrivée (~2,8 m). */
+/** Espace libre voulu devant soi à l'arrivée (une case). */
 const SPAWN_VIEW = 1;
 
 /**
@@ -268,4 +278,18 @@ export function clearHeading(world: WalkWorld, position: Vec3, preferredYaw: num
     if (best.free < needed || Math.cos(heading.yaw - preferredYaw) > Math.cos(best.yaw - preferredYaw)) best = heading;
   }
   return best.yaw;
+}
+
+/** Temps de réponse de la hauteur des yeux (s) : une marche montée ou descendue est amortie. */
+const EYE_RESPONSE = 0.08;
+
+/**
+ * Hauteur des yeux affichée : au sol, elle rejoint `target` en douceur (une
+ * marche d'escalier, ~17 cm d'un coup, faisait sauter l'image) ; en l'air,
+ * ou pour un écart plus grand qu'une marche (réapparition), elle le suit
+ * exactement — un saut ou une chute ne doivent pas traîner.
+ */
+export function easeEye(shown: number | null, target: number, grounded: boolean, dt: number): number {
+  if (shown === null || !grounded || Math.abs(target - shown) > STEP_HEIGHT * 1.5) return target;
+  return target + (shown - target) * Math.exp(-Math.max(dt, 0) / EYE_RESPONSE);
 }

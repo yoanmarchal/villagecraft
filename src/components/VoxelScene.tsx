@@ -11,7 +11,8 @@ import { Terrain } from './Terrain';
 import { TERRAIN_FINE_STEP } from '../render/terrainMesh';
 import { Trees } from './Trees';
 import { WalkControls } from './WalkControls';
-import { createVillageWorld } from '../walk/walkWorld';
+import { createBoxWorld } from '../walk/walkWorld';
+import { treeTrunkBoxes } from '../walk/treeColliders';
 import { Bloom, EffectComposer, Noise, ToneMapping, Vignette } from '@react-three/postprocessing';
 import { ColorGrade } from './ColorGrade';
 import { ToneMappingMode } from 'postprocessing';
@@ -21,7 +22,7 @@ import { useUiStore } from '../store/uiStore';
 import { GRID_HEIGHT, initialCameraScale, sceneScale, shadowCameraHalfSize } from '../config/gridConfig';
 import { raycastVoxels, targetColumn } from '../utils/voxelRaycast';
 import { createGround, raycastGround } from '../render/ground';
-import { groundHeight } from '../render/landscape';
+import { groundHeight, scatterTrees } from '../render/landscape';
 import { isFlatRelief, reliefBound, reliefFor, reliefHeight, type Relief } from '../render/relief';
 import type { TerrainShape } from '../terrainShape';
 
@@ -369,21 +370,24 @@ export function VoxelScene({
     () => (x: number, z: number) => groundHeight(x, z, flatRadius, shownRelief),
     [flatRadius, shownRelief],
   );
-  // Monde de collision du promeneur : seulement en promenade (walk/walkWorld.ts).
-  const walkWorld = useMemo(
+  // Monde de collision du promeneur : les volumes livrés par le worker avec
+  // le village affiché (walk/cellColliders.ts), seulement en promenade.
+  const [colliders, setColliders] = useState<Float32Array>(() => new Float32Array(0));
+  // Troncs d'arbres : les mêmes que Trees (scatterTrees, déterministe).
+  const trunks = useMemo(
     () =>
       walking
-        ? createVillageWorld({
-            cells,
-            gridWidth,
-            gridDepth,
-            baseAt: ground.baseAt,
-            groundAt: cameraFloor,
-            reach: flatRadius,
-          })
-        : null,
-    [walking, cells, gridWidth, gridDepth, ground, cameraFloor, flatRadius],
+        ? treeTrunkBoxes(scatterTrees(Math.max(gridWidth, gridDepth), flatRadius, landscapeReach, shownRelief))
+        : [],
+    [walking, gridWidth, gridDepth, flatRadius, landscapeReach, shownRelief],
   );
+  const walkWorld = useMemo(() => {
+    if (!walking) return null;
+    const boxes = new Float32Array(colliders.length + trunks.length);
+    boxes.set(colliders);
+    boxes.set(trunks, colliders.length);
+    return createBoxWorld(boxes, cameraFloor, flatRadius);
+  }, [walking, colliders, trunks, cameraFloor, flatRadius]);
 
   // N8AO (~85 kB gzip) n'est chargé qu'une fois l'effet activé. Pas de
   // React.lazy + Suspense ici : l'EffectComposer ne recalcule ses passes que
@@ -581,6 +585,7 @@ export function VoxelScene({
         gridDepth={gridDepth}
         relief={relief}
         onPresent={setShownRelief}
+        onColliders={setColliders}
       />
       <PlacementPreview
         previewCell={walking ? null : previewCell}

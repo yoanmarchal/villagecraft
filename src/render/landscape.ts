@@ -61,6 +61,21 @@ export interface TreeInstance {
   tint: number;
 }
 
+/**
+ * Tronc de chaque essence, dans le repère de l'arbre (avant mise à
+ * l'échelle) : rayons au pied et en tête, hauteur. Partagé par le rendu
+ * (Trees.tsx) et les collisions du promeneur (walk/treeColliders.ts).
+ */
+export const TREE_TRUNKS: Record<TreeKind, { radius: number; top: number; height: number }> = {
+  broadleaf: { radius: 0.15, top: 0.075, height: 1.25 },
+  conifer: { radius: 0.1, top: 0.045, height: 1 },
+};
+
+/** Échelle d'un arbre : horizontale (`girth`, son tronc s'épaissit avec la teinte) et verticale. */
+export function treeScale(tree: Pick<TreeInstance, 'kind' | 'scale' | 'tint'>): { girth: number; height: number } {
+  return { girth: tree.scale * (0.85 + tree.tint * 0.3), height: tree.scale * (tree.kind === 'conifer' ? 1.25 : 1) };
+}
+
 /** Les arbres ne s'approchent pas à moins de cette distance (en cases) du bord de la grille. */
 export const TREE_CLEARANCE = 2.5;
 /** Plafond du nombre d'arbres, quelle que soit l'étendue du paysage. */
