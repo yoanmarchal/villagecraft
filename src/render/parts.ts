@@ -65,6 +65,22 @@ export interface Part {
    * étiré très inégalement — voir `stoneBlockGeo`).
    */
   rigidNormals?: boolean;
+  /**
+   * Pièce mobile d'une porte (vantail, planches, pentures, anneau) : rendue
+   * à part, un groupe par porte, que la page fait pivoter (voir doors.ts).
+   */
+  door?: DoorHinge;
+}
+
+/**
+ * Charnière d'une porte, en repère de cellule (le collecteur la passe en
+ * monde) : axe vertical par `hinge`, ouverture vers l'intérieur dans le sens
+ * `sign` (rotation autour de +y) ; `center` = milieu de l'ouverture.
+ */
+export interface DoorHinge {
+  hinge: Vec3;
+  center: Vec3;
+  sign: 1 | -1;
 }
 
 /** Marque des parts comme intérieurs (voir `InteriorKind`). */

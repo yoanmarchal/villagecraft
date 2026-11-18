@@ -60,7 +60,10 @@ describe('buildVillage', () => {
     const groups = build(sampleVillage(), SETTINGS);
 
     expect(groups.length).toBeGreaterThan(0);
-    expect(groups.length).toBeLessThan(20);
+    // Un groupe par matériau, plus les pièces mobiles de chaque porte (bois, fer : deux groupes par porte).
+    const doors = groups.filter((group) => group.door);
+    expect(groups.length - doors.length).toBeLessThan(20);
+    expect(doors.length).toBeLessThanOrEqual(2 * new Set(doors.map((group) => group.key.split('|')[0])).size);
     for (const { geometry } of groups) {
       expect(geometry.getAttribute('position').count).toBeGreaterThan(0);
       expect(attr(geometry, 'position').every(Number.isFinite)).toBe(true);

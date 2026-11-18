@@ -3,16 +3,11 @@
  * volumes solides, en coordonnées monde.
  *
  * Pur (ni three, ni React, ni store) : `walker.ts` ne connaît que
- * l'interface `WalkWorld`, ce qui permet de la tester avec un monde fait
- * main et, plus tard, d'affiner les volumes sans toucher à la physique.
- *
- * Première version : chaque colonne bâtie est un bloc plein (on fait le tour
- * des maisons). Pour entrer dans les pièces, `solidsIn` rendra plutôt les
- * murs de chaque coque creuse (épaisseur `WALL_T`), percés aux portes, et
- * les escaliers comme une suite de marches — voir docs/walk.md.
+ * l'interface `WalkWorld`, ce qui permet de la tester avec un monde fait main.
+ * Les volumes du village viennent du worker de construction, qui les tire
+ * des mêmes `CellContext` que la géométrie (cellColliders.ts) : murs,
+ * planchers percés des trémies, portes, escaliers.
  */
-
-import type { GridCell } from '../types';
 
 export type Vec3 = [number, number, number];
 
@@ -31,74 +26,45 @@ export interface WalkWorld {
   reach: number;
 }
 
-/** Profondeur sous le niveau du bâtiment jusqu'où descend le soubassement d'une case posée au sol. */
-const PLINTH_DEPTH = 50;
-
-export interface VillageWorldOptions {
-  cells: readonly Pick<GridCell, 'x' | 'y' | 'z'>[];
-  gridWidth: number;
-  gridDepth: number;
-  /** Niveau (y monde du pied) de la colonne (x, z) de la grille (ground.ts). */
-  baseAt: (x: number, z: number) => number;
-  groundAt: (x: number, z: number) => number;
-  reach: number;
-}
+/** Côté des cases de l'index spatial (unités monde). */
+const BUCKET = 1;
 
 /**
- * Monde du village : une boîte par suite de cases empilées d'une colonne. La
- * case (x, y, z) occupe [x − W/2, x − W/2 + 1] × [b + y, b + y + 1] ×
- * [z − D/2, z − D/2 + 1], b = `baseAt(x, z)` ; celle du bas d'une colonne
- * posée au sol descend jusque sous le terrain (soubassement, comme dans
- * voxelRaycast.ts). Une arche, qui ne touche pas le sol, laisse passer dessous.
+ * Monde fait de boîtes (6 nombres chacune, min puis max : le format que
+ * livre le worker), indexées par cases de `BUCKET` en plan.
  */
-export function createVillageWorld({
-  cells,
-  gridWidth,
-  gridDepth,
-  baseAt,
-  groundAt,
-  reach,
-}: VillageWorldOptions): WalkWorld {
-  const columns = new Map<number, Aabb[]>();
-  const levels = new Map<number, number[]>();
-  for (const { x, y, z } of cells) {
-    const key = x + gridWidth * z;
-    const list = levels.get(key);
-    if (list) list.push(y);
-    else levels.set(key, [y]);
-  }
-  for (const [key, ys] of levels) {
-    const x = key % gridWidth;
-    const z = (key - x) / gridWidth;
-    const base = baseAt(x, z);
-    const minX = x - gridWidth / 2;
-    const minZ = z - gridDepth / 2;
-    ys.sort((a, b) => a - b);
-    const boxes: Aabb[] = [];
-    let start = ys[0];
-    for (let i = 1; i <= ys.length; i += 1) {
-      if (i < ys.length && ys[i] === ys[i - 1] + 1) continue;
-      const end = ys[i - 1] + 1;
-      const bottom = start === 0 ? base - PLINTH_DEPTH : base + start;
-      boxes.push({ min: [minX, bottom, minZ], max: [minX + 1, base + end, minZ + 1] });
-      if (i < ys.length) start = ys[i];
+export function createBoxWorld(
+  boxes: ArrayLike<number>,
+  groundAt: (x: number, z: number) => number,
+  reach: number,
+): WalkWorld {
+  const buckets = new Map<number, Aabb[]>();
+  const keyOf = (i: number, j: number) => i * 4096 + j;
+  for (let b = 0; b + 5 < boxes.length; b += 6) {
+    const box: Aabb = {
+      min: [boxes[b], boxes[b + 1], boxes[b + 2]],
+      max: [boxes[b + 3], boxes[b + 4], boxes[b + 5]],
+    };
+    for (let i = Math.floor(box.min[0] / BUCKET); i <= Math.floor(box.max[0] / BUCKET); i += 1) {
+      for (let j = Math.floor(box.min[2] / BUCKET); j <= Math.floor(box.max[2] / BUCKET); j += 1) {
+        const key = keyOf(i, j);
+        const list = buckets.get(key);
+        if (list) list.push(box);
+        else buckets.set(key, [box]);
+      }
     }
-    columns.set(key, boxes);
   }
 
   const solidsIn = (minX: number, minZ: number, maxX: number, maxZ: number) => {
-    const x0 = Math.max(0, Math.floor(minX + gridWidth / 2));
-    const x1 = Math.min(gridWidth - 1, Math.floor(maxX + gridWidth / 2));
-    const z0 = Math.max(0, Math.floor(minZ + gridDepth / 2));
-    const z1 = Math.min(gridDepth - 1, Math.floor(maxZ + gridDepth / 2));
-    const found: Aabb[] = [];
-    for (let z = z0; z <= z1; z += 1) {
-      for (let x = x0; x <= x1; x += 1) {
-        const boxes = columns.get(x + gridWidth * z);
-        if (boxes) found.push(...boxes);
+    const found = new Set<Aabb>();
+    for (let i = Math.floor(minX / BUCKET); i <= Math.floor(maxX / BUCKET); i += 1) {
+      for (let j = Math.floor(minZ / BUCKET); j <= Math.floor(maxZ / BUCKET); j += 1) {
+        for (const box of buckets.get(keyOf(i, j)) ?? []) {
+          if (box.min[0] <= maxX && box.max[0] >= minX && box.min[2] <= maxZ && box.max[2] >= minZ) found.add(box);
+        }
       }
     }
-    return found;
+    return [...found];
   };
 
   return { groundAt, solidsIn, reach };

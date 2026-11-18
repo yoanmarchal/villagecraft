@@ -11,7 +11,7 @@ import { Terrain } from './Terrain';
 import { TERRAIN_FINE_STEP } from '../render/terrainMesh';
 import { Trees } from './Trees';
 import { WalkControls } from './WalkControls';
-import { createVillageWorld } from '../walk/walkWorld';
+import { createBoxWorld } from '../walk/walkWorld';
 import { Bloom, EffectComposer, Noise, ToneMapping, Vignette } from '@react-three/postprocessing';
 import { ColorGrade } from './ColorGrade';
 import { ToneMappingMode } from 'postprocessing';
@@ -369,20 +369,12 @@ export function VoxelScene({
     () => (x: number, z: number) => groundHeight(x, z, flatRadius, shownRelief),
     [flatRadius, shownRelief],
   );
-  // Monde de collision du promeneur : seulement en promenade (walk/walkWorld.ts).
+  // Monde de collision du promeneur : les volumes livrés par le worker avec
+  // le village affiché (walk/cellColliders.ts), seulement en promenade.
+  const [colliders, setColliders] = useState<Float32Array>(() => new Float32Array(0));
   const walkWorld = useMemo(
-    () =>
-      walking
-        ? createVillageWorld({
-            cells,
-            gridWidth,
-            gridDepth,
-            baseAt: ground.baseAt,
-            groundAt: cameraFloor,
-            reach: flatRadius,
-          })
-        : null,
-    [walking, cells, gridWidth, gridDepth, ground, cameraFloor, flatRadius],
+    () => (walking ? createBoxWorld(colliders, cameraFloor, flatRadius) : null),
+    [walking, colliders, cameraFloor, flatRadius],
   );
 
   // N8AO (~85 kB gzip) n'est chargé qu'une fois l'effet activé. Pas de
@@ -581,6 +573,7 @@ export function VoxelScene({
         gridDepth={gridDepth}
         relief={relief}
         onPresent={setShownRelief}
+        onColliders={setColliders}
       />
       <PlacementPreview
         previewCell={walking ? null : previewCell}

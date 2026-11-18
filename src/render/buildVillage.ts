@@ -31,7 +31,7 @@ import {
   type CellLookup,
 } from '../utils/cellUtils';
 import { assignRoomLamps, type RoomLamp } from '../utils/roomLamps';
-import { matKey, type MaterialSpec, type Part, type PositionedPart } from './parts';
+import { matKey, type DoorHinge, type MaterialSpec, type Part, type PositionedPart, type Vec3 } from './parts';
 import { ROOF_DROP_HEIGHT } from './growMaterial';
 import type { CellContext } from './cells/context';
 import { standardCellParts } from './cells/standardCellParts';
@@ -47,11 +47,14 @@ import { plinthParts } from './cells/plinthParts';
 import { createGround, type Ground } from './ground';
 import { isFlatRelief, reliefFor, type Relief } from './relief';
 import type { RenderSettings } from './renderSettings';
+import { cellColliders } from '../walk/cellColliders';
 
 export interface MergedGroup {
   key: string;
   mat: MaterialSpec;
   geometry: THREE.BufferGeometry;
+  /** Pièces mobiles d'une porte (un groupe par porte et matériau) : charnière en monde, voir doors.ts. */
+  door?: DoorHinge;
 }
 
 /** Emprise au sol de la grille, pour paver les ruelles autour des bâtiments. */
@@ -72,7 +75,24 @@ interface CollectedPart extends PositionedPart {
   x: number;
   z: number;
   key: string;
+  /** Porte dont le part est une pièce mobile (identifiant de sa cellule) : groupe à part. */
+  doorId?: string;
 }
+
+/** Pièces d'un bâtiment et ses volumes de collision (monde, 6 nombres par boîte : min puis max). */
+interface BuildingOutput {
+  parts: CollectedPart[];
+  colliders: number[];
+}
+
+/** Ce que rassemble le collecteur : les pièces du village, et les volumes de collision du promeneur. */
+interface Collected {
+  parts: CollectedPart[];
+  colliders: number[];
+}
+
+/** Groupe de fusion d'un part : son matériau, et sa porte si c'est une pièce mobile. */
+const groupKey = (p: CollectedPart) => (p.doorId ? `door:${p.doorId}|${p.key}` : p.key);
 
 export function buildVillage(
   cells: GridCell[],
@@ -80,19 +100,20 @@ export function buildVillage(
   settings: RenderSettings,
   ground?: GroundExtent,
 ): MergedGroup[] {
-  const groups = new Map<string, { mat: MaterialSpec; parts: PositionedPart[] }>();
-  for (const p of collectVillageParts(cells, toWorldPosition, settings, ground)) {
-    let group = groups.get(p.key);
+  const groups = new Map<string, { mat: MaterialSpec; parts: PositionedPart[]; door?: DoorHinge }>();
+  for (const p of collectVillageParts(cells, toWorldPosition, settings, ground).parts) {
+    const key = groupKey(p);
+    let group = groups.get(key);
     if (!group) {
-      group = { mat: p.mat, parts: [] };
-      groups.set(p.key, group);
+      group = { mat: p.mat, parts: [], door: p.door };
+      groups.set(key, group);
     }
     group.parts.push(p);
   }
 
   const merged: MergedGroup[] = [];
-  for (const [key, { mat, parts }] of groups) {
-    merged.push({ key, mat, geometry: mergeParts(parts) });
+  for (const [key, { mat, parts, door }] of groups) {
+    merged.push({ key, mat, geometry: mergeParts(parts), ...(door ? { door } : {}) });
   }
   return merged;
 }
@@ -116,6 +137,8 @@ export const CHUNK_SIZE = 4;
 export class VillageChunkCache {
   private chunks = new Map<string, { hash: string; group: MergedGroup }>();
   private buildings: BuildingCache = { environment: '', buildings: new Map(), paving: new Map() };
+  /** Volumes de collision du promeneur au dernier `build` (monde, 6 nombres par boîte, voir cellColliders). */
+  colliders = new Float32Array(0);
 
   build(cells: GridCell[], toWorldPosition: ToWorld, settings: RenderSettings, ground?: GroundExtent): MergedGroup[] {
     // Réglages, relief ou repère monde changés : tous les bâtiments sont à refaire.
@@ -124,8 +147,11 @@ export class VillageChunkCache {
       this.buildings = { environment, buildings: new Map(), paving: new Map() };
 
     const buckets = new Map<string, CollectedPart[]>();
-    for (const p of collectVillageParts(cells, toWorldPosition, settings, ground, this.buildings)) {
-      const id = `${Math.floor(p.x / CHUNK_SIZE)},${Math.floor(p.z / CHUNK_SIZE)}|${p.key}`;
+    const collected = collectVillageParts(cells, toWorldPosition, settings, ground, this.buildings);
+    this.colliders = new Float32Array(collected.colliders);
+    for (const p of collected.parts) {
+      // Les pièces mobiles d'une porte forment leur propre groupe (la page les fait pivoter).
+      const id = p.doorId ? groupKey(p) : `${Math.floor(p.x / CHUNK_SIZE)},${Math.floor(p.z / CHUNK_SIZE)}|${p.key}`;
       let bucket = buckets.get(id);
       if (!bucket) {
         bucket = [];
@@ -141,7 +167,12 @@ export class VillageChunkCache {
       const group =
         previous && previous.hash === hash
           ? previous.group
-          : { key: id, mat: parts[0].mat, geometry: mergeParts(parts) };
+          : {
+              key: id,
+              mat: parts[0].mat,
+              geometry: mergeParts(parts),
+              ...(parts[0].door ? { door: parts[0].door } : {}),
+            };
       next.set(id, { hash, group });
     }
     this.chunks = next;
@@ -178,6 +209,7 @@ function hashParts(parts: CollectedPart[]): string {
     num(p.lampDx);
     num(p.lampDz);
     mix(p.rigidNormals ? 1 : 0);
+    if (p.door) for (const v of [...p.door.hinge, ...p.door.center, p.door.sign]) num(v);
   }
   return `${parts.length}:${(h1 >>> 0).toString(36)}:${(h2 >>> 0).toString(36)}`;
 }
@@ -189,7 +221,7 @@ function hashParts(parts: CollectedPart[]): string {
  */
 interface BuildingCache {
   environment: string;
-  buildings: Map<string, CollectedPart[]>;
+  buildings: Map<string, BuildingOutput>;
   /** Pavés par case (position et signature de ses voisines, voir pavingParts). */
   paving: Map<string, CollectedPart[]>;
 }
@@ -315,9 +347,10 @@ function collectVillageParts(
   settings: RenderSettings,
   ground?: GroundExtent,
   cache?: BuildingCache,
-): CollectedPart[] {
+): Collected {
   const lookup = makeCellLookup(cells);
   const collected: CollectedPart[] = [];
+  const colliders: number[] = [];
   // Un chandelier par pièce (ou par zone d'une grande salle), pas par cellule.
   const roomLamps = assignRoomLamps(cells, lookup);
   // Terrain en pente : niveau de chaque bâtiment et hauteur du sol (ground.ts).
@@ -351,18 +384,41 @@ function collectVillageParts(
     fallHeight: number,
     lamp: RoomLamp | undefined,
   ) => {
+    // Charnières de porte en monde : une par porte (ses pièces mobiles partagent la même).
+    const doors = new Map<DoorHinge, DoorHinge>();
+    const toWorld = ([a, b, c]: Vec3): Vec3 => [a + cellCenter.x, b + cellCenter.y, c + cellCenter.z];
     for (const p of parts) {
       p.matrix.premultiply(translation);
       const interiorMode = !lamp || !p.interior ? 0 : p.interior === 'shell' ? 1 : 2;
       const lampDx = lamp?.dx ?? 0;
       const lampDz = lamp?.dz ?? 0;
-      into.push({ ...p, x, z, key: matKey(p.mat), cellCenter, spawn, fallHeight, interiorMode, lampDx, lampDz });
+      let door: DoorHinge | undefined;
+      if (p.door) {
+        door = doors.get(p.door) ?? { hinge: toWorld(p.door.hinge), center: toWorld(p.door.center), sign: p.door.sign };
+        doors.set(p.door, door);
+      }
+      const doorId = door ? `${x},${Math.round(cellCenter.y * 100)},${z}` : undefined;
+      into.push({
+        ...p,
+        door,
+        doorId,
+        x,
+        z,
+        key: matKey(p.mat),
+        cellCenter,
+        spawn,
+        fallHeight,
+        interiorMode,
+        lampDx,
+        lampDz,
+      });
     }
   };
 
   /** Pièces d'un bâtiment : contextes, plans (portes, escaliers, cheminées, conduits), puis builders. */
-  const buildingParts = (buildingCells: GridCell[]): CollectedPart[] => {
+  const buildingParts = (buildingCells: GridCell[]): BuildingOutput => {
     const out: CollectedPart[] = [];
+    const solids: number[] = [];
     // Contextes d'abord : les cheminées se décident par pièce, avant les murs
     // (elles peuvent prendre la place d'une fenêtre).
     const contexts = buildingCells.map((cell): CellContext => {
@@ -444,19 +500,24 @@ function collectVillageParts(
       const fallHeight = cell.type === BlockType.Roof ? ROOF_DROP_HEIGHT : 0;
 
       addParts(out, cellParts, cell.x, cell.z, cellCenter, spawn, fallHeight, lamp);
+      // Volumes de collision du promeneur, au même endroit (walk/cellColliders.ts).
+      for (const [x0, y0, z0, x1, y1, z1] of cellColliders(ctx)) {
+        solids.push(x0 + wx, y0 + wy, z0 + wz, x1 + wx, y1 + wy, z1 + wz);
+      }
     }
-    return out;
+    return { parts: out, colliders: solids };
   };
 
   // Bâtiment par bâtiment : un bâtiment inchangé (lui et l'anneau de cases qui
   // l'entoure) reprend ses pièces du cache, sans relancer contextes ni builders.
-  const fresh = new Map<string, CollectedPart[]>();
+  const fresh = new Map<string, BuildingOutput>();
   for (const building of villageBuildings(cells)) {
     const signature = cache ? buildingSignature(building, lookup, terrain) : '';
-    let parts = cache?.buildings.get(signature);
-    if (!parts) parts = buildingParts(building.cells);
-    if (cache) fresh.set(signature, parts);
-    collected.push(...parts);
+    let output = cache?.buildings.get(signature);
+    if (!output) output = buildingParts(building.cells);
+    if (cache) fresh.set(signature, output);
+    collected.push(...output.parts);
+    for (const value of output.colliders) colliders.push(value);
   }
   if (cache) cache.buildings = fresh;
 
@@ -489,7 +550,7 @@ function collectVillageParts(
     }
   }
 
-  return collected;
+  return { parts: collected, colliders };
 }
 
 /** Un part avec une matrice non-finie (NaN/Infinity) corromprait tout le groupe fusionné. */

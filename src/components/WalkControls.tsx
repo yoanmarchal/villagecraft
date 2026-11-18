@@ -19,6 +19,7 @@ import { EYE_HEIGHT, MAX_PITCH } from '../walk/walkConfig';
 import { inputFromKeys, WALK_KEYS } from '../walk/walkInput';
 import { createWalker, findSpawn, isFree, clearHeading, stepWalker, type WalkerState } from '../walk/walker';
 import type { WalkWorld } from '../walk/walkWorld';
+import { walkerPresence } from '../walk/walkerPresence';
 
 /** Radians par pixel de souris. */
 const MOUSE_SENSITIVITY = 0.0022;
@@ -85,6 +86,7 @@ export function WalkControls({ world }: { world: WalkWorld }) {
       camera.near = saved.near;
       if (camera instanceof PerspectiveCamera) camera.fov = saved.fov;
       camera.updateProjectionMatrix();
+      walkerPresence.feet = null;
       (controls as unknown as { update?: () => void } | null)?.update?.();
       invalidate();
     };
@@ -155,6 +157,7 @@ export function WalkControls({ world }: { world: WalkWorld }) {
       // Rendu à la demande : tant que l'on se promène, chaque frame appelle la suivante.
       invalidate();
     }
+    walkerPresence.feet = state.position;
     const [x, y, z] = state.position;
     camera.position.set(x, y + EYE_HEIGHT, z);
     camera.quaternion.setFromEuler(euler.current.set(pitch, yaw, 0));

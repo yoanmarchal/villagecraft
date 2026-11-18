@@ -6,8 +6,7 @@
  * équivalente et bien moins coûteuse.
  */
 
-import type { CellFace } from '../../utils/cellUtils';
-import { FACE_ROTATION_Y, getFaceCorners } from '../../utils/cellUtils';
+import { FACE_ROTATION_Y, type CellFace } from '../../utils/cellUtils';
 import { varyColorBrightness, shades } from '../../colorPalettes';
 import {
   boxGeo,
@@ -19,12 +18,14 @@ import {
   type OpeningKind,
   type OpeningSpec,
 } from '../geometryCache';
-import { asInterior, mul, part, xform, type Part } from '../parts';
+import { asInterior, mul, part, xform, type DoorHinge, type Part } from '../parts';
 import { shellParts } from './shellParts';
 import { quoinHoles } from './decorations';
 import { openingKindsOf } from './openings';
 import { masonryFacesOf, masonryParts, type MasonryHole } from './masonryParts';
 import type { CellContext } from './context';
+import { DOOR_PANEL_T, doorHingeSide, doorSteps, openingScale, REVEAL_Z } from './doors';
+import { faceFramePoint } from './stairPlan';
 
 /** Chêne des portes, et fer forgé de leurs ferrures. */
 const DOOR_WOOD_COLOR = '#6b4a2f';
@@ -34,11 +35,6 @@ const IRON_MATERIAL = { metalness: 0.6, roughness: 0.5 };
 /** Rideaux : lin, garance, pastel, vert, ocre. */
 const CURTAINS = ['#d8cdb4', '#8a3434', '#3d5a80', '#56704a', '#b8893f'];
 const CLOTH_MATERIAL = { roughness: 1 };
-
-/** Perron (terrain en pente) : hauteur et giron d'une marche (~18 × 27 cm), nombre maximal de marches. */
-const STEP_RISE = 0.065;
-const STEP_RUN = 0.095;
-const STEP_MAX = 10;
 
 /** Opacité des vitres : assez faible pour voir l'intérieur depuis la rue, de jour comme de nuit. */
 export const WINDOW_GLASS_OPACITY = 0.3;
@@ -64,33 +60,20 @@ export function wallWindowCellParts(ctx: CellContext): Part[] {
   const windowRadius = Math.min(0.025, avgRadius * 0.9);
   const glassRadius = Math.min(0.02, avgRadius * 0.8);
 
-  // La face d'un mur n'est plate à z=0.5 que sur la portion non couverte par
-  // l'arrondi des coins (largeur `1 - 2*radius`). Le cadre et l'ouverture
-  // percée dans la coque doivent tenir dans cette portion plate (au-delà, le
-  // cadre flotterait devant le mur qui recule) : on les rétrécit.
-  // `MIN_OPENING_SCALE` évite qu'ils deviennent minuscules à rayon extrême,
-  // au prix d'un léger débord résiduel dans ce cas limite.
-  const MIN_OPENING_SCALE = 0.75;
-  const openingScale = (face: CellFace, nominalWidth: number): number => {
-    const [crNeg, crPos] = getFaceCorners(face, radii, 'numeric');
-    const flatWidth = 1 - 2 * Math.max(crNeg, crPos);
-    return Math.min(1, Math.max(MIN_OPENING_SCALE, flatWidth / nominalWidth));
-  };
-
   // ── Ouverture de chaque face exposée : porte, meurtrière ou fenêtre ──────
-  // (le mur d'une cheminée, `ctx.fireplaceFace`, reste plein).
-  const NOMINAL_WIDTH: Record<OpeningKind, number> = { door: 0.48, slit: 0.14, window: 0.6 };
+  // (le mur d'une cheminée, `ctx.fireplaceFace`, reste plein). Rétrécie
+  // entre les coins arrondis (openingScale, doors.ts).
   const openings: OpeningSpec[] = [...openingKindsOf(ctx, ctx.fireplaceFace)].map(([face, kind]) => ({
     face,
     kind,
-    scale: openingScale(face, NOMINAL_WIDTH[kind]),
+    scale: openingScale(radii, face, kind),
   }));
 
   // Coque creuse percée de ses ouvertures : fenêtres, porte et meurtrières
   // traversent réellement le mur ; vitres et vantaux se logent dans l'épaisseur.
   const parts: Part[] = shellParts(ctx, baseColor, openings);
   /** Profondeur (z local de face) du milieu de l'épaisseur du mur. */
-  const revealZ = 0.5 - WALL_T / 2;
+  const revealZ = REVEAL_Z;
 
   // ── Parement de pierre ─────────────────────────────────────────────────
   // De vraies pierres en saillie (masonryParts.ts), découpées au ras des
@@ -190,27 +173,28 @@ export function wallWindowCellParts(ctx: CellContext): Part[] {
   };
 
   // ── Porte ──────────────────────────────────────────────────────────────
-  const doorParts = (rotation: number, scale: number): Part[] => {
+  // Le vantail et ses ferrures sont des pièces mobiles (`door`) : rendus à
+  // part, la page les ouvre quand le promeneur approche (doors.ts). Le côté
+  // des gonds (`hinge`, −1 / +1 en latéral) les retourne en miroir.
+  const doorParts = (face: CellFace, scale: number): Part[] => {
+    const rotation = FACE_ROTATION_Y[face];
     const doorFrameRadius = Math.min(0.015, avgRadius * 0.8);
     const doorPanelRadius = Math.min(0.012, avgRadius * 0.7);
     const thresholdRadius = Math.min(0.01, avgRadius * 0.6);
     const faceRot = xform([0, 0, 0], [0, rotation, 0]);
     const door = OPENING_SIZES.door;
     const panelZ = revealZ;
-    return [
-      // Chambranle percé : entoure l'ouverture sans la boucher
-      part(
-        frameWithHoleGeo(0.48 * scale, door.h + 0.08, doorFrameRadius, door.w * scale, door.h, doorPanelRadius, 0.03),
-        doorFrameColor,
-        { roughness: 0.88 },
-        mul(faceRot, xform([0, door.y, 0.502])),
-      ),
+    const hinge = doorHingeSide(ctx, face, scale);
+    const [hx, hz] = faceFramePoint(face, (hinge * door.w * scale) / 2, panelZ - DOOR_PANEL_T / 2);
+    const [cx, cz] = faceFramePoint(face, 0, panelZ);
+    const swing: DoorHinge = { hinge: [hx, 0, hz], center: [cx, door.y, cz], sign: hinge === -1 ? 1 : -1 };
+    const moving: Part[] = [
       // Vantail logé dans l'épaisseur du mur : un fond sombre (il se voit dans
       // les joints) et des planches verticales, de teintes légèrement inégales.
       part(
-        boxGeo(door.w * scale, door.h, 0.03),
+        boxGeo(door.w * scale, door.h, DOOR_PANEL_T),
         varyColorBrightness(doorWood, -0.12),
-        { roughness: 0.95 },
+        { roughness: 0.9 },
         mul(faceRot, xform([0, door.y, panelZ])),
       ),
       ...Array.from({ length: DOOR_PLANKS }, (_, i) => {
@@ -222,64 +206,48 @@ export function wallWindowCellParts(ctx: CellContext): Part[] {
           mul(faceRot, xform([(i - (DOOR_PLANKS - 1) / 2) * plankW, door.y, panelZ + 0.02])),
         );
       }),
-      // Pentures en fer forgé, côté gonds, et anneau de tirage.
+      // Pentures en fer forgé, côté gonds, et anneau de tirage de l'autre.
       ...[-0.22, 0.22].map((dy) =>
         part(
           boxGeo(door.w * scale * 0.78, 0.032, 0.008),
           IRON_COLOR,
           IRON_MATERIAL,
-          mul(faceRot, xform([-door.w * scale * 0.09, door.y + dy, panelZ + 0.03])),
+          mul(faceRot, xform([hinge * door.w * scale * 0.09, door.y + dy, panelZ + 0.03])),
         ),
       ),
       part(
         torusArcGeo(0.022, 0.005, 5, 10, Math.PI * 2),
         IRON_COLOR,
         IRON_MATERIAL,
-        mul(faceRot, xform([0.13 * scale, door.y - 0.03, panelZ + 0.034])),
+        mul(faceRot, xform([-hinge * 0.13 * scale, door.y - 0.03, panelZ + 0.034])),
       ),
+    ];
+    for (const p of moving) p.door = swing;
+    return [
+      // Chambranle percé : entoure l'ouverture sans la boucher
+      part(
+        frameWithHoleGeo(0.48 * scale, door.h + 0.08, doorFrameRadius, door.w * scale, door.h, doorPanelRadius, 0.03),
+        doorFrameColor,
+        { roughness: 0.88 },
+        mul(faceRot, xform([0, door.y, 0.502])),
+      ),
+      ...moving,
       part(
         roundedBoxGeo(0.5 * scale, 0.04, 0.03, thresholdRadius, 4),
         varyColorBrightness(baseColor, -0.18),
         { roughness: 0.94 },
         mul(faceRot, xform([0, -0.49, 0.501])),
       ),
-      ...doorStepParts(rotation, scale),
-    ];
-  };
-
-  // ── Perron ─────────────────────────────────────────────────────────────
-  // Terrain en pente : le seuil est au niveau du bâtiment, le sol devant la
-  // porte parfois plus bas. Des marches de pierre descendent alors de la
-  // porte jusqu'à lui — autant qu'il en faut, chacune fondée dans le terrain.
-  const doorStepParts = (rotation: number, scale: number): Part[] => {
-    const { groundAt } = ctx;
-    if (!groundAt || cell.y !== 0) return [];
-    const cos = Math.cos(rotation);
-    const sin = Math.sin(rotation);
-    /** Terrain au point (u le long de la façade, w vers l'extérieur) du repère de la face. */
-    const groundFace = (u: number, w: number) => groundAt(u * cos + w * sin, -u * sin + w * cos);
-    const width = OPENING_SIZES.door.w * scale + 0.16;
-    const steps: Part[] = [];
-    for (let k = 0; k < STEP_MAX; k += 1) {
-      const top = -0.5 - k * STEP_RISE;
-      const near = 0.5 + k * STEP_RUN;
-      // Marche utile tant que le sol est nettement plus bas que son giron.
-      if (top - groundFace(0, near + STEP_RUN / 2) < 0.012) break;
-      let lowest = Infinity;
-      for (const u of [-width / 2, 0, width / 2]) {
-        for (const w of [near, near + STEP_RUN]) lowest = Math.min(lowest, groundFace(u, w));
-      }
-      const height = Math.ceil((top - lowest + 0.03) * 50) / 50;
-      steps.push(
+      // Perron : marches de pierre jusqu'au terrain, s'il est plus bas que le seuil.
+      ...doorSteps(ctx, face, scale).map(({ top, height, near, run, width }, k) =>
         part(
-          boxGeo(+width.toFixed(3), height, STEP_RUN),
+          boxGeo(width, height, run),
           varyColorBrightness(baseColor, -0.2 + ((k + cell.x + cell.z) % 3) * 0.03),
           { roughness: 0.94 },
-          mul(xform([0, 0, 0], [0, rotation, 0]), xform([0, top - height / 2, near + STEP_RUN / 2])),
+          mul(faceRot, xform([0, top - height / 2, near + run / 2])),
         ),
-      );
-    }
-    return steps;
+      ),
+    ];
   };
 
   // ── Meurtrière (tours) ─────────────────────────────────────────────────
@@ -309,7 +277,7 @@ export function wallWindowCellParts(ctx: CellContext): Part[] {
   // ── Rendu par face exposée ─────────────────────────────────────────────
   for (const { face, kind, scale } of openings) {
     const rot = FACE_ROTATION_Y[face];
-    if (kind === 'door') parts.push(...doorParts(rot, scale));
+    if (kind === 'door') parts.push(...doorParts(face, scale));
     else if (kind === 'slit') parts.push(...arrowSlitParts(rot, scale));
     else parts.push(...windowParts(rot, scale));
   }
