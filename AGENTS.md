@@ -46,3 +46,4 @@ Read the file for the area you touch first: each one records how it works, and t
 - [docs/terrain.md](docs/terrain.md) — sloping terrain, terrain shape, building levels, plinth.
 - [docs/village-rules.md](docs/village-rules.md) — grid, `BlockType`s, towers, ramparts, roof ridges, arches, paving, windows, generation, grid size.
 - [docs/app.md](docs/app.md) — grid controller and undo, share links, persistence, scene interaction and raycasting, loading screen, toolbar, control panel, the `window.villagecraft` API and the MCP server ([tools/mcp/](tools/mcp/README.md)).
+- [docs/walk.md](docs/walk.md) — first-person walk mode: pure walker physics and collision world (`src/walk/`), pointer-lock controls, next steps (entering houses, stairs).

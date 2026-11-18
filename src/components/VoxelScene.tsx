@@ -10,6 +10,8 @@ import { SkyDome } from './SkyDome';
 import { Terrain } from './Terrain';
 import { TERRAIN_FINE_STEP } from '../render/terrainMesh';
 import { Trees } from './Trees';
+import { WalkControls } from './WalkControls';
+import { createVillageWorld } from '../walk/walkWorld';
 import { Bloom, EffectComposer, Noise, ToneMapping, Vignette } from '@react-three/postprocessing';
 import { ColorGrade } from './ColorGrade';
 import { ToneMappingMode } from 'postprocessing';
@@ -304,6 +306,7 @@ export function VoxelScene({
   getRemovalY,
 }: VoxelSceneProps) {
   const toolMode = useUiStore((state) => state.toolMode);
+  const walking = useUiStore((state) => state.viewMode === 'walk');
   // Calculée une seule fois : R3F réapplique les options caméra si elles changent.
   const gridSize = useControlStore((state) => state.gridSize);
   const [cameraPosition] = useState(() => initialCameraPosition(gridSize));
@@ -365,6 +368,21 @@ export function VoxelScene({
   const cameraFloor = useMemo(
     () => (x: number, z: number) => groundHeight(x, z, flatRadius, shownRelief),
     [flatRadius, shownRelief],
+  );
+  // Monde de collision du promeneur : seulement en promenade (walk/walkWorld.ts).
+  const walkWorld = useMemo(
+    () =>
+      walking
+        ? createVillageWorld({
+            cells,
+            gridWidth,
+            gridDepth,
+            baseAt: ground.baseAt,
+            groundAt: cameraFloor,
+            reach: flatRadius,
+          })
+        : null,
+    [walking, cells, gridWidth, gridDepth, ground, cameraFloor, flatRadius],
   );
 
   // N8AO (~85 kB gzip) n'est chargé qu'une fois l'effet activé. Pas de
@@ -539,7 +557,7 @@ export function VoxelScene({
         relief={shownRelief}
       />
       <GridLines width={gridWidth} depth={gridDepth} relief={shownRelief} />
-      <CameraFloor heightAt={cameraFloor} />
+      {walkWorld ? <WalkControls world={walkWorld} /> : <CameraFloor heightAt={cameraFloor} />}
       {/* Surface de clic : invisible (ni couleur ni profondeur), seulement
           raycastée — c'est son rayon qui sert ensuite à viser les blocs et le
           terrain (pickColumn). Sous le creux le plus bas du relief, pour que
@@ -547,10 +565,11 @@ export function VoxelScene({
       <mesh
         position={[0, -(reliefBound(relief) + 0.5), 0]}
         rotation={[-Math.PI / 2, 0, 0]}
-        onPointerMove={handlePointerMove}
-        onPointerDown={handlePointerDown}
-        onPointerUp={handlePointerUp}
-        onPointerOut={onPreviewLeave}
+        // En promenade, le clic sert au pointer lock : ni construction ni aperçu.
+        onPointerMove={walking ? undefined : handlePointerMove}
+        onPointerDown={walking ? undefined : handlePointerDown}
+        onPointerUp={walking ? undefined : handlePointerUp}
+        onPointerOut={walking ? undefined : onPreviewLeave}
       >
         <planeGeometry args={[CLICK_PLANE_SIZE, CLICK_PLANE_SIZE]} />
         <meshBasicMaterial colorWrite={false} depthWrite={false} />
@@ -564,7 +583,7 @@ export function VoxelScene({
         onPresent={setShownRelief}
       />
       <PlacementPreview
-        previewCell={previewCell}
+        previewCell={walking ? null : previewCell}
         mode={toolMode}
         toWorldPosition={toWorldPosition}
         getNextPlacementY={getNextPlacementY}
@@ -572,8 +591,10 @@ export function VoxelScene({
         baseAt={ground.baseAt}
         heightAt={ground.heightAt}
       />
+      {/* Désactivé (pas démonté) en promenade : il garde son point visé pour le retour. */}
       <OrbitControls
         makeDefault
+        enabled={!walking}
         enableDamping
         dampingFactor={dampingFactor}
         maxPolarAngle={maxPolarAngle}

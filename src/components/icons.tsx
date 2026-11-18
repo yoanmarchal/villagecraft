@@ -113,3 +113,13 @@ export const CloseIcon = () => (
     <path d="M6 6l12 12M18 6 6 18" />
   </Icon>
 );
+
+/** Promenade (vue à la première personne) : un marcheur. */
+export const WalkIcon = () => (
+  <Icon>
+    <circle cx="13" cy="4.5" r="1.8" />
+    <path d="M9 21l2.5-6.5L14 17v4" />
+    <path d="M11.5 14.5 12.5 9l-3 1.5-1.5 3" />
+    <path d="M12.5 9l2 3 3 1" />
+  </Icon>
+);

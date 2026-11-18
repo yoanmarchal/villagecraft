@@ -23,7 +23,9 @@ import {
   RedoIcon,
   ShareIcon,
   UndoIcon,
+  WalkIcon,
 } from './icons';
+import { isTouchOnly } from '../utils/device';
 
 const selectAmbience = (state: ControlState): AmbienceSettings => ({
   ambientIntensity: state.ambientIntensity,
@@ -132,11 +134,12 @@ function AmbiencePicker() {
 
 export function Toolbar() {
   const toolMode = useUiStore((state) => state.toolMode);
+  const walking = useUiStore((state) => state.viewMode === 'walk');
   const toast = useUiStore((state) => state.toast);
   const { canUndo, canRedo, isGenerating } = useGridControllerStore(
     useShallow((state) => ({ canUndo: state.canUndo, canRedo: state.canRedo, isGenerating: state.isGenerating })),
   );
-  const { setToolMode, setHintVisible, showToast } = useUiStore.getState();
+  const { setToolMode, setHintVisible, showToast, setViewMode } = useUiStore.getState();
   const controller = useGridControllerStore.getState;
 
   const share = async () => {
@@ -213,6 +216,16 @@ export function Toolbar() {
 
         <div className="tool-group">
           <AmbiencePicker />
+          {/* Promenade : souris + clavier (pointer lock), pas encore de commandes tactiles. */}
+          {!isTouchOnly() && (
+            <ToolButton
+              label={walking ? 'Back to the orbit view (F)' : 'Walk through the village (F)'}
+              pressed={walking}
+              onClick={() => setViewMode(walking ? 'orbit' : 'walk')}
+            >
+              <WalkIcon />
+            </ToolButton>
+          )}
         </div>
 
         <div className="tool-group">
