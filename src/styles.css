@@ -375,6 +375,57 @@ input {
   background: var(--ui-accent-strong);
 }
 
+/* Mode promenade */
+
+.walk-crosshair {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  z-index: 9;
+  width: 6px;
+  height: 6px;
+  margin: -3px 0 0 -3px;
+  border-radius: 50%;
+  background: rgba(255, 250, 244, 0.85);
+  box-shadow: 0 0 0 1px rgba(43, 34, 27, 0.45);
+  pointer-events: none;
+}
+
+.walk-card {
+  position: absolute;
+  top: 16px;
+  left: 50%;
+  z-index: 11;
+  width: 320px;
+  max-width: calc(100vw - 32px);
+  padding: 16px 18px 18px;
+  transform: translateX(-50%);
+  background: var(--ui-surface);
+  backdrop-filter: blur(14px) saturate(1.4);
+  -webkit-backdrop-filter: blur(14px) saturate(1.4);
+  border: 1px solid var(--ui-border);
+  border-radius: var(--ui-radius);
+  box-shadow: var(--ui-shadow);
+  color: var(--ui-text);
+  animation: ui-pop-centered 200ms ease-out;
+}
+
+.walk-card__title {
+  margin: 0 0 4px;
+  font-size: 18px;
+  color: var(--ui-accent-strong);
+}
+
+.walk-card__intro {
+  margin: 0 0 12px;
+  font-size: 14px;
+  color: var(--ui-muted);
+}
+
+.walk-card .hint-card__row {
+  grid-template-columns: 136px 1fr;
+}
+
 @keyframes ui-pop {
   from {
     opacity: 0;

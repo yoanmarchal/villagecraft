@@ -9,6 +9,7 @@ const TweakpanePanel = lazy(() =>
 );
 import { Toolbar } from './components/Toolbar';
 import { HintCard } from './components/HintCard';
+import { WalkOverlay } from './components/WalkOverlay';
 import { useControlStore } from './store/controlStore';
 import { useGridControllerStore } from './store/gridControllerStore';
 import { useUiStore } from './store/uiStore';
@@ -92,14 +93,19 @@ export function App() {
     useGridControllerStore.getState().setOnMutate(refreshScene);
   }, [grid, refreshScene]);
 
-  // Raccourcis globaux : B / D / R / L (outils), Ctrl+O (panneau), Ctrl+Z (annuler),
-  // Ctrl+Y / Ctrl+Shift+Z (rétablir). Jamais pendant la saisie dans un champ.
+  // Raccourcis globaux : B / D / R / L (outils), F (promenade), Ctrl+O (panneau),
+  // Ctrl+Z (annuler), Ctrl+Y / Ctrl+Shift+Z (rétablir). Jamais pendant la saisie
+  // dans un champ. En promenade, les lettres déplacent le promeneur (WASD / ZQSD,
+  // WalkControls) : seul F reste un raccourci.
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (isEditableTarget(event.target)) return;
       const key = event.key.toLowerCase();
 
       if (!event.ctrlKey && !event.metaKey && !event.altKey) {
+        const ui = useUiStore.getState();
+        if (key === 'f') ui.setViewMode(ui.viewMode === 'walk' ? 'orbit' : 'walk');
+        if (ui.viewMode === 'walk') return;
         if (key === 'b') useUiStore.getState().setToolMode('build');
         else if (key === 'd') useUiStore.getState().setToolMode('demolish');
         else if (key === 'r') useUiStore.getState().setToolMode('raise');
@@ -177,6 +183,7 @@ export function App() {
         />
       </div>
       <HintCard />
+      <WalkOverlay />
       <Toolbar />
       <Suspense fallback={null}>
         <TweakpanePanel />

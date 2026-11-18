@@ -1,0 +1,11 @@
+{
+  "extends": "./tsconfig.app.json",
+  "compilerOptions": {
+    "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.tools.tsbuildinfo",
+    "types": ["node", "vite/client"],
+    "allowImportingTsExtensions": true,
+    "composite": true
+  },
+  "include": ["perf", "tools", "src", "vite.config.ts"],
+  "exclude": ["tools/mcp/dist"]
+}

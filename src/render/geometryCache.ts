@@ -787,6 +787,9 @@ function roundedRectShape<T extends THREE.Shape | THREE.Path>(target: T, w: numb
   return target;
 }
 
+/** Divisions d'un quart d'arc de cadre : ExtrudeGeometry en fait le double sur un arc. */
+const FRAME_CURVE_SEGMENTS = 2;
+
 /**
  * Plaque rectangulaire arrondie percée d'une ouverture arrondie, extrudée sur
  * Z et centrée. Équivalent visuel du CSG Base−Subtraction utilisé avant pour
@@ -805,7 +808,9 @@ export function frameWithHoleGeo(
   return getGeo(key, () => {
     const shape = roundedRectShape(new THREE.Shape(), outerW, outerH, outerR);
     shape.holes.push(roundedRectShape(new THREE.Path(), innerW, innerH, innerR));
-    const geo = new THREE.ExtrudeGeometry(shape, { depth, bevelEnabled: false });
+    // Coins de quelques centimètres : 4 segments par arc suffisent (les 24 par
+    // défaut d'ExtrudeGeometry faisaient 1 200 sommets par cadre).
+    const geo = new THREE.ExtrudeGeometry(shape, { depth, bevelEnabled: false, curveSegments: FRAME_CURVE_SEGMENTS });
     geo.applyMatrix4(new THREE.Matrix4().makeTranslation(0, 0, -depth / 2));
     geo.computeVertexNormals();
     return geo;

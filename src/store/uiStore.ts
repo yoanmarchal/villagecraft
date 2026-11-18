@@ -25,7 +25,19 @@ interface UiState {
   /** Message bref au-dessus de la barre d'outils (lien copié, action impossible…). */
   toast: string | null;
   showToast: (message: string) => void;
+
+  /**
+   * Vue : `orbit` (construction, OrbitControls) ou `walk` (promenade à la
+   * première personne, voir docs/walk.md). Jamais mémorisée : on rouvre en orbite.
+   */
+  viewMode: ViewMode;
+  setViewMode: (mode: ViewMode) => void;
+  /** En promenade, le pointeur est capturé (pointer lock) : le regard suit la souris. */
+  walkLocked: boolean;
+  setWalkLocked: (locked: boolean) => void;
 }
+
+export type ViewMode = 'orbit' | 'walk';
 
 export const useUiStore = create<UiState>()(
   persist(
@@ -45,6 +57,11 @@ export const useUiStore = create<UiState>()(
         clearTimeout(toastTimer);
         toastTimer = setTimeout(() => set({ toast: null }), TOAST_MS);
       },
+
+      viewMode: 'orbit',
+      setViewMode: (viewMode) => set({ viewMode, walkLocked: false }),
+      walkLocked: false,
+      setWalkLocked: (walkLocked) => set({ walkLocked }),
     }),
     {
       name: 'villagecraft-ui',

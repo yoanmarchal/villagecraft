@@ -1,4 +1,5 @@
 import { useUiStore } from '../store/uiStore';
+import { isTouchOnly } from '../utils/device';
 import { CloseIcon } from './icons';
 
 const MOUSE_HINTS: Array<[string, string]> = [
@@ -8,6 +9,7 @@ const MOUSE_HINTS: Array<[string, string]> = [
   ['R / L', 'raise / lower the ground (right click: the opposite)'],
   ['Narrow lane', 'an arch spans it between tall houses'],
   ['Drag · scroll', 'orbit · zoom'],
+  ['F', 'walk through the village (first person)'],
   ['Ctrl+Z / Ctrl+Y', 'undo / redo'],
   ['Ctrl+O', 'advanced settings'],
 ];
@@ -19,11 +21,9 @@ const TOUCH_HINTS: Array<[string, string]> = [
   ['Pinch', 'zoom'],
 ];
 
-const isTouchOnly = () => window.matchMedia('(hover: none) and (pointer: coarse)').matches;
-
 /** Aide des contrôles au premier lancement ; rouvrable via le bouton "?" de la barre d'outils. */
 export function HintCard() {
-  const visible = useUiStore((state) => state.hintVisible);
+  const visible = useUiStore((state) => state.hintVisible && state.viewMode === 'orbit');
   if (!visible) return null;
 
   const dismiss = () => useUiStore.getState().setHintVisible(false);

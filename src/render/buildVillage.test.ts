@@ -520,6 +520,58 @@ describe('VillageChunkCache', () => {
     expect([...rebuiltChunks]).toEqual(['0,0']);
     expect(CHUNK_SIZE).toBeLessThan(SIZE);
   });
+
+  it('reuses unchanged buildings and stays identical to a fresh build, edit after edit', () => {
+    // Village en pente, puis des blocs posés et retirés au hasard (graine fixe),
+    // près des bâtiments comme entre eux : chaque fois, le cache par bâtiment
+    // doit donner exactement la géométrie d'un build neuf.
+    const grid = new VillageGrid(SIZE, 10, SIZE);
+    grid.generateTerrain(SIZE, 11);
+    const sloped = { width: SIZE, depth: SIZE, relief: 1 };
+    const build = (cache: VillageChunkCache, settings = SETTINGS) =>
+      cache.build(grid.getOccupiedCells(), (x, y, z) => grid.toWorldPosition(x, y, z), settings, sloped);
+    // Empreinte exacte (octet par octet) de chaque attribut et de l'index, par chunk.
+    const digest = (array: ArrayLike<number> & { buffer: ArrayBufferLike; byteOffset: number; byteLength: number }) => {
+      const bytes = new Uint8Array(array.buffer, array.byteOffset, array.byteLength);
+      let h1 = 0x811c9dc5;
+      let h2 = 0x01000193;
+      for (let i = 0; i < bytes.length; i += 1) {
+        h1 = Math.imul(h1 ^ bytes[i], 0x01000193);
+        h2 = Math.imul(h2 ^ bytes[i], 0x5bd1e995) ^ (h2 >>> 15);
+      }
+      return `${bytes.length}:${h1 >>> 0}:${h2 >>> 0}`;
+    };
+    const arrays = (groups: ReturnType<typeof buildVillage>) =>
+      new Map(
+        groups.map(({ key, geometry }) => [
+          key,
+          [
+            ...['position', 'normal', 'color', 'aCell', 'aSpawn'].map((name) =>
+              digest((geometry.getAttribute(name) as THREE.BufferAttribute).array as Float32Array),
+            ),
+            digest(geometry.index!.array as Uint32Array),
+          ].join('|'),
+        ]),
+      );
+
+    const cache = new VillageChunkCache();
+    build(cache);
+    let seed = 12345;
+    const random = () => {
+      seed = (Math.imul(seed, 1103515245) + 12345) >>> 0;
+      return seed / 2 ** 32;
+    };
+    for (let step = 0; step < 24; step += 1) {
+      const x = Math.floor(random() * SIZE);
+      const z = Math.floor(random() * SIZE);
+      const top = grid.getTopRealOccupiedY(x, z);
+      if (top !== null && random() < 0.4) grid.removeBlock(x, top, z);
+      else grid.addBlockInColumn(x, z);
+      // Un changement de réglage en route : tout le cache doit être refait.
+      const settings = step === 12 ? { ...SETTINGS, wallBaseColor: '#d8c8b0' } : SETTINGS;
+      expect(arrays(build(cache, settings))).toEqual(arrays(build(new VillageChunkCache(), settings)));
+    }
+  }, 60_000);
 });
 
 describe('compact vertex format', () => {

@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "villagecraft": {
+      "command": "node",
+      "args": ["tools/mcp/run.mjs"]
+    }
+  }
+}

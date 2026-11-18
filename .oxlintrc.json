@@ -10,7 +10,7 @@
   "env": {
     "builtin": true
   },
-  "ignorePatterns": ["dist", "node_modules"],
+  "ignorePatterns": ["dist", "node_modules", "tools/mcp/dist"],
   "overrides": [
     {
       "files": ["**/*.{ts,tsx}"],
