@@ -5,7 +5,8 @@ import { pickRenderSettings } from '../render/renderSettings';
 import { useControlStore } from '../store/controlStore';
 import type { CellFace } from '../utils/cellUtils';
 import type { CellContext } from '../render/cells/context';
-import { lStairPoint, STAIR_FLOOR_Y } from '../render/cells/stairPlan';
+import { L_LAYOUT, L_STAIR, lStairPoint, STAIR_FLOOR_Y, STAIR_INNER } from '../render/cells/stairPlan';
+import { WALKER_RADIUS } from './walkConfig';
 import { DOOR_OPEN_ANGLE, doorPose } from '../render/cells/doors';
 import { WALL_T } from '../render/geometryCache';
 import * as THREE from 'three';
@@ -122,13 +123,19 @@ describe('walking into the village', () => {
     const ground = all.find((ctx) => ctx.stair?.kind === 'L')!;
     const plan = ground.stair!;
     if (plan.kind !== 'L') return;
-    // Repère canonique (a, b) : volée du bas le long de a ≈ 0,27 vers +b, quart tournant, volée du haut vers −a.
+    // Repère canonique (a, b) : volée du bas le long de a = milieu vers +b, quart tournant, volée du haut vers −a.
+    const { inner, outer, start } = L_LAYOUT;
+    const mid = (inner + outer) / 2;
     const route = ([a, b]: [number, number]) => at(ground, lStairPoint(plan, a, b));
-    const { state, reached } = follow(world, route([0, -0.27]), [
-      route([0.27, -0.27]),
-      route([0.27, 0.27]),
-      route([-0.325, 0.27]),
-      route([-0.325, -0.1]),
+    // On monte sur la première marche par le côté, sans que les épaules débordent sur la troisième.
+    const foot = start + 2 * L_STAIR.tread - WALKER_RADIUS - 0.01;
+    // En haut, sur le palier contre le mur (ou au-delà, côté ouvert), puis hors de la trémie en contournant le garde-corps.
+    const landing = -STAIR_INNER + WALKER_RADIUS + 0.002;
+    const { state, reached } = follow(world, route([0, foot]), [
+      route([mid, foot]),
+      route([mid, mid]),
+      route([landing, mid]),
+      route([landing, -0.1]),
     ]);
     expect(reached).toBe(4);
     expect(state.position[1]).toBeCloseTo(route([0, 0])[1] + 1, 6);

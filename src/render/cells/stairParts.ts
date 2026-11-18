@@ -18,6 +18,7 @@
  */
 
 import { varyColorBrightness } from '../../colorPalettes';
+import { meters } from '../../config/scale';
 import { FACE_ROTATION_Y, type HollowShape } from '../../utils/cellUtils';
 import { offsetPolygon, signedArea, type Point } from '../../utils/polygon';
 import { boxGeo, cylinderGeo, prismGeo, wedgeGeo } from '../geometryCache';
@@ -29,6 +30,8 @@ import {
   L_STAIR,
   LADDER,
   lStairPoint,
+  RAIL_H,
+  ARRIVAL_PASSAGE,
   SPIRAL,
   STAIR_FLOOR_Y,
   STAIR_RISE,
@@ -55,8 +58,6 @@ const IRON_MAT: MaterialSpec = { roughness: 0.6, metalness: 0.4 };
 /** Épaisseur des girons, débord du nez de marche. */
 const BOARD = 0.02;
 const NOSING = 0.01;
-/** Garde-corps et mains courantes : hauteur au-dessus du plancher / du nez des marches (~85 cm). */
-const RAIL_H = 0.3;
 const POST = 0.025;
 const BALUSTER = 0.012;
 
@@ -308,7 +309,8 @@ function ladderParts(plan: LadderPlan): Part[] {
   }
   const turn = FACE_ROTATION_Y[face];
   const rungColor = varyColorBrightness(LADDER_WOOD, -0.08);
-  for (let y = y0 + 0.11; y < y1 - 0.04; y += 0.09) {
+  // Barreaux tous les ~25 cm, à taille humaine quelle que soit la case.
+  for (let y = y0 + meters(0.3); y < y1 - 0.04; y += meters(0.25)) {
     parts.push(part(boxGeo(2 * halfWidth, 0.014, 0.014), rungColor, WOOD, xform(point(offset, y), [0, turn, 0])));
   }
   if (closed) {
@@ -447,14 +449,18 @@ export function stairwellRailingParts(ctx: CellContext): Part[] {
     if (plan.kind === 'spiral' && ctx.stair?.kind === 'spiral' && from[0] === 0 && from[1] === 0) continue;
     // Bouts : à l'onglet entre deux bords libres ; contre un mur, le poteau s'y adosse.
     const pullBack = POST / 2 + 0.002;
+    // Côté arrivée, le garde-corps s'arrête court : on en contourne le bout pour sortir de l'escalier.
+    const pullOf = (role: string) => (role === 'wall' ? pullBack : role === 'arrival' ? ARRIVAL_PASSAGE : 0);
     const p0: Point = fromMiter ?? [
-      from[0] + out[0] * offset + (before === 'wall' ? dir[0] * pullBack : 0),
-      from[1] + out[1] * offset + (before === 'wall' ? dir[1] * pullBack : 0),
+      from[0] + out[0] * offset + dir[0] * pullOf(before),
+      from[1] + out[1] * offset + dir[1] * pullOf(before),
     ];
     const p1: Point = toMiter ?? [
-      to[0] + out[0] * offset - (after === 'wall' ? dir[0] * pullBack : 0),
-      to[1] + out[1] * offset - (after === 'wall' ? dir[1] * pullBack : 0),
+      to[0] + out[0] * offset - dir[0] * pullOf(after),
+      to[1] + out[1] * offset - dir[1] * pullOf(after),
     ];
+    // Bord plus court que le passage : pas de garde-corps du tout.
+    if ((p1[0] - p0[0]) * dir[0] + (p1[1] - p0[1]) * dir[1] <= POST) continue;
     const length = Math.hypot(p1[0] - p0[0], p1[1] - p0[1]);
     const count = Math.max(1, Math.ceil(length / 0.12));
     for (let i = 0; i <= count; i += 1) {

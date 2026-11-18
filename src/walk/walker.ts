@@ -250,7 +250,7 @@ export function createWalker(position: Vec3): WalkerState {
   return { position: [...position], velocity: [0, 0, 0], grounded: true };
 }
 
-/** Espace libre voulu devant soi à l'arrivée (~2,8 m). */
+/** Espace libre voulu devant soi à l'arrivée (une case). */
 const SPAWN_VIEW = 1;
 
 /**

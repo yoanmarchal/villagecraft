@@ -31,6 +31,8 @@ import {
   L_LAYOUT,
   L_STAIR,
   lStairPoint,
+  RAIL_H,
+  ARRIVAL_PASSAGE,
   SPIRAL,
   STAIR_FLOOR_Y,
   STAIR_RISE,
@@ -47,14 +49,7 @@ const PLINTH_DEPTH = 50;
 /** Résolution du découpage d'une dalle autour d'une trémie (cases de 1/32). */
 const SLAB_GRID = 32;
 /** Garde-corps d'une trémie : hauteur au-dessus du plancher (~85 cm) et épaisseur. */
-const RAIL_H = 0.3;
 const RAIL_T = 0.02;
-/**
- * Le garde-corps s'arrête avant le bord d'arrivée : sur le palier, entre
- * trémie et mur, il ne reste qu'une trentaine de centimètres pour en
- * contourner le poteau — on le frôle plutôt que d'être coincé en haut.
- */
-const RAIL_TRIM = 0.1;
 /** Le passage d'une porte est découpé jusqu'à cette profondeur dans la cellule (coins arrondis des tours compris). */
 const DOOR_CUT_DEPTH = 0.2;
 
@@ -270,8 +265,9 @@ function railingBoxes({ points, edges }: SlabOpening, floor: number): Box[] {
       from[0] + ((to[0] - from[0]) * d) / full,
       from[1] + ((to[1] - from[1]) * d) / full,
     ];
-    const trimStart = edges[(i + count - 1) % count] === 'arrival' ? RAIL_TRIM : 0;
-    const trimEnd = edges[(i + 1) % count] === 'arrival' ? RAIL_TRIM : 0;
+    // Comme le garde-corps dessiné (stairwellRailingParts) : il s'arrête court côté arrivée.
+    const trimStart = edges[(i + count - 1) % count] === 'arrival' ? ARRIVAL_PASSAGE : 0;
+    const trimEnd = edges[(i + 1) % count] === 'arrival' ? ARRIVAL_PASSAGE : 0;
     if (full <= trimStart + trimEnd) return;
     [a, b] = [toward(a, b, trimStart), toward(b, a, trimEnd)];
     const length = Math.hypot(b[0] - a[0], b[1] - a[1]);

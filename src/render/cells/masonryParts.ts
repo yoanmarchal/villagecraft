@@ -27,7 +27,7 @@ import { BlockType } from '../../types';
 import { roundedBoxGeo, stoneBlockGeo, STONE_EDGE } from '../geometryCache';
 import { mul, part, xform, type Part } from '../parts';
 
-/** Assises par étage (1 unité ≈ 2,8 m) : pierres d'une trentaine de centimètres de haut en moyenne. */
+/** Assises par étage : pierres d'une trentaine de centimètres de haut en moyenne pour une case de 2,8 m (le parement suit la case, config/scale.ts). */
 export const MASONRY_COURSES = 9;
 /**
  * Pierres hautes de deux assises : plus d'une sur trois, dans une assise sur

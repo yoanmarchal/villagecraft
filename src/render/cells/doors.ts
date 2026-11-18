@@ -10,13 +10,16 @@
 
 import { FACE_ROTATION_Y, getFaceCorners, type CellFace, type CornerRadii } from '../../utils/cellUtils';
 import { polygonsOverlap, type Polygon } from '../../utils/polygon';
+import { meters } from '../../config/scale';
 import { OPENING_SIZES, WALL_T, type OpeningKind } from '../geometryCache';
 import type { DoorHinge, Vec3 } from '../parts';
 import type { CellContext } from './context';
 import { faceFramePoint, stairObstacles } from './stairPlan';
 
 /** Largeur nominale du cadre de chaque ouverture (le jour, lui, fait `OPENING_SIZES[kind].w`). */
-const NOMINAL_WIDTH: Record<OpeningKind, number> = { door: 0.48, slit: 0.14, window: 0.6 };
+/** Chambranle d'une porte : son jour plus 4 cm de bois de chaque côté (à l'échelle de la case). */
+export const DOOR_FRAME_W = OPENING_SIZES.door.w + 0.08;
+const NOMINAL_WIDTH: Record<OpeningKind, number> = { door: DOOR_FRAME_W, slit: 0.14, window: 0.6 };
 /** Une ouverture n'est jamais rétrécie en deçà (au prix d'un léger débord à rayon extrême). */
 const MIN_OPENING_SCALE = 0.75;
 
@@ -38,8 +41,8 @@ export const DOOR_PANEL_T = 0.03;
 export const DOOR_OPEN_ANGLE = (100 * Math.PI) / 180;
 
 /** Perron (terrain en pente) : hauteur et giron d'une marche (~18 × 27 cm), nombre maximal de marches. */
-const STEP_RISE = 0.065;
-const STEP_RUN = 0.095;
+const STEP_RISE = meters(0.18);
+const STEP_RUN = meters(0.27);
 const STEP_MAX = 10;
 
 /** Marche du perron, en repère de face : giron de `near` à `near + run`, dessus à `top`, sur `width` centrée. */

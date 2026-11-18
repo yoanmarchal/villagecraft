@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { OPENING_SIZES } from '../render/geometryCache';
 import { EYE_HEIGHT, STEP_HEIGHT, WALK_SPEED, WALKER_HEIGHT, WALKER_RADIUS } from './walkConfig';
 import {
   createWalker,
@@ -32,8 +33,8 @@ function run(w: WalkWorld, state: WalkerState, input: WalkInput, seconds: number
 }
 
 describe('walker scale', () => {
-  it('is a person in a world where a unit is ~2.8 m and a door 0.71', () => {
-    expect(WALKER_HEIGHT).toBeLessThan(0.71);
+  it('is a person, smaller than a door', () => {
+    expect(WALKER_HEIGHT).toBeLessThan(OPENING_SIZES.door.h);
     expect(EYE_HEIGHT).toBeLessThan(WALKER_HEIGHT);
     expect(WALKER_RADIUS * 2).toBeLessThan(0.3);
   });

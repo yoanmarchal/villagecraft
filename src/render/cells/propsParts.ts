@@ -22,6 +22,7 @@ import { asObstacle, mul, part, xform, type Part } from '../parts';
 import type { RenderSettings } from '../renderSettings';
 import { isGrassCell, pavedCells } from './pavingParts';
 import { slopeAt, type HeightFn } from './drape';
+import { HUMAN_SCALE } from '../../config/scale';
 
 /** Distance (Chebyshev, en cases) au pavage en deçà de laquelle l'herbe peut recevoir un objet. */
 const PROP_REACH = 2;
@@ -405,6 +406,8 @@ export function propsParts(
   const wells = wellCells(grass, eligible, paved, width, depth);
   const result: Array<{ x: number; z: number; parts: Part[] }> = [];
   const place = (x: number, z: number, parts: Part[], matrix: THREE.Matrix4) => {
+    // Dessinés pour une case de 2,8 m : posés à leur taille réelle (config/scale.ts).
+    matrix.multiply(new THREE.Matrix4().makeScale(HUMAN_SCALE, HUMAN_SCALE, HUMAN_SCALE));
     const heightAt = groundOf?.(x, z);
     if (heightAt) {
       const px = matrix.elements[12];

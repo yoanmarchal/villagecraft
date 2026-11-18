@@ -16,8 +16,12 @@
  * meuble mural dans un coin arrondi de tour (il traverserait la courbe).
  * Tout reste dans la cavité de la coque (testé dans buildVillage.test.ts).
  *
- * Échelle : la porte (0,71) fait ~2 m, donc 1 unité ≈ 2,8 m. Uniquement des
- * boîtes et des cylindres à 8 segments : ~24 sommets par boîte soudée.
+ * Échelle : les meubles sont dessinés pour une case de 2,8 m
+ * (`DESIGN_CELL_METERS`) et posés avec `HUMAN_SCALE` : ils gardent leur
+ * taille réelle quand la case change (config/scale.ts). La cheminée, elle,
+ * suit la case : elle monte au plafond, sa hotte s'aligne sur le conduit du
+ * toit. Uniquement des boîtes et des cylindres à 8 segments : ~24 sommets
+ * par boîte soudée.
  */
 
 import * as THREE from 'three';
@@ -32,6 +36,11 @@ import { offsetPolygon, polygonsOverlap, rect, type Polygon } from '../../utils/
 import type { CellContext } from './context';
 import { lampZones, openingKindsOf } from './openings';
 import { faceZone, stairObstacles } from './stairPlan';
+import { HUMAN_SCALE } from '../../config/scale';
+
+/** Pose un meuble dessiné à l'échelle de référence à sa taille réelle (config/scale.ts). */
+const humanSized = (matrix: THREE.Matrix4) =>
+  mul(matrix, new THREE.Matrix4().makeScale(HUMAN_SCALE, HUMAN_SCALE, HUMAN_SCALE));
 
 const FURNITURE_WOOD = '#7a5232';
 const LIGHT_WOOD = '#9c7449';
@@ -513,7 +522,9 @@ export function furnitureParts(ctx: CellContext, openings: OpeningSpec[]): Part[
   if (ctx.chandelier) {
     const piece = ground ? diningSet() : rug(RUGS[h % RUGS.length]);
     const turns = h % 2 === 0 ? [0, Math.PI / 2] : [Math.PI / 2, 0];
-    const centre = turns.map((turn) => xform([0, FLOOR_Y, 0], [0, turn, 0])).find((m) => !blocked(piece, m));
+    const centre = turns
+      .map((turn) => humanSized(xform([0, FLOOR_Y, 0], [0, turn, 0])))
+      .find((m) => !blocked(piece, m));
     if (centre) place(piece, centre);
   }
 
@@ -571,10 +582,11 @@ export function furnitureParts(ctx: CellContext, openings: OpeningSpec[]): Part[
       } else {
         piece = tapestry(TAPESTRIES[variant % TAPESTRIES.length]);
       }
-      if (!piece || (opening && piece.height > LOW_MAX_H)) continue;
+      if (!piece || (opening && piece.height * HUMAN_SCALE > LOW_MAX_H)) continue;
 
       const faceRot = xform([0, 0, 0], [0, FACE_ROTATION_Y[face], 0]);
-      const matrix = mul(faceRot, xform([side * SLOT_OFFSET, FLOOR_Y, INNER - piece.depth / 2 - WALL_GAP]));
+      const depth = piece.depth * HUMAN_SCALE;
+      const matrix = humanSized(mul(faceRot, xform([side * SLOT_OFFSET, FLOOR_Y, INNER - depth / 2 - WALL_GAP])));
       if (blocked(piece.parts, matrix)) continue;
 
       // Un lit traverse la pièce : il prend aussi le coin opposé de ce côté.

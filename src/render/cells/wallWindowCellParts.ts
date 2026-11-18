@@ -24,7 +24,7 @@ import { quoinHoles } from './decorations';
 import { openingKindsOf } from './openings';
 import { masonryFacesOf, masonryParts, type MasonryHole } from './masonryParts';
 import type { CellContext } from './context';
-import { DOOR_PANEL_T, doorHingeSide, doorSteps, openingScale, REVEAL_Z } from './doors';
+import { DOOR_FRAME_W, DOOR_PANEL_T, doorHingeSide, doorSteps, openingScale, REVEAL_Z } from './doors';
 import { faceFramePoint } from './stairPlan';
 
 /** Chêne des portes, et fer forgé de leurs ferrures. */
@@ -83,8 +83,8 @@ export function wallWindowCellParts(ctx: CellContext): Part[] {
     if (kind === 'slit') return [{ t0: -0.07 * scale, t1: 0.07 * scale, y0: -0.2, y1: 0.2 }];
     const door = OPENING_SIZES.door;
     return [
-      { t0: -0.24 * scale, t1: 0.24 * scale, y0: -0.5, y1: door.y + (door.h + 0.08) / 2 },
-      { t0: -0.25 * scale, t1: 0.25 * scale, y0: -0.5, y1: -0.47 },
+      { t0: (-DOOR_FRAME_W / 2) * scale, t1: (DOOR_FRAME_W / 2) * scale, y0: -0.5, y1: door.y + (door.h + 0.08) / 2 },
+      { t0: (-DOOR_FRAME_W / 2 - 0.01) * scale, t1: (DOOR_FRAME_W / 2 + 0.01) * scale, y0: -0.5, y1: -0.47 },
     ];
   };
   parts.push(
@@ -207,7 +207,7 @@ export function wallWindowCellParts(ctx: CellContext): Part[] {
         );
       }),
       // Pentures en fer forgé, côté gonds, et anneau de tirage de l'autre.
-      ...[-0.22, 0.22].map((dy) =>
+      ...[-0.31 * door.h, 0.31 * door.h].map((dy) =>
         part(
           boxGeo(door.w * scale * 0.78, 0.032, 0.008),
           IRON_COLOR,
@@ -219,21 +219,29 @@ export function wallWindowCellParts(ctx: CellContext): Part[] {
         torusArcGeo(0.022, 0.005, 5, 10, Math.PI * 2),
         IRON_COLOR,
         IRON_MATERIAL,
-        mul(faceRot, xform([-hinge * 0.13 * scale, door.y - 0.03, panelZ + 0.034])),
+        mul(faceRot, xform([-hinge * door.w * 0.325 * scale, door.y - 0.03, panelZ + 0.034])),
       ),
     ];
     for (const p of moving) p.door = swing;
     return [
       // Chambranle percé : entoure l'ouverture sans la boucher
       part(
-        frameWithHoleGeo(0.48 * scale, door.h + 0.08, doorFrameRadius, door.w * scale, door.h, doorPanelRadius, 0.03),
+        frameWithHoleGeo(
+          DOOR_FRAME_W * scale,
+          door.h + 0.08,
+          doorFrameRadius,
+          door.w * scale,
+          door.h,
+          doorPanelRadius,
+          0.03,
+        ),
         doorFrameColor,
         { roughness: 0.88 },
         mul(faceRot, xform([0, door.y, 0.502])),
       ),
       ...moving,
       part(
-        roundedBoxGeo(0.5 * scale, 0.04, 0.03, thresholdRadius, 4),
+        roundedBoxGeo((DOOR_FRAME_W + 0.02) * scale, 0.04, 0.03, thresholdRadius, 4),
         varyColorBrightness(baseColor, -0.18),
         { roughness: 0.94 },
         mul(faceRot, xform([0, -0.49, 0.501])),

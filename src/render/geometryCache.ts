@@ -19,6 +19,7 @@ import { Brush, Evaluator, SUBTRACTION } from 'three-bvh-csg';
 import type { CellFace, CornerRadii, HollowShape } from '../utils/cellUtils';
 import { FACE_ROTATION_Y, getRoundedRectContourPoints } from '../utils/cellUtils';
 import type { Polygon } from '../utils/polygon';
+import { meters } from '../config/scale';
 
 /**
  * Borne du cache (LRU). Un village complet n'utilise que quelques centaines
@@ -179,6 +180,14 @@ export interface OpeningSpec {
 }
 
 /**
+ * Porte : à la taille d'une personne (~1,12 × 2 m) quelle que soit la case
+ * (config/scale.ts) ; son pied reste au ras du plancher.
+ */
+const DOOR_W = meters(1.12);
+const DOOR_H = meters(1.99);
+const DOOR_SILL = -0.45;
+
+/**
  * Dimensions (largeur nominale, hauteur, centre Y) des ouvertures — les
  * mêmes que les vitres/vantaux des builders, qui viennent s'y loger. La
  * porte descend jusqu'au plancher.
@@ -190,7 +199,7 @@ export interface OpeningSpec {
  */
 export const OPENING_SIZES: Record<OpeningKind, { w: number; h: number; y: number }> = {
   window: { w: 0.54, h: 0.44, y: 0 },
-  door: { w: 0.4, h: 0.71, y: -0.095 },
+  door: { w: DOOR_W, h: DOOR_H, y: DOOR_SILL + DOOR_H / 2 },
   slit: { w: 0.08, h: 0.32, y: 0 },
 };
 

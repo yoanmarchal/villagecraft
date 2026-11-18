@@ -1,14 +1,10 @@
 /**
- * Constantes du mode promenade (vue à la première personne).
- *
- * Échelle de la scène : 1 unité ≈ 2,8 m (une porte de 0,71 fait ~2 m, voir
- * docs/interiors.md). Les valeurs sont écrites en mètres puis converties,
- * pour rester lisibles.
+ * Constantes du mode promenade (vue à la première personne), écrites en
+ * mètres et converties en unités de case selon l'échelle du village
+ * (config/scale.ts) : une personne garde sa taille quand la case change.
  */
 
-export const METERS_PER_UNIT = 2.8;
-
-const m = (meters: number) => meters / METERS_PER_UNIT;
+import { meters as m } from '../config/scale';
 
 /** Hauteur du promeneur, des pieds au sommet du crâne. */
 export const WALKER_HEIGHT = m(1.75);
