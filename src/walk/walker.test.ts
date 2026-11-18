@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { EYE_HEIGHT, STEP_HEIGHT, WALK_SPEED, WALKER_HEIGHT, WALKER_RADIUS } from './walkConfig';
 import {
   createWalker,
+  easeEye,
   findSpawn,
   clearHeading,
   isFree,
@@ -192,5 +193,19 @@ describe('createBoxWorld', () => {
     expect(isFree(w, -Math.sin(yaw), 0, -Math.cos(yaw))).toBe(true);
     // Préférence vers +x, dégagé : gardée.
     expect(clearHeading(w, [0, 0, 0], -Math.PI / 2)).toBeCloseTo(-Math.PI / 2, 9);
+  });
+});
+
+describe('easeEye', () => {
+  it('eases a step on the ground, follows a jump or a respawn at once', () => {
+    let eye = easeEye(null, 1, true, 1 / 60);
+    expect(eye).toBe(1);
+    eye = easeEye(eye, 1.06, true, 1 / 60);
+    expect(eye).toBeGreaterThan(1);
+    expect(eye).toBeLessThan(1.03);
+    for (let i = 0; i < 30; i += 1) eye = easeEye(eye, 1.06, true, 1 / 60);
+    expect(eye).toBeCloseTo(1.06, 3);
+    expect(easeEye(1, 1.06, false, 1 / 60)).toBe(1.06);
+    expect(easeEye(1, 3, true, 1 / 60)).toBe(3);
   });
 });

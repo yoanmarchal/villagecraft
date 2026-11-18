@@ -31,7 +31,15 @@ import {
   type CellLookup,
 } from '../utils/cellUtils';
 import { assignRoomLamps, type RoomLamp } from '../utils/roomLamps';
-import { matKey, type DoorHinge, type MaterialSpec, type Part, type PositionedPart, type Vec3 } from './parts';
+import {
+  matKey,
+  type DoorHinge,
+  type Obstacle,
+  type MaterialSpec,
+  type Part,
+  type PositionedPart,
+  type Vec3,
+} from './parts';
 import { ROOF_DROP_HEIGHT } from './growMaterial';
 import type { CellContext } from './cells/context';
 import { standardCellParts } from './cells/standardCellParts';
@@ -383,7 +391,10 @@ function collectVillageParts(
     spawn: number,
     fallHeight: number,
     lamp: RoomLamp | undefined,
+    solids?: number[],
   ) => {
+    // Obstacles du promeneur (meubles, puits…) : boîte englobante de leurs parts, en monde.
+    const obstacles = new Map<Obstacle, number[]>();
     // Charnières de porte en monde : une par porte (ses pièces mobiles partagent la même).
     const doors = new Map<DoorHinge, DoorHinge>();
     const toWorld = ([a, b, c]: Vec3): Vec3 => [a + cellCenter.x, b + cellCenter.y, c + cellCenter.z];
@@ -398,8 +409,19 @@ function collectVillageParts(
         doors.set(p.door, door);
       }
       const doorId = door ? `${x},${Math.round(cellCenter.y * 100)},${z}` : undefined;
+      if (p.obstacle && solids) {
+        const box = worldBounds(p);
+        const union = obstacles.get(p.obstacle);
+        if (!union) obstacles.set(p.obstacle, box);
+        else
+          for (let i = 0; i < 3; i += 1)
+            [union[i], union[i + 3]] = [Math.min(union[i], box[i]), Math.max(union[i + 3], box[i + 3])];
+      }
       into.push({
         ...p,
+        // Champs toujours présents (même indéfinis) : une seule forme d'objet pour
+        // toute la fusion — des parts aux formes variées la ralentissaient de ~7 %.
+        obstacle: p.obstacle,
         door,
         doorId,
         x,
@@ -413,6 +435,7 @@ function collectVillageParts(
         lampDz,
       });
     }
+    for (const box of obstacles.values()) solids?.push(...box);
   };
 
   /** Pièces d'un bâtiment : contextes, plans (portes, escaliers, cheminées, conduits), puis builders. */
@@ -499,7 +522,7 @@ function collectVillageParts(
       const spawn = cell.spawnedAt ?? 0;
       const fallHeight = cell.type === BlockType.Roof ? ROOF_DROP_HEIGHT : 0;
 
-      addParts(out, cellParts, cell.x, cell.z, cellCenter, spawn, fallHeight, lamp);
+      addParts(out, cellParts, cell.x, cell.z, cellCenter, spawn, fallHeight, lamp, solids);
       // Volumes de collision du promeneur, au même endroit (walk/cellColliders.ts).
       for (const [x0, y0, z0, x1, y1, z1] of cellColliders(ctx)) {
         solids.push(x0 + wx, y0 + wy, z0 + wz, x1 + wx, y1 + wy, z1 + wz);
@@ -546,11 +569,37 @@ function collectVillageParts(
     for (const { x, z, parts } of propsParts(lookup, ground, settings, groundOf)) {
       const [wx, , wz] = toWorldPosition(x, 0, z);
       translation.makeTranslation(wx, 0, wz);
-      addParts(collected, parts, x, z, new THREE.Vector3(wx, 0, wz), 0, 0, undefined);
+      addParts(collected, parts, x, z, new THREE.Vector3(wx, 0, wz), 0, 0, undefined, colliders);
     }
   }
 
   return { parts: collected, colliders };
+}
+
+/** Boîte englobante de chaque géométrie du cache (calculée à part : on ne touche pas aux géométries partagées). */
+const geometryBounds = new WeakMap<THREE.BufferGeometry, number[]>();
+
+/** Boîte englobante (min puis max) d'un part, en monde : les 8 coins de celle de sa géométrie, transformés. */
+function worldBounds(p: Part): number[] {
+  let local = geometryBounds.get(p.geo);
+  if (!local) {
+    const position = p.geo.getAttribute('position');
+    local = [Infinity, Infinity, Infinity, -Infinity, -Infinity, -Infinity];
+    for (let i = 0; i < position.count; i += 1) {
+      const v = [position.getX(i), position.getY(i), position.getZ(i)];
+      for (let a = 0; a < 3; a += 1)
+        [local[a], local[a + 3]] = [Math.min(local[a], v[a]), Math.max(local[a + 3], v[a])];
+    }
+    geometryBounds.set(p.geo, local);
+  }
+  const out = [Infinity, Infinity, Infinity, -Infinity, -Infinity, -Infinity];
+  const corner = new THREE.Vector3();
+  for (let k = 0; k < 8; k += 1) {
+    corner.set(local[k & 1 ? 3 : 0], local[k & 2 ? 4 : 1], local[k & 4 ? 5 : 2]).applyMatrix4(p.matrix);
+    const v = [corner.x, corner.y, corner.z];
+    for (let a = 0; a < 3; a += 1) [out[a], out[a + 3]] = [Math.min(out[a], v[a]), Math.max(out[a + 3], v[a])];
+  }
+  return out;
 }
 
 /** Un part avec une matrice non-finie (NaN/Infinity) corromprait tout le groupe fusionné. */

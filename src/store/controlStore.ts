@@ -45,6 +45,16 @@ export interface CameraState {
   maxDistance: number;
 }
 
+/** Mode promenade (vue à la première personne, docs/walk.md). */
+export interface WalkState {
+  /** Multiplicateur de la sensibilité de la souris (1 = 0,0022 rad par pixel). */
+  walkMouseSensitivity: number;
+  /** Souris vers le haut = regard vers le bas. */
+  walkInvertY: boolean;
+  /** Champ de vision vertical en promenade (degrés). */
+  walkFov: number;
+}
+
 export interface PostFxState {
   aoEnabled: boolean;
   aoIntensity: number;
@@ -108,6 +118,7 @@ export interface ControlState
     LightingState,
     SkyFogState,
     CameraState,
+    WalkState,
     PostFxState,
     DebugState,
     UiState,
@@ -127,6 +138,7 @@ const DEFAULT_STATE: GridState &
   LightingState &
   SkyFogState &
   CameraState &
+  WalkState &
   PostFxState &
   DebugState &
   UiState &
@@ -161,6 +173,11 @@ const DEFAULT_STATE: GridState &
   maxPolarAngle: Math.PI / 2.08,
   minDistance: 6,
   maxDistance: 36,
+
+  // Nouvelles clés : `persist` fusionne l'état enregistré dans les défauts, elles arrivent seules.
+  walkMouseSensitivity: 1,
+  walkInvertY: false,
+  walkFov: 70,
 
   aoEnabled: true,
   aoIntensity: 4,

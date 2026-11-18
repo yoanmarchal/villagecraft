@@ -14,7 +14,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useThree } from '@react-three/fiber';
 import * as THREE from 'three';
 import { mergeGeometries, mergeVertices } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
-import { scatterTrees, type TreeInstance, type TreeKind } from '../render/landscape';
+import { scatterTrees, TREE_TRUNKS, treeScale, type TreeInstance, type TreeKind } from '../render/landscape';
 import type { Relief } from '../render/relief';
 import { injectWorldDetail } from '../render/surfaceDetail';
 
@@ -69,7 +69,8 @@ const lump = (x: number, y: number, z: number) =>
 
 /** Feuillu : tronc évasé, deux maîtresses branches, houppier fait de masses bosselées. */
 function broadleafGeometry(): THREE.BufferGeometry {
-  const trunk = paint(new THREE.CylinderGeometry(0.075, 0.15, 1.25, 8, 3).translate(0, 0.62, 0), TRUNK_COLOR);
+  const { radius, top, height } = TREE_TRUNKS.broadleaf;
+  const trunk = paint(new THREE.CylinderGeometry(top, radius, height, 8, 3).translate(0, height / 2, 0), TRUNK_COLOR);
   const branches = [
     [0.5, 0.26],
     [-0.45, -0.3],
@@ -113,7 +114,8 @@ function broadleafGeometry(): THREE.BufferGeometry {
 
 /** Conifère : tronc + jupes de branches tombantes, au bord dentelé, qui se recouvrent. */
 function coniferGeometry(): THREE.BufferGeometry {
-  const trunk = paint(new THREE.CylinderGeometry(0.045, 0.1, 1.0, 6).translate(0, 0.5, 0), TRUNK_COLOR);
+  const { radius, top, height } = TREE_TRUNKS.conifer;
+  const trunk = paint(new THREE.CylinderGeometry(top, radius, height, 6).translate(0, height / 2, 0), TRUNK_COLOR);
   const TIERS = 7;
   const foliage = Array.from({ length: TIERS }, (_, tier) => {
     const t = tier / (TIERS - 1);
@@ -173,8 +175,8 @@ function TreeGroup({ kind, trees, geometry, material }: TreeGroupProps) {
       _position.set(tree.x, tree.y - 0.03, tree.z);
       _quaternion.setFromAxisAngle(_up, tree.rotation);
       // Les conifères sont plus élancés ; chaque arbre a ses proportions.
-      const girth = tree.scale * (0.85 + tree.tint * 0.3);
-      _scale.set(girth, tree.scale * (kind === 'conifer' ? 1.25 : 1), girth);
+      const { girth, height } = treeScale(tree);
+      _scale.set(girth, height, girth);
       mesh.setMatrixAt(index, _matrix.compose(_position, _quaternion, _scale));
       // Teinte : du vert sombre au vert doré, autour de la couleur de l'essence.
       _color.setRGB(0.8 + tree.tint * 0.42, 0.86 + ((tree.tint * 7) % 1) * 0.26, 0.74 + tree.tint * 0.3);

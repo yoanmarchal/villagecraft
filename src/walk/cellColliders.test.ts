@@ -89,9 +89,19 @@ describe('walking into the village', () => {
     const [ox, oz] = OUT[door.doorFace!];
     const outside = at(door, [ox * 0.9, oz * 0.9]);
     outside[1] = 0;
-    const { state, reached } = follow(world, outside, [at(door, [ox * 0.6, oz * 0.6]), at(door, [0, 0])]);
+    // Juste derrière le seuil, dans le passage que les meubles laissent libre.
+    const { state, reached } = follow(world, outside, [at(door, [ox * 0.6, oz * 0.6]), at(door, [ox * 0.3, oz * 0.3])]);
     expect(reached).toBe(2);
     expect(state.position[1]).toBeCloseTo(at(door, [0, 0])[1], 6);
+  });
+
+  it('bumps into the furniture', () => {
+    const { world, contexts: all, at } = village(HOUSE, 3);
+    // La table sous le chandelier du rez-de-chaussée : on ne traverse pas la pièce par son centre.
+    const hall = all.find((ctx) => ctx.cell.y === 0 && ctx.chandelier && ctx.doorFace)!;
+    const [ox, oz] = OUT[hall.doorFace!];
+    const { reached } = follow(world, at(hall, [ox * 0.3, oz * 0.3]), [at(hall, [-ox * 0.3, -oz * 0.3])]);
+    expect(reached).toBe(0);
   });
 
   it('cannot walk through a wall', () => {

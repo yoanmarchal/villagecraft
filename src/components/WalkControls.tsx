@@ -15,17 +15,17 @@ import { useFrame, useThree } from '@react-three/fiber';
 import { useEffect, useRef } from 'react';
 import { Euler, PerspectiveCamera, Quaternion, Vector3 } from 'three';
 import { useUiStore } from '../store/uiStore';
+import { useControlStore } from '../store/controlStore';
 import { EYE_HEIGHT, MAX_PITCH } from '../walk/walkConfig';
 import { inputFromKeys, WALK_KEYS } from '../walk/walkInput';
-import { createWalker, findSpawn, isFree, clearHeading, stepWalker, type WalkerState } from '../walk/walker';
+import { clearHeading, createWalker, easeEye, findSpawn, isFree, stepWalker, type WalkerState } from '../walk/walker';
 import type { WalkWorld } from '../walk/walkWorld';
 import { walkerPresence } from '../walk/walkerPresence';
 
-/** Radians par pixel de souris. */
+/** Radians par pixel de souris, à la sensibilité 1 (réglage `walkMouseSensitivity`). */
 const MOUSE_SENSITIVITY = 0.0022;
 /** Plan proche : les murs des coques font quelques centimètres, la caméra doit pouvoir s'en approcher. */
 const WALK_NEAR = 0.02;
-const WALK_FOV = 70;
 
 interface SavedView {
   position: Vector3;
@@ -76,7 +76,7 @@ export function WalkControls({ world }: { world: WalkWorld }) {
     walker.current = createWalker(spawn);
 
     camera.near = WALK_NEAR;
-    if (camera instanceof PerspectiveCamera) camera.fov = WALK_FOV;
+    if (camera instanceof PerspectiveCamera) camera.fov = useControlStore.getState().walkFov;
     camera.updateProjectionMatrix();
     invalidate();
 
@@ -91,6 +91,16 @@ export function WalkControls({ world }: { world: WalkWorld }) {
       invalidate();
     };
   }, [get, invalidate]);
+
+  // Champ de vision réglé pendant la promenade (panneau).
+  const walkFov = useControlStore((state) => state.walkFov);
+  useEffect(() => {
+    const { camera } = get();
+    if (!(camera instanceof PerspectiveCamera) || camera.fov === walkFov) return;
+    camera.fov = walkFov;
+    camera.updateProjectionMatrix();
+    invalidate();
+  }, [get, invalidate, walkFov]);
 
   // Pointer lock, souris et clavier.
   useEffect(() => {
@@ -110,8 +120,11 @@ export function WalkControls({ world }: { world: WalkWorld }) {
     const onMouseMove = (event: MouseEvent) => {
       if (!locked()) return;
       const view = look.current;
-      view.yaw -= event.movementX * MOUSE_SENSITIVITY;
-      view.pitch = Math.max(-MAX_PITCH, Math.min(MAX_PITCH, view.pitch - event.movementY * MOUSE_SENSITIVITY));
+      const { walkMouseSensitivity, walkInvertY } = useControlStore.getState();
+      const turn = MOUSE_SENSITIVITY * walkMouseSensitivity;
+      view.yaw -= event.movementX * turn;
+      const lift = event.movementY * turn * (walkInvertY ? -1 : 1);
+      view.pitch = Math.max(-MAX_PITCH, Math.min(MAX_PITCH, view.pitch - lift));
       invalidate();
     };
     const onKeyDown = (event: KeyboardEvent) => {
@@ -147,6 +160,7 @@ export function WalkControls({ world }: { world: WalkWorld }) {
   }, [get, invalidate]);
 
   const euler = useRef(new Euler(0, 0, 0, 'YXZ'));
+  const eye = useRef<number | null>(null);
   useFrame(({ camera }, delta) => {
     let state = walker.current;
     if (!state) return;
@@ -159,7 +173,10 @@ export function WalkControls({ world }: { world: WalkWorld }) {
     }
     walkerPresence.feet = state.position;
     const [x, y, z] = state.position;
-    camera.position.set(x, y + EYE_HEIGHT, z);
+    eye.current = easeEye(eye.current, y + EYE_HEIGHT, state.grounded, delta);
+    camera.position.set(x, eye.current, z);
+    // Les yeux rejoignent encore leur hauteur (marche) : une frame de plus.
+    if (Math.abs(eye.current - (y + EYE_HEIGHT)) > 1e-4) invalidate();
     camera.quaternion.setFromEuler(euler.current.set(pitch, yaw, 0));
   });
 

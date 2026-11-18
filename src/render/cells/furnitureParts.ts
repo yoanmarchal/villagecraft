@@ -25,7 +25,7 @@ import type { CellFace } from '../../utils/cellUtils';
 import { FACE_ROTATION_Y, getColumnTop, isGableRoofCell } from '../../utils/cellUtils';
 import { varyColorBrightness } from '../../colorPalettes';
 import { boxGeo, cylinderGeo, FLOOR_T, OPENING_SIZES, WALL_T, type OpeningSpec } from '../geometryCache';
-import { mul, part, xform, type Part } from '../parts';
+import { asObstacle, mul, part, xform, type Part } from '../parts';
 import type { GridCell } from '../../types';
 import type { RoomLamp } from '../../utils/roomLamps';
 import { offsetPolygon, polygonsOverlap, rect, type Polygon } from '../../utils/polygon';
@@ -499,8 +499,9 @@ export function furnitureParts(ctx: CellContext, openings: OpeningSpec[]): Part[
   const parts: Part[] = [];
   const ground = cell.y === 0;
   const h = hashOf(cell.x, cell.y, cell.z, 0);
+  // Chaque meuble posé est un obstacle pour le promeneur (sa boîte englobante).
   const place = (pieceParts: Part[], matrix: ReturnType<typeof xform>) => {
-    for (const p of pieceParts) parts.push({ ...p, matrix: mul(matrix, p.matrix) });
+    parts.push(...asObstacle(pieceParts.map((p) => ({ ...p, matrix: mul(matrix, p.matrix) }))));
   };
   // Escalier de la cellule, trémie de celui qui arrive : rien ne s'y pose.
   const obstacles = stairObstacles(ctx).map((obstacle) => offsetPolygon(obstacle, STAIR_GAP));

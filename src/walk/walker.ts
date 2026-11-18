@@ -279,3 +279,17 @@ export function clearHeading(world: WalkWorld, position: Vec3, preferredYaw: num
   }
   return best.yaw;
 }
+
+/** Temps de réponse de la hauteur des yeux (s) : une marche montée ou descendue est amortie. */
+const EYE_RESPONSE = 0.08;
+
+/**
+ * Hauteur des yeux affichée : au sol, elle rejoint `target` en douceur (une
+ * marche d'escalier, ~17 cm d'un coup, faisait sauter l'image) ; en l'air,
+ * ou pour un écart plus grand qu'une marche (réapparition), elle le suit
+ * exactement — un saut ou une chute ne doivent pas traîner.
+ */
+export function easeEye(shown: number | null, target: number, grounded: boolean, dt: number): number {
+  if (shown === null || !grounded || Math.abs(target - shown) > STEP_HEIGHT * 1.5) return target;
+  return target + (shown - target) * Math.exp(-Math.max(dt, 0) / EYE_RESPONSE);
+}
