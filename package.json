@@ -25,7 +25,7 @@
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
     "three": "^0.186.1",
-    "three-bvh-csg": "^0.0.18",
+    "three-bvh-csg": "^0.0.19",
     "three-mesh-bvh": "^0.9.18",
     "three-stdlib": "^2.36.1",
     "tslib": "^2.8.1",
